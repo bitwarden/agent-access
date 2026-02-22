@@ -1,47 +1,60 @@
-# Bitwarden Remote SDK
+# Bitwarden Remote Access
 
 ## Crate Structure
-* `bw-error`, `bw-error-macro` - simplified ports of error functionality from `sdk-internal`
-* `bw-noise` - implementation of the NOISE handshake via `snow` plus associated types
-* `bw-noise-client` - implements the remote client side protocol logic
-* `bw-remote` - CLI driver to use all of these and demonstrate integration for both sides of the protocol, also manages session caching for the same
+
+* `bw-error` - Error handling utilities for bw_remote. Re-exports the `bw_error` proc macro and provides the `FlatError` trait.
+* `bw-error-macro` - Proc macro for generating error types with `FlatError` trait implementation. Simplified version of `bitwarden-error-macro` that only supports the `flat` error type for CLI use.
+* `bw-noise-protocol` - Multi-device Noise-based Protocol implementation using the NNpsk2 pattern for secure channel establishment with PSK-based authentication. 
+* `bw-proxy` - Zero-knowledge WebSocket proxy server enabling secure rendezvous between remote and user clients. Runs as a standalone binary with environment-based configuration.
+* `bw-rat-client` - Remote and user client implementations for connecting through the proxy using the Noise Protocol.
+* `bw-remote` - CLI interface for connecting to a user-client through a proxy to request credentials over a secure Noise Protocol channel. Manages session caching and device keypair storage.
 
 ## Building
-Run `cargo build` in this directory, `bw_remote`. This is a standalone effort and has no dependencies on any other Bitwarden components.
+
+Run `cargo build` in this directory. This is a standalone workspace and has no dependencies on any other Bitwarden components. Requires Rust 1.85+.
 
 ## Running
 
-### Overview
-Run `target/[config]bw-remote` to run the demo CLI. This top-level driver command lets you explore the functionality of the SDK:
+### Proxy Server
+
+Run the `bw-proxy` binary to start the WebSocket proxy server:
 
 ```
-$ target/debug/bw-remote --help
+cargo run -p bw-proxy
+```
+
+The proxy binds to `127.0.0.1:8080` by default. Set the `BIND_ADDR` environment variable to override.
+
+### CLI
+
+Run `bw-remote` to use the demo CLI. This top-level driver command lets you explore the functionality of the SDK:
+
+```
 Connect to a user-client through a proxy to request credentials over a secure channel
 
 Usage: bw-remote [OPTIONS] [COMMAND]
 
 Commands:
-  clear-cache     Clear all cached sessions
-  list-cache      List cached sessions
-  list-devices    List stored device keypairs
-  clear-keypairs  Clear all device keypairs
-  connect         Connect to proxy and request credentials (default)
-  listen          Listen for remote client connections (user-client mode)
-  help            Print this message or the help of the given subcommand(s)
+  clear-cache  Clear all cached sessions
+  list-cache   List cached sessions
+  connect      Connect to proxy and request credentials (default)
+  listen       Listen for remote client connections (user-client mode)
+  help         Print this message or the help of the given subcommand(s)
 
 Options:
       --proxy-url <PROXY_URL>  Proxy server URL [default: ws://localhost:8080]
-      --pair-code <PAIR_CODE>  Pairing code (format: password:metadata)
-      --client-id <CLIENT_ID>  Client ID for this device
+      --token <TOKEN>          Token (rendezvous code or PSK token)
+      --session <SESSION>      Session fingerprint to reconnect to (hex string)
       --no-cache               Disable session caching
+      --debug-log              Enable debug logging for the multi-device Noise protocol
   -h, --help                   Print help
   -V, --version                Print version
 ```
 
-### Demo flow
-1. Ensure that the websocket proxy server is running (`npm run proxy` in `skunkworks/noise`)
-2. Ensure that you have unlocked your demo vault using the `bw` CLI and set the session key environment variable
-3. Start the user-client side with `bw-remote listen`
-4. Enter the outputted PSK from step 2 into the `--pair-code` argument of `bw-remote connect` and type a client ID
-5. Now `bw-remote`, taking the role of the remote client, will let you type in domains to request credentials for, and you will approve them on the `listen` side from Step 2
-6. Observe that the credential was sent to the remote side
+### Demo Flow
+
+1. Start the proxy server with `cargo run -p bw-proxy`
+2. Start the user-client side with `cargo run -p bw-remote -- listen`
+3. Enter the outputted PSK from step 2 into the `--pair-code` argument of `bw-remote connect` and type a client ID
+4. Now `bw-remote`, taking the role of the remote client, will let you type in domains to request credentials for, and you will approve them on the `listen` side from step 2
+5. Observe that the credential was sent to the remote side
