@@ -41,6 +41,10 @@ pub struct Cli {
     #[arg(long)]
     pub no_cache: bool,
 
+    /// Require fingerprint verification on the connect side
+    #[arg(long)]
+    pub verify_fingerprint: bool,
+
     /// Enable debug logging for the multi-device Noise protocol
     #[arg(long, global = true)]
     pub debug_log: bool,
@@ -72,6 +76,7 @@ pub async fn process_command(cli: Cli) -> Result<()> {
                 token: cli.token,
                 session: cli.session,
                 no_cache: cli.no_cache,
+                verify_fingerprint: cli.verify_fingerprint,
             };
             args.run().await
         }

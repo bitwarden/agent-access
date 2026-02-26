@@ -509,7 +509,7 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
 
             // 7. Create event and response channels for RemoteClient
             let (remote_event_tx, mut remote_event_rx) = mpsc::channel::<RemoteClientEvent>(32);
-            let (remote_response_tx, remote_response_rx) =
+            let (_remote_response_tx, remote_response_rx) =
                 mpsc::channel::<RemoteClientResponse>(32);
 
             // 8. Create RemoteClient with DefaultProxyClient
@@ -526,46 +526,43 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
             .await
             .expect("RemoteClient should connect");
 
-            // 9. Spawn approval handler for HandshakeFingerprint event (auto-approve)
-            let response_tx_clone = remote_response_tx.clone();
-            let approval_task = tokio::task::spawn_local(async move {
-                while let Some(event) = remote_event_rx.recv().await {
-                    if let RemoteClientEvent::HandshakeFingerprint { fingerprint: _ } = event {
-                        // Auto-approve the fingerprint
-                        response_tx_clone
-                            .send(RemoteClientResponse::VerifyFingerprint { approved: true })
+            // 9. Spawn approval handler for HandshakeFingerprint event on USER side (listener must verify)
+            let user_approval_task = tokio::task::spawn_local(async move {
+                while let Some(event) = user_event_rx.recv().await {
+                    if let UserClientEvent::HandshakeFingerprint { fingerprint: _ } = event {
+                        // Auto-approve the fingerprint on the user/listener side
+                        user_response_tx
+                            .send(UserClientResponse::VerifyFingerprint { approved: true })
                             .await
                             .expect("Should send fingerprint approval");
                         break;
                     }
                 }
-                remote_event_rx
+                (user_event_rx, user_response_tx)
             });
 
-            // 10. Pair with handshake using rendezvous code
+            // 10. Pair with handshake using rendezvous code (verify_fingerprint=false on remote side)
             let paired_fingerprint = timeout(
                 Duration::from_secs(15),
-                remote_client.pair_with_handshake(&code),
+                remote_client.pair_with_handshake(&code, false),
             )
             .await
             .expect("Pairing should not timeout")
             .expect("Pairing should succeed");
 
-            // 11. Verify FingerprintVerified event
-            let mut remote_event_rx = approval_task.await.expect("Approval task should complete");
-
-            let mut fingerprint_verified = false;
+            // 11. Verify HandshakeFingerprint was emitted on remote side (informational)
+            let mut got_fingerprint = false;
             while let Ok(Some(event)) =
                 timeout(Duration::from_millis(500), remote_event_rx.recv()).await
             {
-                if matches!(event, RemoteClientEvent::FingerprintVerified) {
-                    fingerprint_verified = true;
+                if matches!(event, RemoteClientEvent::HandshakeFingerprint { .. }) {
+                    got_fingerprint = true;
                     break;
                 }
             }
             assert!(
-                fingerprint_verified,
-                "RemoteClient should emit FingerprintVerified"
+                got_fingerprint,
+                "RemoteClient should emit HandshakeFingerprint (informational)"
             );
 
             // 12. Verify remote_client is ready
@@ -580,6 +577,9 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
             );
 
             // 14. Spawn credential response handler for UserClient
+            let (mut user_event_rx, user_response_tx) = user_approval_task
+                .await
+                .expect("User approval task should complete");
             let credential_handler = tokio::task::spawn_local(async move {
                 while let Some(event) = user_event_rx.recv().await {
                     if let UserClientEvent::CredentialRequest {

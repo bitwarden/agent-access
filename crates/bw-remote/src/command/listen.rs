@@ -234,12 +234,32 @@ async fn run_user_client_session(proxy_url: String, psk_mode: bool) -> Result<()
 
                     UserClientEvent::HandshakeFingerprint { fingerprint } => {
                         println!("\n========================================");
-                        println!("  HANDSHAKE FINGERPRINT");
+                        println!("  SECURITY VERIFICATION REQUIRED");
                         println!("========================================");
-                        println!("  {fingerprint}");
+                        println!("  Handshake Fingerprint: {fingerprint}");
                         println!("========================================");
-                        println!("Compare this fingerprint with the one");
-                        println!("shown on the remote device.\n");
+                        println!("\nPlease compare this fingerprint with the");
+                        println!("one shown on the remote device.");
+                        println!("They must match EXACTLY.\n");
+
+                        let approved = Confirm::new("Do the fingerprints match?")
+                            .with_default(false)
+                            .prompt()
+                            .unwrap_or(false);
+
+                        response_tx
+                            .send(UserClientResponse::VerifyFingerprint { approved })
+                            .await
+                            .ok();
+                    }
+
+                    UserClientEvent::FingerprintVerified {} => {
+                        println!("Fingerprint verified successfully!\n");
+                    }
+
+                    UserClientEvent::FingerprintRejected { reason } => {
+                        println!("Fingerprint rejected: {reason}\n");
+                        println!("Connection from remote device was refused.\n");
                     }
 
                     UserClientEvent::CredentialRequest {

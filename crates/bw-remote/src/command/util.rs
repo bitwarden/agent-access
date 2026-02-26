@@ -44,6 +44,10 @@ pub fn format_relative_time(timestamp: u64) -> String {
 
 /// Handle and display RemoteClientEvent messages
 ///
+/// When `verify_fingerprint` is true, the user is prompted to verify the fingerprint
+/// and a `VerifyFingerprint` response is sent. When false, the fingerprint is displayed
+/// informationally without prompting.
+///
 /// # Panics
 /// This function uses string slicing on hex-encoded fingerprints, which is safe
 /// because hex encoding produces only ASCII characters.
@@ -51,6 +55,7 @@ pub fn format_relative_time(timestamp: u64) -> String {
 pub async fn handle_event(
     event: &RemoteClientEvent,
     response_tx: &mpsc::Sender<RemoteClientResponse>,
+    verify_fingerprint: bool,
 ) {
     match event {
         RemoteClientEvent::Connecting { proxy_url } => {
@@ -111,24 +116,34 @@ pub async fn handle_event(
             println!("Disconnected: {reason_str}");
         }
         RemoteClientEvent::HandshakeFingerprint { fingerprint } => {
-            println!("\n========================================");
-            println!("  SECURITY VERIFICATION REQUIRED");
-            println!("========================================");
-            println!("  Handshake Fingerprint: {fingerprint}");
-            println!("========================================");
-            println!("\nPlease compare this fingerprint with the");
-            println!("one shown on the trusted device.");
-            println!("They must match EXACTLY.\n");
+            if verify_fingerprint {
+                println!("\n========================================");
+                println!("  SECURITY VERIFICATION REQUIRED");
+                println!("========================================");
+                println!("  Handshake Fingerprint: {fingerprint}");
+                println!("========================================");
+                println!("\nPlease compare this fingerprint with the");
+                println!("one shown on the trusted device.");
+                println!("They must match EXACTLY.\n");
 
-            let approved = Confirm::new("Do the fingerprints match?")
-                .with_default(false)
-                .prompt()
-                .unwrap_or(false);
+                let approved = Confirm::new("Do the fingerprints match?")
+                    .with_default(false)
+                    .prompt()
+                    .unwrap_or(false);
 
-            response_tx
-                .send(RemoteClientResponse::VerifyFingerprint { approved })
-                .await
-                .ok();
+                response_tx
+                    .send(RemoteClientResponse::VerifyFingerprint { approved })
+                    .await
+                    .ok();
+            } else {
+                println!("\n========================================");
+                println!("  HANDSHAKE FINGERPRINT");
+                println!("========================================");
+                println!("  {fingerprint}");
+                println!("========================================");
+                println!("Compare this fingerprint with the one");
+                println!("shown on the trusted device.\n");
+            }
         }
         RemoteClientEvent::FingerprintVerified => {
             println!("✓ Fingerprint verified successfully!\n");

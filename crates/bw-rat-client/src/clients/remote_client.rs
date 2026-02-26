@@ -103,10 +103,16 @@ impl RemoteClient {
     /// Pair with a remote device using a rendezvous code
     ///
     /// This resolves the rendezvous code to a fingerprint, performs the Noise handshake,
-    /// and waits for user fingerprint verification.
+    /// and optionally waits for user fingerprint verification.
+    ///
+    /// # Arguments
+    /// * `rendezvous_code` - The rendezvous code to resolve
+    /// * `verify_fingerprint` - If true, emit fingerprint event and wait for user verification.
+    ///   If false, emit fingerprint event informationally and proceed immediately.
     pub async fn pair_with_handshake(
         &mut self,
         rendezvous_code: &str,
+        verify_fingerprint: bool,
     ) -> Result<IdentityFingerprint, RemoteClientError> {
         let incoming_rx =
             self.incoming_rx
@@ -158,7 +164,7 @@ impl RemoteClient {
             .await
             .ok();
 
-        // Emit fingerprint and wait for user verification (60s timeout)
+        // Always emit fingerprint event (informational or for verification)
         event_tx
             .send(RemoteClientEvent::HandshakeFingerprint {
                 fingerprint: fingerprint_str,
@@ -166,31 +172,34 @@ impl RemoteClient {
             .await
             .ok();
 
-        match timeout(Duration::from_secs(60), response_rx.recv()).await {
-            Ok(Some(RemoteClientResponse::VerifyFingerprint { approved: true })) => {
-                event_tx
-                    .send(RemoteClientEvent::FingerprintVerified)
-                    .await
-                    .ok();
-            }
-            Ok(Some(RemoteClientResponse::VerifyFingerprint { approved: false })) => {
-                self.proxy_client.disconnect().await.ok();
-                event_tx
-                    .send(RemoteClientEvent::FingerprintRejected {
-                        reason: "User rejected fingerprint verification".to_string(),
-                    })
-                    .await
-                    .ok();
-                return Err(RemoteClientError::FingerprintRejected);
-            }
-            Ok(None) => {
-                return Err(RemoteClientError::ChannelClosed);
-            }
-            Err(_) => {
-                self.proxy_client.disconnect().await.ok();
-                return Err(RemoteClientError::Timeout(
-                    "Fingerprint verification timeout".to_string(),
-                ));
+        if verify_fingerprint {
+            // Wait for user verification (60s timeout)
+            match timeout(Duration::from_secs(60), response_rx.recv()).await {
+                Ok(Some(RemoteClientResponse::VerifyFingerprint { approved: true })) => {
+                    event_tx
+                        .send(RemoteClientEvent::FingerprintVerified)
+                        .await
+                        .ok();
+                }
+                Ok(Some(RemoteClientResponse::VerifyFingerprint { approved: false })) => {
+                    self.proxy_client.disconnect().await.ok();
+                    event_tx
+                        .send(RemoteClientEvent::FingerprintRejected {
+                            reason: "User rejected fingerprint verification".to_string(),
+                        })
+                        .await
+                        .ok();
+                    return Err(RemoteClientError::FingerprintRejected);
+                }
+                Ok(None) => {
+                    return Err(RemoteClientError::ChannelClosed);
+                }
+                Err(_) => {
+                    self.proxy_client.disconnect().await.ok();
+                    return Err(RemoteClientError::Timeout(
+                        "Fingerprint verification timeout".to_string(),
+                    ));
+                }
             }
         }
 

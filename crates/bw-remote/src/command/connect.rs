@@ -36,12 +36,23 @@ pub struct ConnectArgs {
     /// Disable session caching
     #[arg(long)]
     pub no_cache: bool,
+
+    /// Require fingerprint verification on the connect side
+    #[arg(long)]
+    pub verify_fingerprint: bool,
 }
 
 impl ConnectArgs {
     /// Execute the connect command
     pub async fn run(self) -> Result<()> {
-        run_interactive_session(self.proxy_url, self.token, self.session, self.no_cache).await
+        run_interactive_session(
+            self.proxy_url,
+            self.token,
+            self.session,
+            self.no_cache,
+            self.verify_fingerprint,
+        )
+        .await
     }
 }
 
@@ -96,6 +107,7 @@ async fn run_interactive_session(
     token: Option<String>,
     session_fingerprint: Option<String>,
     no_cache: bool,
+    verify_fingerprint: bool,
 ) -> Result<()> {
     // Create identity provider and session store first
     let identity_provider = Box::new(FileIdentityStorage::load_or_generate("remote_client")?);
@@ -154,7 +166,7 @@ async fn run_interactive_session(
     // Spawn event handler BEFORE connect (so Connecting/Connected events are handled)
     let event_handle = tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
-            handle_event(&event, &response_tx).await;
+            handle_event(&event, &response_tx, verify_fingerprint).await;
         }
     });
 
@@ -178,7 +190,10 @@ async fn run_interactive_session(
     // Phase 2: Perform pairing based on connection mode
     match connection_mode {
         ConnectionMode::New { rendezvous_code } => {
-            if let Err(e) = client.pair_with_handshake(&rendezvous_code).await {
+            if let Err(e) = client
+                .pair_with_handshake(&rendezvous_code, verify_fingerprint)
+                .await
+            {
                 bail!("Pairing failed: {}", e);
             }
         }

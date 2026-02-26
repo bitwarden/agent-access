@@ -9,6 +9,14 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
+/// Holds the state of a handshake pending fingerprint verification
+struct PendingHandshakeVerification {
+    /// The remote device's fingerprint
+    source: IdentityFingerprint,
+    /// The established transport (not yet cached)
+    transport: MultiDeviceTransport,
+}
+
 use crate::{
     error::RemoteClientError,
     traits::{IdentityProvider, SessionStore},
@@ -39,10 +47,17 @@ pub enum UserClientEvent {
     },
     /// Noise handshake complete
     HandshakeComplete {},
-    /// Handshake fingerprint (informational display)
+    /// Handshake fingerprint requires verification
     HandshakeFingerprint {
         /// The 6-character hex fingerprint
         fingerprint: String,
+    },
+    /// Fingerprint was verified and connection accepted
+    FingerprintVerified {},
+    /// Fingerprint was rejected and connection discarded
+    FingerprintRejected {
+        /// Reason for rejection
+        reason: String,
     },
     /// Credential request received
     CredentialRequest {
@@ -77,6 +92,11 @@ pub enum UserClientEvent {
 /// Response actions for events requiring user decision
 #[derive(Debug, Clone)]
 pub enum UserClientResponse {
+    /// Respond to fingerprint verification prompt
+    VerifyFingerprint {
+        /// Whether user approved the fingerprint
+        approved: bool,
+    },
     /// Respond to a credential request
     RespondCredential {
         /// Request ID
@@ -145,6 +165,8 @@ pub struct UserClient {
     psk: Option<Psk>,
     /// Incoming message receiver from proxy
     incoming_rx: Option<mpsc::UnboundedReceiver<IncomingMessage>>,
+    /// Pending handshake awaiting fingerprint verification
+    pending_verification: Option<PendingHandshakeVerification>,
 }
 
 impl UserClient {
@@ -169,6 +191,7 @@ impl UserClient {
             rendezvous_code: None,
             psk: None,
             incoming_rx: Some(incoming_rx),
+            pending_verification: None,
         })
     }
 
@@ -351,35 +374,90 @@ impl UserClient {
         event_tx: &mpsc::Sender<UserClientEvent>,
     ) -> Result<(), RemoteClientError> {
         debug!("Received handshake init from source: {:?}", source);
-        // Auto-approve all connections (fingerprint verification on remote side provides security)
         event_tx.send(UserClientEvent::HandshakeStart {}).await.ok();
 
         let (transport, fingerprint_str) =
             self.complete_handshake(source, &data, &ciphersuite).await?;
-
-        // Store transport
-        self.transports.insert(source, transport.clone());
-
-        // Check if this is a new connection (not in cache)
-        let is_new_connection = !self.session_store.has_session(&source);
-
-        // Cache the session for future connections (must be done before save_transport_state)
-        self.session_store.cache_session(source)?;
-
-        // Save transport state for session persistence (enables multi-device support)
-        self.session_store
-            .save_transport_state(&source, transport)?;
 
         event_tx
             .send(UserClientEvent::HandshakeComplete {})
             .await
             .ok();
 
-        // Only show fingerprint on initial connections
-        if is_new_connection {
+        // Check if this is a new connection (not in cache)
+        let is_new_connection = !self.session_store.has_session(&source);
+        // PSK connections are already trusted — no fingerprint verification needed
+        let is_psk_connection = self.psk.is_some();
+
+        if is_new_connection && !is_psk_connection {
+            // New rendezvous connection: require fingerprint verification before caching
+            self.pending_verification = Some(PendingHandshakeVerification {
+                source,
+                transport,
+            });
+
             event_tx
                 .send(UserClientEvent::HandshakeFingerprint {
                     fingerprint: fingerprint_str,
+                })
+                .await
+                .ok();
+        } else if !is_new_connection {
+            // Existing/cached session: already verified on first connection.
+            // Re-cache to update timestamps (cached_at / last_connected_at),
+            // and save the new transport state from the fresh handshake.
+            self.transports.insert(source, transport.clone());
+            self.session_store.cache_session(source)?;
+            self.session_store
+                .save_transport_state(&source, transport)?;
+        } else if is_psk_connection {
+            // PSK connection: trust established via pre-shared key, no verification needed
+            self.transports.insert(source, transport.clone());
+            self.session_store.cache_session(source)?;
+            self.session_store
+                .save_transport_state(&source, transport)?;
+
+            event_tx
+                .send(UserClientEvent::HandshakeFingerprint {
+                    fingerprint: fingerprint_str,
+                })
+                .await
+                .ok();
+        }
+
+        Ok(())
+    }
+
+    /// Handle fingerprint verification response
+    async fn handle_fingerprint_verification(
+        &mut self,
+        approved: bool,
+        event_tx: &mpsc::Sender<UserClientEvent>,
+    ) -> Result<(), RemoteClientError> {
+        let pending = self
+            .pending_verification
+            .take()
+            .ok_or(RemoteClientError::InvalidState {
+                expected: "pending verification".to_string(),
+                current: "no pending verification".to_string(),
+            })?;
+
+        if approved {
+            // Cache session and store transport
+            self.transports
+                .insert(pending.source, pending.transport.clone());
+            self.session_store.cache_session(pending.source)?;
+            self.session_store
+                .save_transport_state(&pending.source, pending.transport)?;
+
+            event_tx
+                .send(UserClientEvent::FingerprintVerified {})
+                .await
+                .ok();
+        } else {
+            event_tx
+                .send(UserClientEvent::FingerprintRejected {
+                    reason: "User rejected fingerprint verification".to_string(),
                 })
                 .await
                 .ok();
@@ -444,6 +522,10 @@ impl UserClient {
         event_tx: &mpsc::Sender<UserClientEvent>,
     ) -> Result<(), RemoteClientError> {
         match response {
+            UserClientResponse::VerifyFingerprint { approved } => {
+                self.handle_fingerprint_verification(approved, event_tx)
+                    .await?;
+            }
             UserClientResponse::RespondCredential {
                 request_id,
                 session_id,
