@@ -5,14 +5,14 @@
 
 use std::process::Command;
 
-use bw_proxy::ProxyClientConfig;
+use bw_proxy::{IdentityFingerprint, ProxyClientConfig};
 use bw_rat_client::{
     DefaultProxyClient, IdentityProvider, SessionStore, UserClient, UserClientEvent,
     UserClientResponse, UserCredentialData,
 };
 use clap::Args;
 use color_eyre::eyre::{Result, bail};
-use inquire::Confirm;
+use inquire::{Confirm, Select};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tracing::info;
@@ -111,250 +111,376 @@ fn which_bw() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+type SessionInfo = (IdentityFingerprint, Option<String>, u64, u64);
+
+/// Print the session list with an optional pending entry
+fn print_session_list(sessions: &[SessionInfo], pending_label: Option<&str>) {
+    let mut sorted = sessions.to_vec();
+    sorted.sort_by(|a, b| b.3.cmp(&a.3));
+
+    println!("Listening for incoming requests from:");
+    for (fingerprint, _, cached_at, last_connected_at) in &sorted {
+        let short_hex = hex::encode(fingerprint.0)
+            .chars()
+            .take(12)
+            .collect::<String>();
+        let created_time = format_relative_time(*cached_at);
+        let last_used_time = format_relative_time(*last_connected_at);
+        println!(
+            "  * Session {short_hex}  (created: {created_time}, last used: {last_used_time})"
+        );
+    }
+    if let Some(label) = pending_label {
+        println!("  * {label}");
+    }
+    println!();
+}
+
+/// Handle a single event from the user client
+async fn handle_listen_event(
+    event: UserClientEvent,
+    response_tx: &mpsc::Sender<UserClientResponse>,
+    sessions: &[SessionInfo],
+) -> Result<()> {
+    match event {
+        UserClientEvent::Listening {} => {
+            // Handled by the caller based on context
+        }
+
+        UserClientEvent::RendevouzCodeGenerated { code } => {
+            println!("\n========================================");
+            println!("  RENDEZVOUS CODE");
+            println!("========================================");
+            println!("  {code}");
+            println!("========================================\n");
+            println!("Share this code with your remote device.\n");
+
+            print_session_list(sessions, Some("New session  (awaiting connection)"));
+            println!("(Press Ctrl+C to exit)\n");
+        }
+
+        UserClientEvent::PskTokenGenerated { token } => {
+            println!("\n========================================");
+            println!("  PSK TOKEN (COPY ENTIRE TOKEN)");
+            println!("========================================");
+            println!("  {token}");
+            println!("========================================\n");
+            println!("Share this token securely with the remote device.\n");
+
+            print_session_list(sessions, Some("New session  (awaiting connection)"));
+            println!("(Press Ctrl+C to exit)\n");
+        }
+
+        UserClientEvent::HandshakeStart {} => {
+            println!("Noise handshake started");
+        }
+
+        UserClientEvent::HandshakeProgress { message } => {
+            eprintln!("Handshake progress: {message}");
+        }
+
+        UserClientEvent::HandshakeComplete {} => {
+            println!("Secure channel established");
+        }
+
+        UserClientEvent::HandshakeFingerprint { fingerprint } => {
+            println!("\n========================================");
+            println!("  SECURITY VERIFICATION REQUIRED");
+            println!("========================================");
+            println!("  Handshake Fingerprint: {fingerprint}");
+            println!("========================================");
+            println!("\nPlease compare this fingerprint with the");
+            println!("one shown on the remote device.");
+            println!("They must match EXACTLY.\n");
+
+            let approved = Confirm::new("Do the fingerprints match?")
+                .with_default(false)
+                .prompt()
+                .unwrap_or(false);
+
+            response_tx
+                .send(UserClientResponse::VerifyFingerprint { approved })
+                .await
+                .ok();
+        }
+
+        UserClientEvent::FingerprintVerified {} => {
+            println!("Fingerprint verified successfully!\n");
+        }
+
+        UserClientEvent::FingerprintRejected { reason } => {
+            println!("Fingerprint rejected: {reason}\n");
+            println!("Connection from remote device was refused.\n");
+        }
+
+        UserClientEvent::CredentialRequest {
+            domain,
+            request_id,
+            session_id,
+        } => {
+            println!("\n--- Credential Request ---");
+            println!("  Domain: {domain}");
+
+            // Look up credential from Bitwarden CLI
+            match lookup_credential(&domain) {
+                Some(credential) => {
+                    println!(
+                        "  Found: {} ({})",
+                        credential.username.as_deref().unwrap_or("no username"),
+                        credential.uri.as_deref().unwrap_or("no uri")
+                    );
+                    println!();
+
+                    let approved = Confirm::new(&format!("Send credential for {domain}?"))
+                        .with_default(false)
+                        .prompt()
+                        .unwrap_or(false);
+
+                    if approved {
+                        response_tx
+                            .send(UserClientResponse::RespondCredential {
+                                request_id,
+                                session_id: session_id.clone(),
+                                approved: true,
+                                credential: Some(credential),
+                            })
+                            .await
+                            .ok();
+
+                        println!("Credential sent for {domain}\n");
+                    } else {
+                        response_tx
+                            .send(UserClientResponse::RespondCredential {
+                                request_id,
+                                session_id: session_id.clone(),
+                                approved: false,
+                                credential: None,
+                            })
+                            .await
+                            .ok();
+
+                        println!("Credential denied for {domain}\n");
+                    }
+                }
+                None => {
+                    println!("  No credential found in vault");
+                    println!();
+
+                    response_tx
+                        .send(UserClientResponse::RespondCredential {
+                            request_id,
+                            session_id,
+                            approved: false,
+                            credential: None,
+                        })
+                        .await
+                        .ok();
+
+                    println!("No credential available for {domain}\n");
+                }
+            }
+        }
+
+        UserClientEvent::CredentialApproved { domain } => {
+            eprintln!("Credential approved: {domain}");
+        }
+
+        UserClientEvent::CredentialDenied { domain } => {
+            eprintln!("Credential denied: {domain}");
+        }
+
+        UserClientEvent::ClientDisconnected {} => {
+            println!("Client disconnected");
+        }
+
+        UserClientEvent::Error { message, context } => {
+            let ctx = context.as_deref().unwrap_or("unknown");
+            println!("Error ({ctx}): {message}");
+        }
+    }
+
+    Ok(())
+}
+
 /// Run the user client interactive session
 async fn run_user_client_session(proxy_url: String, psk_mode: bool) -> Result<()> {
     let local = tokio::task::LocalSet::new();
 
     local
         .run_until(async move {
-            // Create channels for communication
-            let (event_tx, mut event_rx) = mpsc::channel(32);
-            let (response_tx, response_rx) = mpsc::channel(32);
-
             // Create identity provider and session store
-            let identity_provider = Box::new(FileIdentityStorage::load_or_generate("user_client")?);
-            let session_store = Box::new(FileSessionCache::load_or_create("user_client")?);
+            let identity_provider = FileIdentityStorage::load_or_generate("user_client")?;
+            let session_store = FileSessionCache::load_or_create("user_client")?;
 
-            // Check for cached sessions and prompt user
+            // Check for cached sessions
             let cached_sessions = session_store.list_sessions();
-            let generate_new_code = if !cached_sessions.is_empty() {
+
+            if !cached_sessions.is_empty() {
                 // Display cached sessions
-                println!(
-                    "Found {} cached session(s):\n",
-                    cached_sessions.len()
-                );
+                print_session_list(&cached_sessions, None);
 
-                let mut sorted_sessions = cached_sessions.clone();
-                sorted_sessions.sort_by(|a, b| b.2.cmp(&a.2));
+                // Start listening for cached sessions immediately
+                let (event_tx, mut event_rx) = mpsc::channel(32);
+                let (response_tx, response_rx) = mpsc::channel(32);
 
-                for (fingerprint, _, last_connected_at) in &sorted_sessions {
-                    let short_hex = hex::encode(fingerprint.0)
-                        .chars()
-                        .take(12)
-                        .collect::<String>();
-                    let relative_time = format_relative_time(*last_connected_at);
-                    println!("  Session {short_hex}  (last used: {relative_time})");
-                }
-                println!();
+                let proxy_client = Box::new(DefaultProxyClient::new(ProxyClientConfig {
+                    proxy_url: proxy_url.clone(),
+                    identity_keypair: Some(identity_provider.identity().to_owned()),
+                }));
 
-                // Prompt user whether to generate a new connection code
-                Confirm::new("Generate a new connection code for additional devices?")
-                    .with_default(false)
+                let client_handle = tokio::task::spawn_local(async move {
+                    let mut client = UserClient::listen(
+                        Box::new(identity_provider) as Box<dyn IdentityProvider>,
+                        Box::new(session_store) as Box<dyn SessionStore>,
+                        proxy_client,
+                    )
+                    .await?;
+                    client.listen_cached_only(event_tx, response_rx).await
+                });
+
+                // Run the prompt concurrently via spawn_blocking
+                let mut prompt_handle = tokio::task::spawn_blocking(|| {
+                    Select::new(
+                        "Select an option (or wait for requests):",
+                        vec!["Keep listening", "Create new session", "Exit"],
+                    )
                     .prompt()
-                    .unwrap_or(false)
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|_| "Keep listening".to_string())
+                });
+
+                // Multiplex events and prompt result
+                let mut selection = None;
+                loop {
+                    tokio::select! {
+                        event = event_rx.recv() => {
+                            match event {
+                                Some(event) => {
+                                    handle_listen_event(event, &response_tx, &cached_sessions).await?;
+                                }
+                                None => {
+                                    // Client channel closed
+                                    break;
+                                }
+                            }
+                        }
+                        result = &mut prompt_handle => {
+                            selection = Some(result.unwrap_or_else(|_| "Keep listening".to_string()));
+                            break;
+                        }
+                    }
+                }
+
+                match selection.as_deref() {
+                    Some("Create new session") => {
+                        // Abort the cached-only listener and restart with rendezvous/psk
+                        client_handle.abort();
+
+                        let identity_provider = Box::new(
+                            FileIdentityStorage::load_or_generate("user_client")?,
+                        );
+                        let session_store =
+                            Box::new(FileSessionCache::load_or_create("user_client")?);
+
+                        let (event_tx, mut event_rx) = mpsc::channel(32);
+                        let (response_tx, response_rx) = mpsc::channel(32);
+
+                        let proxy_client = Box::new(DefaultProxyClient::new(ProxyClientConfig {
+                            proxy_url,
+                            identity_keypair: Some(identity_provider.identity().to_owned()),
+                        }));
+
+                        let client_handle = tokio::task::spawn_local(async move {
+                            let mut client =
+                                UserClient::listen(identity_provider, session_store, proxy_client)
+                                    .await?;
+                            if psk_mode {
+                                client.enable_psk(event_tx, response_rx).await
+                            } else {
+                                client.enable_rendezvous(event_tx, response_rx).await
+                            }
+                        });
+
+                        // Normal event loop for the new session
+                        while let Some(event) = event_rx.recv().await {
+                            handle_listen_event(event, &response_tx, &cached_sessions).await?;
+                        }
+
+                        match client_handle.await {
+                            Ok(Ok(())) => {
+                                println!("\nUser client session ended.");
+                                Ok(())
+                            }
+                            Ok(Err(e)) => bail!("User client error: {}", e),
+                            Err(e) if e.is_cancelled() => {
+                                println!("\nUser client session ended.");
+                                Ok(())
+                            }
+                            Err(e) => bail!("Task error: {}", e),
+                        }
+                    }
+                    Some("Exit") => {
+                        client_handle.abort();
+                        Ok(())
+                    }
+                    _ => {
+                        // "Keep listening" or prompt closed — continue with the existing listener
+                        while let Some(event) = event_rx.recv().await {
+                            handle_listen_event(event, &response_tx, &cached_sessions).await?;
+                        }
+
+                        match client_handle.await {
+                            Ok(Ok(())) => {
+                                println!("\nUser client session ended.");
+                                Ok(())
+                            }
+                            Ok(Err(e)) => bail!("User client error: {}", e),
+                            Err(e) if e.is_cancelled() => {
+                                println!("\nUser client session ended.");
+                                Ok(())
+                            }
+                            Err(e) => bail!("Task error: {}", e),
+                        }
+                    }
+                }
             } else {
-                // No cached sessions - always generate a new code
-                true
-            };
+                // No cached sessions — go straight to rendezvous/psk
+                let (event_tx, mut event_rx) = mpsc::channel(32);
+                let (response_tx, response_rx) = mpsc::channel(32);
 
-            // Create proxy client
-            let proxy_client = Box::new(DefaultProxyClient::new(ProxyClientConfig {
-                proxy_url,
-                identity_keypair: Some(identity_provider.identity().to_owned()),
-            }));
+                let identity_provider = Box::new(identity_provider);
+                let session_store = Box::new(session_store);
 
-            // Start the client listener in the background
-            let client_handle = tokio::task::spawn_local(async move {
-                let mut client =
-                    UserClient::listen(identity_provider, session_store, proxy_client).await?;
+                let proxy_client = Box::new(DefaultProxyClient::new(ProxyClientConfig {
+                    proxy_url,
+                    identity_keypair: Some(identity_provider.identity().to_owned()),
+                }));
 
-                if generate_new_code {
+                let client_handle = tokio::task::spawn_local(async move {
+                    let mut client =
+                        UserClient::listen(identity_provider, session_store, proxy_client).await?;
                     if psk_mode {
                         client.enable_psk(event_tx, response_rx).await
                     } else {
                         client.enable_rendezvous(event_tx, response_rx).await
                     }
-                } else {
-                    client.listen_cached_only(event_tx, response_rx).await
+                });
+
+                while let Some(event) = event_rx.recv().await {
+                    handle_listen_event(event, &response_tx, &cached_sessions).await?;
                 }
-            });
 
-            // Handle events from the client
-            println!("Starting user client...\n");
-
-            while let Some(event) = event_rx.recv().await {
-                match event {
-                    UserClientEvent::Listening {} => {
-                        if !generate_new_code {
-                            println!("Listening for cached sessions only...");
-                            println!("(Press Ctrl+C to exit)\n");
-                        }
+                match client_handle.await {
+                    Ok(Ok(())) => {
+                        println!("\nUser client session ended.");
+                        Ok(())
                     }
-
-                    UserClientEvent::RendevouzCodeGenerated { code } => {
-                        println!("\n========================================");
-                        println!("  RENDEZVOUS CODE");
-                        println!("========================================");
-                        println!("  {code}");
-                        println!("========================================\n");
-                        println!("Share this code with your remote device.");
-                        println!("The remote client will need this code to connect.\n");
-                        println!("Waiting for remote clients...");
-                        println!("(Press Ctrl+C to exit)\n");
+                    Ok(Err(e)) => bail!("User client error: {}", e),
+                    Err(e) if e.is_cancelled() => {
+                        println!("\nUser client session ended.");
+                        Ok(())
                     }
-
-                    UserClientEvent::PskTokenGenerated { token } => {
-                        println!("\n========================================");
-                        println!("  PSK TOKEN (COPY ENTIRE TOKEN)");
-                        println!("========================================");
-                        println!("  {token}");
-                        println!("========================================\n");
-                        println!("Share this token securely with the remote device.");
-                        println!("Waiting for remote clients...");
-                        println!("(Press Ctrl+C to exit)\n");
-                    }
-
-                    UserClientEvent::HandshakeStart {} => {
-                        println!("Noise handshake started");
-                    }
-
-                    UserClientEvent::HandshakeProgress { message } => {
-                        eprintln!("Handshake progress: {message}");
-                    }
-
-                    UserClientEvent::HandshakeComplete {} => {
-                        println!("Secure channel established");
-                    }
-
-                    UserClientEvent::HandshakeFingerprint { fingerprint } => {
-                        println!("\n========================================");
-                        println!("  SECURITY VERIFICATION REQUIRED");
-                        println!("========================================");
-                        println!("  Handshake Fingerprint: {fingerprint}");
-                        println!("========================================");
-                        println!("\nPlease compare this fingerprint with the");
-                        println!("one shown on the remote device.");
-                        println!("They must match EXACTLY.\n");
-
-                        let approved = Confirm::new("Do the fingerprints match?")
-                            .with_default(false)
-                            .prompt()
-                            .unwrap_or(false);
-
-                        response_tx
-                            .send(UserClientResponse::VerifyFingerprint { approved })
-                            .await
-                            .ok();
-                    }
-
-                    UserClientEvent::FingerprintVerified {} => {
-                        println!("Fingerprint verified successfully!\n");
-                    }
-
-                    UserClientEvent::FingerprintRejected { reason } => {
-                        println!("Fingerprint rejected: {reason}\n");
-                        println!("Connection from remote device was refused.\n");
-                    }
-
-                    UserClientEvent::CredentialRequest {
-                        domain,
-                        request_id,
-                        session_id,
-                    } => {
-                        println!("\n--- Credential Request ---");
-                        println!("  Domain: {domain}");
-
-                        // Look up credential from Bitwarden CLI
-                        match lookup_credential(&domain) {
-                            Some(credential) => {
-                                println!(
-                                    "  Found: {} ({})",
-                                    credential.username.as_deref().unwrap_or("no username"),
-                                    credential.uri.as_deref().unwrap_or("no uri")
-                                );
-                                println!();
-
-                                let approved =
-                                    Confirm::new(&format!("Send credential for {domain}?"))
-                                        .with_default(false)
-                                        .prompt()
-                                        .unwrap_or(false);
-
-                                if approved {
-                                    response_tx
-                                        .send(UserClientResponse::RespondCredential {
-                                            request_id,
-                                            session_id: session_id.clone(),
-                                            approved: true,
-                                            credential: Some(credential),
-                                        })
-                                        .await
-                                        .ok();
-
-                                    println!("Credential sent for {domain}\n");
-                                } else {
-                                    response_tx
-                                        .send(UserClientResponse::RespondCredential {
-                                            request_id,
-                                            session_id: session_id.clone(),
-                                            approved: false,
-                                            credential: None,
-                                        })
-                                        .await
-                                        .ok();
-
-                                    println!("Credential denied for {domain}\n");
-                                }
-                            }
-                            None => {
-                                println!("  No credential found in vault");
-                                println!();
-
-                                response_tx
-                                    .send(UserClientResponse::RespondCredential {
-                                        request_id,
-                                        session_id,
-                                        approved: false,
-                                        credential: None,
-                                    })
-                                    .await
-                                    .ok();
-
-                                println!("No credential available for {domain}\n");
-                            }
-                        }
-                    }
-
-                    UserClientEvent::CredentialApproved { domain } => {
-                        eprintln!("Credential approved: {domain}");
-                    }
-
-                    UserClientEvent::CredentialDenied { domain } => {
-                        eprintln!("Credential denied: {domain}");
-                    }
-
-                    UserClientEvent::ClientDisconnected {} => {
-                        println!("Client disconnected");
-                    }
-
-                    UserClientEvent::Error { message, context } => {
-                        let ctx = context.as_deref().unwrap_or("unknown");
-                        println!("Error ({ctx}): {message}");
-                    }
-                }
-            }
-
-            // Wait for client task to complete
-            match client_handle.await {
-                Ok(Ok(())) => {
-                    println!("\nUser client session ended.");
-                    Ok(())
-                }
-                Ok(Err(e)) => {
-                    bail!("User client error: {}", e);
-                }
-                Err(e) => {
-                    bail!("Task error: {}", e);
+                    Err(e) => bail!("Task error: {}", e),
                 }
             }
         })
