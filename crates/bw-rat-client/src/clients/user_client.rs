@@ -402,22 +402,27 @@ impl UserClient {
                 })
                 .await
                 .ok();
-        } else {
-            // Existing/cached session or PSK: proceed immediately without verification
+        } else if !is_new_connection {
+            // Existing/cached session: already verified on first connection.
+            // Re-cache to update timestamps (cached_at / last_connected_at),
+            // and save the new transport state from the fresh handshake.
+            self.transports.insert(source, transport.clone());
+            self.session_store.cache_session(source)?;
+            self.session_store
+                .save_transport_state(&source, transport)?;
+        } else if is_psk_connection {
+            // PSK connection: trust established via pre-shared key, no verification needed
             self.transports.insert(source, transport.clone());
             self.session_store.cache_session(source)?;
             self.session_store
                 .save_transport_state(&source, transport)?;
 
-            if is_new_connection {
-                // PSK new connection: show fingerprint informationally
-                event_tx
-                    .send(UserClientEvent::HandshakeFingerprint {
-                        fingerprint: fingerprint_str,
-                    })
-                    .await
-                    .ok();
-            }
+            event_tx
+                .send(UserClientEvent::HandshakeFingerprint {
+                    fingerprint: fingerprint_str,
+                })
+                .await
+                .ok();
         }
 
         Ok(())
