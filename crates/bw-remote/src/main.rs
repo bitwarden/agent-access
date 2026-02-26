@@ -20,10 +20,10 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Initialize logging with appropriate level
-    let log_level = if cli.debug_log {
+    let log_level = if cli.verbose {
         tracing::Level::DEBUG
     } else {
-        tracing::Level::INFO
+        tracing::Level::WARN
     };
 
     tracing_subscriber::fmt()
