@@ -107,6 +107,17 @@ Storage directory: `~/.bw-remote/`
 - Session cache: `session_cache_{name}.json` — array of sessions keyed by `IdentityFingerprint`, with optional `PersistentTransportState` (CBOR) for session resumption without re-handshake
 - Transport auto-rekeys every 24 hours; replay nonces are not persisted (reset on load, 24h max message age)
 
+## Before Committing
+
+Always run these checks before committing:
+
+```bash
+cargo fmt --all -- --check         # Verify formatting
+cargo clippy --workspace           # Lint check
+cargo build --workspace            # Verify it compiles
+cargo test --workspace             # Run all tests
+```
+
 ## Rust Conventions
 
 - Edition 2024, minimum Rust version 1.85, toolchain channel 1.93
