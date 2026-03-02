@@ -120,6 +120,7 @@ cargo test --workspace             # Run all tests
 
 ## Rust Conventions
 
+- **Write idiomatic Rust**: prefer iterators over manual loops, use pattern matching, leverage the type system, embrace ownership/borrowing, and follow standard Rust API guidelines
 - Edition 2024, minimum Rust version 1.85, toolchain channel 1.93
 - Async runtime: Tokio (multi-threaded)
 - Error handling: `thiserror` for library errors, `color-eyre` in the CLI binary
