@@ -133,8 +133,8 @@ fn lookup_credential(domain: &str, session: Option<&str>) -> Option<UserCredenti
 /// Fallback path when `bw` is not found on `$PATH` (macOS Homebrew default).
 const BW_FALLBACK_PATH: &str = "/opt/homebrew/bin/bw";
 
-/// Find bw executable on PATH, falling back to a well-known location.
-fn bw_path() -> String {
+/// Find bw executable on PATH.
+fn which_bw() -> Option<String> {
     Command::new("which")
         .arg("bw")
         .output()
@@ -142,7 +142,11 @@ fn bw_path() -> String {
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| BW_FALLBACK_PATH.to_string())
+}
+
+/// Find bw executable on PATH, falling back to a well-known location.
+fn bw_path() -> String {
+    which_bw().unwrap_or_else(|| BW_FALLBACK_PATH.to_string())
 }
 
 /// Run `bw unlock` with the given master password and return the session key.
@@ -189,7 +193,24 @@ struct BwStatus {
 /// variable on the child process so that `bw status` correctly reports the
 /// vault as unlocked.
 fn check_bw_status(session: Option<&str>) -> BwStatus {
-    let mut cmd = Command::new(bw_path());
+    let path = match which_bw() {
+        Some(p) => p,
+        None => {
+            return BwStatus {
+                user_email: None,
+                is_unlocked: false,
+                status_spans: vec![
+                    Span::styled("CLI ", Style::default().fg(Color::Red)),
+                    Span::styled(
+                        "not found",
+                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                    ),
+                ],
+            };
+        }
+    };
+
+    let mut cmd = Command::new(path);
     cmd.arg("status");
     if let Some(key) = session {
         cmd.env("BW_SESSION", key);
