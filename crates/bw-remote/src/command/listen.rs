@@ -313,7 +313,7 @@ async fn run_event_loop(
     app.set_mode(Mode::TextInput);
     app.set_session_panel(session_info_messages(sessions, None));
     app.footer = idle_footer();
-    app.commands = &["/pair", "/exit"];
+    app.commands = &["/pair [name]", "/exit"];
 
     let mut tick_interval = tokio::time::interval(std::time::Duration::from_millis(150));
 
@@ -357,7 +357,7 @@ async fn run_event_loop(
                                     phase = Phase::Idle;
                                     app.set_mode(Mode::TextInput);
                                     app.footer = idle_footer();
-                                    app.commands = &["/pair", "/exit"];
+                                    app.commands = &["/pair [name]", "/exit"];
                                 }
 
                                 // Credential approval
@@ -391,7 +391,7 @@ async fn run_event_loop(
                                     }
                                     app.set_mode(Mode::TextInput);
                                     app.footer = idle_footer();
-                                    app.commands = &["/pair", "/exit"];
+                                    app.commands = &["/pair [name]", "/exit"];
                                 }
 
                                 (_, AppAction::Quit) => break EventLoopExit::Quit,
