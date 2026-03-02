@@ -96,10 +96,7 @@ struct BwItem {
 
 /// Look up a credential from the Bitwarden CLI
 fn lookup_credential(domain: &str, session: Option<&str>) -> Option<UserCredentialData> {
-    // Try to find bw on PATH first, then fall back to homebrew location
-    let bw_path = which_bw().unwrap_or_else(|| "/opt/homebrew/bin/bw".to_string());
-
-    let mut cmd = Command::new(&bw_path);
+    let mut cmd = Command::new(bw_path());
     cmd.args(["get", "item", domain]);
     if let Some(key) = session {
         cmd.env("BW_SESSION", key);
@@ -133,8 +130,11 @@ fn lookup_credential(domain: &str, session: Option<&str>) -> Option<UserCredenti
     })
 }
 
-/// Find bw executable on PATH
-fn which_bw() -> Option<String> {
+/// Fallback path when `bw` is not found on `$PATH` (macOS Homebrew default).
+const BW_FALLBACK_PATH: &str = "/opt/homebrew/bin/bw";
+
+/// Find bw executable on PATH, falling back to a well-known location.
+fn bw_path() -> String {
     Command::new("which")
         .arg("bw")
         .output()
@@ -142,14 +142,15 @@ fn which_bw() -> Option<String> {
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| BW_FALLBACK_PATH.to_string())
 }
 
 /// Run `bw unlock` with the given master password and return the session key.
 ///
 /// The password is passed via the `BW_MASTER_PASSWORD` environment variable on the
 /// child process only (not set in the host environment).
-fn run_bw_unlock(bw_path: &str, password: &str) -> Result<String, String> {
-    let output = Command::new(bw_path)
+fn run_bw_unlock(password: &str) -> Result<String, String> {
+    let output = Command::new(bw_path())
         .args(["unlock", "--passwordenv", "BW_MASTER_PASSWORD", "--raw"])
         .env("BW_MASTER_PASSWORD", password)
         .output()
@@ -188,24 +189,7 @@ struct BwStatus {
 /// variable on the child process so that `bw status` correctly reports the
 /// vault as unlocked.
 fn check_bw_status(session: Option<&str>) -> BwStatus {
-    let bw_path = match which_bw() {
-        Some(p) => p,
-        None => {
-            return BwStatus {
-                user_email: None,
-                is_unlocked: false,
-                status_spans: vec![
-                    Span::styled("CLI ", Style::default().fg(Color::Red)),
-                    Span::styled(
-                        "not found",
-                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                    ),
-                ],
-            };
-        }
-    };
-
-    let mut cmd = Command::new(&bw_path);
+    let mut cmd = Command::new(bw_path());
     cmd.arg("status");
     if let Some(key) = session {
         cmd.env("BW_SESSION", key);
@@ -264,6 +248,14 @@ fn check_bw_status(session: Option<&str>) -> BwStatus {
                 ),
             ],
         },
+    }
+}
+
+/// Apply vault status information to the TUI header.
+fn apply_bw_status(app: &mut App, status: BwStatus) {
+    app.vault_status = Some(status.status_spans);
+    if let Some(email) = status.user_email {
+        app.account_name = Some(email);
     }
 }
 
@@ -365,10 +357,8 @@ async fn run_event_loop(
     let mut phase = Phase::Idle;
 
     // Seed session info panel for this iteration
-    app.set_mode(Mode::TextInput);
     app.set_session_panel(session_info_messages(sessions, None));
-    app.footer = idle_footer();
-    app.commands = IDLE_COMMANDS;
+    app.enter_idle(idle_footer(), IDLE_COMMANDS);
 
     let mut tick_interval = tokio::time::interval(std::time::Duration::from_millis(150));
 
@@ -413,11 +403,9 @@ async fn run_event_loop(
                                         app.push_msg(MessageKind::Error, "Usage: /bw-session <key>");
                                     } else {
                                         let status = check_bw_status(Some(&key));
-                                        app.vault_status = Some(status.status_spans);
-                                        if let Some(email) = status.user_email {
-                                            app.account_name = Some(email);
-                                        }
-                                        if status.is_unlocked {
+                                        let unlocked = status.is_unlocked;
+                                        apply_bw_status(app, status);
+                                        if unlocked {
                                             *bw_session = Some(key);
                                             app.push_msg(MessageKind::Success, "Session key accepted — vault unlocked");
                                         } else {
@@ -431,10 +419,7 @@ async fn run_event_loop(
                                     if s.is_empty() {
                                         app.push_msg(MessageKind::Info, "Unlock cancelled");
                                         phase = Phase::Idle;
-                                        app.set_mode(Mode::TextInput);
-                                        app.input_title = " Commands ";
-                                        app.footer = idle_footer();
-                                        app.commands = IDLE_COMMANDS;
+                                        app.enter_idle(idle_footer(), IDLE_COMMANDS);
                                     } else {
                                         let password = s.clone();
                                         app.push_msg(MessageKind::Status, "Unlocking vault...");
@@ -442,25 +427,27 @@ async fn run_event_loop(
                                         term.draw(|frame| app.draw(frame))
                                             .map_err(|e| color_eyre::eyre::eyre!("TUI draw error: {}", e))?;
 
-                                        let bw_path = which_bw().unwrap_or_else(|| "/opt/homebrew/bin/bw".to_string());
                                         let result = tokio::task::spawn_blocking(move || {
-                                            run_bw_unlock(&bw_path, &password)
+                                            run_bw_unlock(&password)
                                         }).await;
 
                                         phase = Phase::Idle;
-                                        app.set_mode(Mode::TextInput);
-                                        app.input_title = " Commands ";
-                                        app.footer = idle_footer();
-                                        app.commands = IDLE_COMMANDS;
+                                        app.enter_idle(idle_footer(), IDLE_COMMANDS);
 
                                         match result {
                                             Ok(Ok(key)) => {
                                                 *bw_session = Some(key);
-                                                let status = check_bw_status(bw_session.as_deref());
-                                                app.vault_status = Some(status.status_spans);
-                                                if let Some(email) = status.user_email {
-                                                    app.account_name = Some(email);
-                                                }
+                                                // Successful unlock is proof — set status directly
+                                                // to avoid a redundant `bw status` child process.
+                                                app.vault_status = Some(vec![
+                                                    Span::styled("Vault ", Style::default().fg(Color::Green)),
+                                                    Span::styled(
+                                                        "unlocked",
+                                                        Style::default()
+                                                            .fg(Color::Green)
+                                                            .add_modifier(Modifier::BOLD),
+                                                    ),
+                                                ]);
                                                 app.push_msg(MessageKind::Success, "Vault unlocked successfully");
                                             }
                                             Ok(Err(e)) => {
@@ -483,9 +470,7 @@ async fn run_event_loop(
                                             .ok();
                                         app.push_msg(MessageKind::Error, "Fingerprint rejected");
                                         phase = Phase::Idle;
-                                        app.set_mode(Mode::TextInput);
-                                        app.footer = idle_footer();
-                                        app.commands = IDLE_COMMANDS;
+                                        app.enter_idle(idle_footer(), IDLE_COMMANDS);
                                     } else if let Some(name) = pending_session_name.clone() {
                                         // Name was pre-set via /pair — send immediately
                                         response_tx
@@ -494,9 +479,7 @@ async fn run_event_loop(
                                             .ok();
                                         app.push_msg(MessageKind::Success, "Fingerprint approved");
                                         phase = Phase::Idle;
-                                        app.set_mode(Mode::TextInput);
-                                        app.footer = idle_footer();
-                                        app.commands = IDLE_COMMANDS;
+                                        app.enter_idle(idle_footer(), IDLE_COMMANDS);
                                     } else {
                                         // No name pre-set — prompt user for one
                                         app.push_msg(MessageKind::Success, "Fingerprint approved");
@@ -521,10 +504,7 @@ async fn run_event_loop(
                                         .await
                                         .ok();
                                     phase = Phase::Idle;
-                                    app.input_title = " Commands ";
-                                    app.set_mode(Mode::TextInput);
-                                    app.footer = idle_footer();
-                                    app.commands = IDLE_COMMANDS;
+                                    app.enter_idle(idle_footer(), IDLE_COMMANDS);
                                 }
 
                                 // Credential approval
@@ -556,9 +536,7 @@ async fn run_event_loop(
                                             app.push_msg(MessageKind::Error, format!("Credential denied for {domain}"));
                                         }
                                     }
-                                    app.set_mode(Mode::TextInput);
-                                    app.footer = idle_footer();
-                                    app.commands = IDLE_COMMANDS;
+                                    app.enter_idle(idle_footer(), IDLE_COMMANDS);
                                 }
 
                                 (_, AppAction::Quit) => break EventLoopExit::Quit,
@@ -699,9 +677,7 @@ async fn run_user_client_session(proxy_url: String, psk_mode: bool) -> Result<()
             let mut app = App::new();
             app.client_label = "User client";
             let mut bw_session: Option<String> = None;
-            let bw_status = check_bw_status(None);
-            app.account_name = bw_status.user_email;
-            app.vault_status = Some(bw_status.status_spans);
+            apply_bw_status(&mut app, check_bw_status(None));
             let mut term = init_terminal();
             let mut reader = EventStream::new();
 

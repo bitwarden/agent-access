@@ -3,6 +3,8 @@
 //! Provides a message-log + input-panel layout with mode-based input handling.
 //! Uses a fullscreen alternate-screen viewport managed entirely through ratatui.
 
+use std::borrow::Cow;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     DefaultTerminal, Frame,
@@ -232,6 +234,15 @@ impl App {
         self.mode = mode;
         self.input.clear();
         self.password_mode = false;
+    }
+
+    /// Reset the TUI to idle state: text input mode, default title, and the given
+    /// footer/commands.
+    pub fn enter_idle(&mut self, footer: Line<'static>, commands: &'static [&'static str]) {
+        self.set_mode(Mode::TextInput);
+        self.input_title = " Commands ";
+        self.footer = footer;
+        self.commands = commands;
     }
 
     /// Replace the persistent session-info panel content.
@@ -558,10 +569,10 @@ impl App {
     fn draw_input(&self, frame: &mut Frame, area: ratatui::layout::Rect) {
         match &self.mode {
             Mode::TextInput => {
-                let display_text = if self.password_mode {
-                    "*".repeat(self.input.len())
+                let display_text: Cow<'_, str> = if self.password_mode {
+                    Cow::Owned("*".repeat(self.input.len()))
                 } else {
-                    self.input.clone()
+                    Cow::Borrowed(&self.input)
                 };
                 let input_line = Line::from(vec![
                     Span::styled("> ", Style::default().fg(Color::Cyan)),
