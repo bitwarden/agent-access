@@ -60,10 +60,10 @@ enum Phase {
     },
 }
 
-/// Whether the event loop exited normally or because `/new` was requested.
+/// Whether the event loop exited normally or because `/pair` was requested.
 enum EventLoopExit {
     Quit,
-    NewSession,
+    NewSession { name: Option<String> },
 }
 
 /// Bitwarden CLI login item structure
@@ -233,29 +233,38 @@ fn session_info_messages(sessions: &[SessionInfo], pending_label: Option<&str>) 
                 .add_modifier(Modifier::BOLD),
         )],
     )];
-    for (fingerprint, _, cached_at, last_connected_at) in &sorted {
+    for (fingerprint, name, cached_at, last_connected_at) in &sorted {
         let short_hex = hex::encode(fingerprint.0)
             .chars()
             .take(12)
             .collect::<String>();
         let created = format_relative_time(*cached_at);
         let last_used = format_relative_time(*last_connected_at);
-        msgs.push(Message::rich(
-            MessageKind::Info,
-            vec![
-                Span::raw("  "),
-                Span::styled(
-                    short_hex,
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    format!("  created {created}, last used {last_used}"),
-                    Style::default().fg(Color::DarkGray),
-                ),
-            ],
+        let mut spans = vec![Span::raw("  ")];
+        if let Some(name) = name {
+            spans.push(Span::styled(
+                name.clone(),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::styled(
+                format!(" ({short_hex})"),
+                Style::default().fg(Color::DarkGray),
+            ));
+        } else {
+            spans.push(Span::styled(
+                short_hex,
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+        spans.push(Span::styled(
+            format!("  created {created}, last used {last_used}"),
+            Style::default().fg(Color::DarkGray),
         ));
+        msgs.push(Message::rich(MessageKind::Info, spans));
     }
     if let Some(label) = pending_label {
         msgs.push(Message::new(MessageKind::Info, format!("  {label}")));
@@ -266,7 +275,8 @@ fn session_info_messages(sessions: &[SessionInfo], pending_label: Option<&str>) 
 /// Set up the idle-mode footer for the TUI.
 fn idle_footer() -> Line<'static> {
     Line::from(vec![
-        Span::styled(" /new", Style::default().fg(Color::Cyan)),
+        Span::styled(" /pair", Style::default().fg(Color::Cyan)),
+        Span::styled(" [name]", Style::default().fg(Color::DarkGray)),
         Span::raw(" create session  "),
         Span::styled("/exit", Style::default().fg(Color::Cyan)),
         Span::raw(" quit  "),
@@ -280,7 +290,7 @@ fn idle_footer() -> Line<'static> {
 /// in a single `select!` loop. The `client_handle` is aborted on exit.
 ///
 /// The TUI state (`app`, `term`, `reader`) is owned by the caller so that
-/// it survives across `/new` session restarts without flickering.
+/// it survives across `/pair` session restarts without flickering.
 async fn run_event_loop(
     app: &mut App,
     term: &mut ratatui::DefaultTerminal,
@@ -296,7 +306,7 @@ async fn run_event_loop(
     app.set_mode(Mode::TextInput);
     app.set_session_panel(session_info_messages(sessions, None));
     app.footer = idle_footer();
-    app.commands = &["/new", "/exit"];
+    app.commands = &["/pair", "/exit"];
 
     let mut tick_interval = tokio::time::interval(std::time::Duration::from_millis(150));
 
@@ -315,8 +325,11 @@ async fn run_event_loop(
                         if let Some(action) = app.handle_key(key) {
                             match (&phase, &action) {
                                 // Idle commands
-                                (Phase::Idle, AppAction::Submit(s)) if s == "/new" => {
-                                    break EventLoopExit::NewSession;
+                                (Phase::Idle, AppAction::Submit(s)) if s.starts_with("/pair") => {
+                                    let name = s.strip_prefix("/pair ")
+                                        .map(|n| n.trim().to_string())
+                                        .filter(|n| !n.is_empty());
+                                    break EventLoopExit::NewSession { name };
                                 }
                                 (Phase::Idle, AppAction::Submit(s)) if s == "/exit" => {
                                     break EventLoopExit::Quit;
@@ -337,7 +350,7 @@ async fn run_event_loop(
                                     phase = Phase::Idle;
                                     app.set_mode(Mode::TextInput);
                                     app.footer = idle_footer();
-                                    app.commands = &["/new", "/exit"];
+                                    app.commands = &["/pair", "/exit"];
                                 }
 
                                 // Credential approval
@@ -371,7 +384,7 @@ async fn run_event_loop(
                                     }
                                     app.set_mode(Mode::TextInput);
                                     app.footer = idle_footer();
-                                    app.commands = &["/new", "/exit"];
+                                    app.commands = &["/pair", "/exit"];
                                 }
 
                                 (_, AppAction::Quit) => break EventLoopExit::Quit,
@@ -491,10 +504,11 @@ async fn run_user_client_session(proxy_url: String, psk_mode: bool) -> Result<()
     local
         .run_until(async move {
             // First iteration: if cached sessions exist, listen on those immediately.
-            // On `/new`, we loop back and start a fresh rendezvous/psk session.
+            // On `/pair`, we loop back and start a fresh rendezvous/psk session.
             let mut force_new_session = false;
+            let mut pending_session_name: Option<String> = None;
 
-            // Create TUI state once — it survives across `/new` restarts.
+            // Create TUI state once — it survives across `/pair` restarts.
             let mut app = App::new();
             app.client_label = "User client";
             let bw_status = check_bw_status();
@@ -506,7 +520,8 @@ async fn run_user_client_session(proxy_url: String, psk_mode: bool) -> Result<()
             loop {
                 let identity_provider =
                     Box::new(FileIdentityStorage::load_or_generate("user_client")?);
-                let session_store = Box::new(FileSessionCache::load_or_create("user_client")?);
+                let session_cache = FileSessionCache::load_or_create("user_client")?;
+                let session_store = Box::new(session_cache);
                 let cached_sessions = session_store.list_sessions();
 
                 let has_cached = !cached_sessions.is_empty() && !force_new_session;
@@ -521,6 +536,7 @@ async fn run_user_client_session(proxy_url: String, psk_mode: bool) -> Result<()
 
                 let sessions = session_store.list_sessions();
 
+                let session_name = pending_session_name.take();
                 let client_handle = tokio::task::spawn_local(async move {
                     let mut client = UserClient::listen(
                         identity_provider as Box<dyn IdentityProvider>,
@@ -528,6 +544,10 @@ async fn run_user_client_session(proxy_url: String, psk_mode: bool) -> Result<()
                         proxy_client,
                     )
                     .await?;
+
+                    if let Some(name) = session_name {
+                        client.set_pending_session_name(name);
+                    }
 
                     if has_cached {
                         client.listen_cached_only(event_tx, response_rx).await
@@ -549,8 +569,9 @@ async fn run_user_client_session(proxy_url: String, psk_mode: bool) -> Result<()
                 )
                 .await?
                 {
-                    EventLoopExit::NewSession => {
+                    EventLoopExit::NewSession { name } => {
                         force_new_session = true;
+                        pending_session_name = name;
                         continue;
                     }
                     EventLoopExit::Quit => break,

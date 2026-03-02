@@ -176,7 +176,7 @@ pub struct App {
     pub mode: Mode,
     pub should_quit: bool,
     pub footer: Line<'static>,
-    /// Available slash commands for the current phase (e.g. &["/exit", "/new"]).
+    /// Available slash commands for the current phase (e.g. &["/pair", "/exit"]).
     pub commands: &'static [&'static str],
     /// Authenticated account email (from `bw status`).
     pub account_name: Option<String>,
