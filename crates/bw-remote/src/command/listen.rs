@@ -219,6 +219,13 @@ fn check_bw_status() -> BwStatus {
 
 type SessionInfo = (IdentityFingerprint, Option<String>, u64, u64);
 
+/// Reload the session list from disk (the client may have updated it).
+fn reload_sessions() -> Vec<SessionInfo> {
+    FileSessionCache::load_or_create("user_client")
+        .map(|cache| cache.list_sessions())
+        .unwrap_or_default()
+}
+
 /// Build session info messages for display in the TUI.
 fn session_info_messages(sessions: &[SessionInfo], pending_label: Option<&str>) -> Vec<Message> {
     let mut sorted = sessions.to_vec();
@@ -475,9 +482,11 @@ async fn run_event_loop(
                                 // Update session panel with pending label
                                 app.set_session_panel(session_info_messages(sessions, Some("New session  (awaiting connection)")));
                             }
-                            UserClientEvent::SessionRefreshed { .. } => {
-                                // Known device reconnected — clear pending label
-                                app.set_session_panel(session_info_messages(sessions, None));
+                            UserClientEvent::SessionRefreshed { .. }
+                            | UserClientEvent::FingerprintVerified { .. } => {
+                                // Session store was updated — reload from disk
+                                let fresh = reload_sessions();
+                                app.set_session_panel(session_info_messages(&fresh, None));
                             }
                             _ => {}
                         }
