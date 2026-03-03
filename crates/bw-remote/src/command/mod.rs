@@ -25,6 +25,16 @@ const DEFAULT_PROXY_URL: &str = "ws://localhost:8080";
 #[derive(Parser)]
 #[command(name = "bw-remote")]
 #[command(author, version, about = "Connect to a user-client through a proxy to request credentials over a secure channel", long_about = None)]
+#[command(after_help = "\
+AUTOMATION / AGENT / LLM USE:
+  For non-interactive (single-shot) credential retrieval:
+
+    1. List cached sessions:  bw-remote cache list
+    2. Request a credential:  bw-remote --domain <DOMAIN> --session <HEX> --output json
+
+  --session accepts a full 64-char hex fingerprint or any unique prefix from cache list.
+  --output json returns structured JSON to stdout (status to stderr).
+  Exit codes: 0=success, 1=error, 2=connection failed, 3=auth failed, 4=not found, 5=fingerprint mismatch")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
