@@ -29,19 +29,32 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 \
     ca-certificates \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Run as non-root user
-RUN groupadd --system approxy && useradd --system --gid approxy approxy
+# Install Caddy (static binary)
+ARG CADDY_VERSION=2.9.1
+RUN curl -fsSL "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_amd64.tar.gz" \
+    | tar xz -C /usr/local/bin caddy \
+    && apt-get purge -y curl && apt-get autoremove -y
+
+RUN groupadd --system approxy && useradd --system --gid approxy --create-home approxy
 
 COPY --from=builder /build/target/release/ap-proxy /usr/local/bin/ap-proxy
+COPY crates/ap-proxy/Caddyfile /etc/caddy/Caddyfile
+COPY crates/ap-proxy/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Containers must bind all interfaces, not 127.0.0.1
-ENV BIND_ADDR=0.0.0.0:8080
+RUN mkdir -p /home/approxy/.config/caddy /home/approxy/.local/share/caddy \
+    && chown -R approxy:approxy /home/approxy
+
+# ap-proxy listens on localhost; Caddy reverse-proxies on 0.0.0.0:8080
+ENV BIND_ADDR=127.0.0.1:9090
 ENV RUST_LOG=info
+ENV HOME=/home/approxy
 
 EXPOSE 8080
 
 USER approxy
 
-CMD ["ap-proxy"]
+CMD ["entrypoint.sh"]
