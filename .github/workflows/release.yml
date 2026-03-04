@@ -68,6 +68,8 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build bw-remote
+        env:
+          OPENSSL_VENDORED: ${{ matrix.target == 'x86_64-unknown-linux-musl' && '1' || '' }}
         run: cargo build --release --target ${{ matrix.target }} -p bw-remote
 
       - name: Package (tar.gz)
