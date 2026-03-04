@@ -16,6 +16,7 @@ target
 # Contains mutation testing data
 **/mutants.out*/
 
+
 # Node
 node_modules
 
@@ -25,3 +26,4 @@ __pycache__
 *.pyc
 *.egg-info
 
+extra-root-ca.crt
