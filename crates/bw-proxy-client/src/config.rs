@@ -1,7 +1,4 @@
-use bw_proxy_protocol::{
-    auth::{Identity, IdentityFingerprint, IdentityKeyPair},
-    rendevouz::RendevouzCode,
-};
+use bw_proxy_protocol::{Identity, IdentityFingerprint, IdentityKeyPair, RendevouzCode};
 
 /// Configuration for creating a proxy client.
 ///
