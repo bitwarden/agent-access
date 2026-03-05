@@ -1,4 +1,6 @@
-use bw_proxy_protocol::{IdentityFingerprint, IdentityKeyPair, Messages, ProxyError, RendevouzCode};
+use bw_proxy_protocol::{
+    IdentityFingerprint, IdentityKeyPair, Messages, ProxyError, RendevouzCode,
+};
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
