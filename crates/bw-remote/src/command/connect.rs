@@ -97,6 +97,7 @@ impl ConnectArgs {
 }
 
 /// Connection mode for establishing a connection
+#[derive(Debug)]
 enum ConnectionMode {
     /// New connection requiring rendezvous code pairing
     New { rendezvous_code: String },
@@ -231,21 +232,12 @@ async fn run_interactive_session(
     let cached_sessions = session_store.list_sessions();
 
     // Determine if we can skip straight to connecting based on CLI flags
-    let cli_connection_mode = if let Some(session_hex) = session_fingerprint {
-        let fingerprint = resolve_session_prefix(&session_hex, &cached_sessions)?;
-        Some(ConnectionMode::Existing {
-            remote_fingerprint: fingerprint,
-        })
-    } else if let Some(code_or_token) = token {
-        match parse_token(&code_or_token)? {
-            TokenType::Rendezvous(code) => Some(ConnectionMode::New {
-                rendezvous_code: code,
-            }),
-            TokenType::Psk { psk, fingerprint } => Some(ConnectionMode::NewPsk {
-                psk,
-                remote_fingerprint: fingerprint,
-            }),
-        }
+    let cli_connection_mode = if session_fingerprint.is_some() || token.is_some() {
+        Some(resolve_connection_mode(
+            token.as_deref(),
+            session_fingerprint.as_deref(),
+            &cached_sessions,
+        )?)
     } else {
         None
     };
@@ -647,61 +639,20 @@ async fn run_single_shot(
 
     // Determine connection mode from flags (no interactive prompts)
     let cached_sessions = session_store.list_sessions();
-    let mode = if let Some(session_hex) = session_fingerprint {
-        match resolve_session_prefix(&session_hex, &cached_sessions) {
-            Ok(fingerprint) => ConnectionMode::Existing {
-                remote_fingerprint: fingerprint,
-            },
-            Err(e) => {
-                let msg = format!("{e}");
-                match output {
-                    OutputFormat::Json => emit_json_error(&msg, "general_error"),
-                    OutputFormat::Text => eprintln!("Error: {msg}"),
-                }
-                std::process::exit(exit_code::GENERAL_ERROR);
+    let mode = match resolve_connection_mode(
+        token.as_deref(),
+        session_fingerprint.as_deref(),
+        &cached_sessions,
+    ) {
+        Ok(m) => m,
+        Err(e) => {
+            let msg = format!("{e}");
+            match output {
+                OutputFormat::Json => emit_json_error(&msg, "general_error"),
+                OutputFormat::Text => eprintln!("Error: {msg}"),
             }
+            std::process::exit(exit_code::GENERAL_ERROR);
         }
-    } else if let Some(code_or_token) = token {
-        match parse_token(&code_or_token) {
-            Ok(TokenType::Rendezvous(code)) => ConnectionMode::New {
-                rendezvous_code: code,
-            },
-            Ok(TokenType::Psk { psk, fingerprint }) => ConnectionMode::NewPsk {
-                psk,
-                remote_fingerprint: fingerprint,
-            },
-            Err(e) => {
-                let msg = format!("{e}");
-                match output {
-                    OutputFormat::Json => emit_json_error(&msg, "general_error"),
-                    OutputFormat::Text => eprintln!("Error: {msg}"),
-                }
-                std::process::exit(exit_code::GENERAL_ERROR);
-            }
-        }
-    } else if cached_sessions.len() == 1 {
-        // Single cached session — use it automatically
-        let (fingerprint, _, _, _) = &cached_sessions[0];
-        ConnectionMode::Existing {
-            remote_fingerprint: *fingerprint,
-        }
-    } else if cached_sessions.is_empty() {
-        let msg = "--domain requires --token or --session (no cached sessions found)";
-        match output {
-            OutputFormat::Json => emit_json_error(msg, "general_error"),
-            OutputFormat::Text => eprintln!("Error: {msg}"),
-        }
-        std::process::exit(exit_code::GENERAL_ERROR);
-    } else {
-        let msg = format!(
-            "--domain requires --token or --session (multiple cached sessions found, specify one with --session). \
-             Use `bw-remote cache list` to see available sessions."
-        );
-        match output {
-            OutputFormat::Json => emit_json_error(&msg, "general_error"),
-            OutputFormat::Text => eprintln!("Error: {msg}"),
-        }
-        std::process::exit(exit_code::GENERAL_ERROR);
     };
 
     eprintln!("Connecting to proxy...");
@@ -879,6 +830,46 @@ fn resolve_session_prefix(
     }
 }
 
+/// Determine the connection mode from CLI flags and cached sessions.
+///
+/// Pure decision logic — returns `Ok(mode)` or an error message instead of
+/// calling `std::process::exit`, making it testable from both the single-shot
+/// and interactive code paths.
+fn resolve_connection_mode(
+    token: Option<&str>,
+    session_fingerprint: Option<&str>,
+    cached_sessions: &[(IdentityFingerprint, Option<String>, u64, u64)],
+) -> Result<ConnectionMode> {
+    if let Some(session_hex) = session_fingerprint {
+        let fingerprint = resolve_session_prefix(session_hex, cached_sessions)?;
+        Ok(ConnectionMode::Existing {
+            remote_fingerprint: fingerprint,
+        })
+    } else if let Some(code_or_token) = token {
+        match parse_token(code_or_token)? {
+            TokenType::Rendezvous(code) => Ok(ConnectionMode::New {
+                rendezvous_code: code,
+            }),
+            TokenType::Psk { psk, fingerprint } => Ok(ConnectionMode::NewPsk {
+                psk,
+                remote_fingerprint: fingerprint,
+            }),
+        }
+    } else if cached_sessions.len() == 1 {
+        let (fingerprint, _, _, _) = &cached_sessions[0];
+        Ok(ConnectionMode::Existing {
+            remote_fingerprint: *fingerprint,
+        })
+    } else if cached_sessions.is_empty() {
+        bail!("--domain requires --token or --session (no cached sessions found)")
+    } else {
+        bail!(
+            "--domain requires --token or --session (multiple cached sessions found, specify one with --session). \
+             Use `bw-remote cache list` to see available sessions."
+        )
+    }
+}
+
 /// Parse a fingerprint from hex string
 #[allow(clippy::string_slice)]
 fn parse_fingerprint_hex(hex: &str) -> Result<IdentityFingerprint> {
@@ -899,4 +890,244 @@ fn parse_fingerprint_hex(hex: &str) -> Result<IdentityFingerprint> {
     }
 
     Ok(IdentityFingerprint(bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper: create an IdentityFingerprint from a repeating byte.
+    fn fp(byte: u8) -> IdentityFingerprint {
+        IdentityFingerprint([byte; 32])
+    }
+
+    /// Helper: build a minimal cached-session tuple.
+    fn session(byte: u8) -> (IdentityFingerprint, Option<String>, u64, u64) {
+        (fp(byte), None, 0, 0)
+    }
+
+    // ── resolve_connection_mode ─────────────────────────────────────
+
+    #[test]
+    fn resolve_mode_single_cached_session_auto_selects() {
+        let sessions = vec![session(0xaa)];
+        let mode = resolve_connection_mode(None, None, &sessions).expect("should succeed");
+        assert!(matches!(
+            mode,
+            ConnectionMode::Existing {
+                remote_fingerprint
+            } if remote_fingerprint == fp(0xaa)
+        ));
+    }
+
+    #[test]
+    fn resolve_mode_no_cached_sessions_errors() {
+        let result = resolve_connection_mode(None, None, &[]);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("no cached sessions found"));
+    }
+
+    #[test]
+    fn resolve_mode_multiple_cached_sessions_errors() {
+        let sessions = vec![session(0xaa), session(0xbb)];
+        let result = resolve_connection_mode(None, None, &sessions);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("multiple cached sessions found"));
+    }
+
+    #[test]
+    fn resolve_mode_session_prefix_selects_existing() {
+        let sessions = vec![session(0xaa), session(0xbb)];
+        let prefix = &hex::encode([0xaa; 32])[..8]; // first 8 chars
+        let mode =
+            resolve_connection_mode(None, Some(prefix), &sessions).expect("should succeed");
+        assert!(matches!(
+            mode,
+            ConnectionMode::Existing {
+                remote_fingerprint
+            } if remote_fingerprint == fp(0xaa)
+        ));
+    }
+
+    #[test]
+    fn resolve_mode_rendezvous_token() {
+        let mode =
+            resolve_connection_mode(Some("ABC123"), None, &[]).expect("should succeed");
+        assert!(matches!(mode, ConnectionMode::New { rendezvous_code } if rendezvous_code == "ABC123"));
+    }
+
+    #[test]
+    fn resolve_mode_psk_token() {
+        let psk_hex = "aa".repeat(32);
+        let fp_hex = "bb".repeat(32);
+        let token = format!("{psk_hex}_{fp_hex}");
+        let mode =
+            resolve_connection_mode(Some(&token), None, &[]).expect("should succeed");
+        assert!(matches!(
+            mode,
+            ConnectionMode::NewPsk {
+                remote_fingerprint, ..
+            } if remote_fingerprint == fp(0xbb)
+        ));
+    }
+
+    #[test]
+    fn resolve_mode_token_takes_priority_over_single_cached() {
+        let sessions = vec![session(0xcc)];
+        let mode = resolve_connection_mode(Some("XYZ789"), None, &sessions)
+            .expect("should succeed");
+        assert!(matches!(mode, ConnectionMode::New { rendezvous_code } if rendezvous_code == "XYZ789"));
+    }
+
+    // ── resolve_session_prefix ──────────────────────────────────────
+
+    #[test]
+    fn prefix_exact_full_hex_match() {
+        let sessions = vec![session(0xaa)];
+        let full_hex = hex::encode([0xaa; 32]);
+        let result = resolve_session_prefix(&full_hex, &sessions).expect("should match");
+        assert_eq!(result, fp(0xaa));
+    }
+
+    #[test]
+    fn prefix_unique_short_match() {
+        let sessions = vec![session(0xaa), session(0xbb)];
+        let result = resolve_session_prefix("aa", &sessions).expect("should match");
+        assert_eq!(result, fp(0xaa));
+    }
+
+    #[test]
+    fn prefix_ambiguous_errors() {
+        // 0xaa and 0xab both start with 'a'
+        let sessions = vec![session(0xaa), session(0xab)];
+        let result = resolve_session_prefix("a", &sessions);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("Ambiguous"));
+    }
+
+    #[test]
+    fn prefix_no_match_errors() {
+        let sessions = vec![session(0xaa)];
+        let result = resolve_session_prefix("ff", &sessions);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("No cached session"));
+    }
+
+    #[test]
+    fn prefix_empty_errors() {
+        let sessions = vec![session(0xaa)];
+        let result = resolve_session_prefix("", &sessions);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("must not be empty"));
+    }
+
+    #[test]
+    fn prefix_non_hex_errors() {
+        let sessions = vec![session(0xaa)];
+        let result = resolve_session_prefix("zzzz", &sessions);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("hex string"));
+    }
+
+    #[test]
+    fn prefix_strips_separators() {
+        let sessions = vec![session(0xaa)];
+        // "aa:aa" should normalize to "aaaa" and match
+        let result = resolve_session_prefix("aa:aa", &sessions).expect("should match");
+        assert_eq!(result, fp(0xaa));
+    }
+
+    // ── parse_token ─────────────────────────────────────────────────
+
+    #[test]
+    fn parse_token_rendezvous_code() {
+        let result = parse_token("ABC123").expect("should parse");
+        assert!(matches!(result, TokenType::Rendezvous(code) if code == "ABC123"));
+    }
+
+    #[test]
+    fn parse_token_psk_token() {
+        let psk_hex = "aa".repeat(32);
+        let fp_hex = "bb".repeat(32);
+        let token = format!("{psk_hex}_{fp_hex}");
+        let result = parse_token(&token).expect("should parse");
+        assert!(matches!(result, TokenType::Psk { .. }));
+    }
+
+    #[test]
+    fn parse_token_invalid_psk_format() {
+        // Has underscore but wrong length
+        let result = parse_token("abc_def");
+        assert!(result.is_err());
+    }
+
+    // ── validate_rendezvous_code ────────────────────────────────────
+
+    #[test]
+    fn rendezvous_valid_plain() {
+        assert!(validate_rendezvous_code("ABCD12").is_ok());
+    }
+
+    #[test]
+    fn rendezvous_valid_with_hyphen() {
+        assert!(validate_rendezvous_code("ABC-D12").is_ok());
+    }
+
+    #[test]
+    fn rendezvous_empty_errors() {
+        let result = validate_rendezvous_code("");
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("required"));
+    }
+
+    #[test]
+    fn rendezvous_wrong_length_errors() {
+        let result = validate_rendezvous_code("AB");
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("6 characters"));
+    }
+
+    #[test]
+    fn rendezvous_non_alphanumeric_errors() {
+        let result = validate_rendezvous_code("ABC!@#");
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("letters and numbers"));
+    }
+
+    // ── parse_fingerprint_hex ───────────────────────────────────────
+
+    #[test]
+    fn fingerprint_valid_64_hex() {
+        let hex_str = "aa".repeat(32);
+        let result = parse_fingerprint_hex(&hex_str).expect("should parse");
+        assert_eq!(result, fp(0xaa));
+    }
+
+    #[test]
+    fn fingerprint_wrong_length_errors() {
+        let result = parse_fingerprint_hex("aabb");
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("64 hex characters"));
+    }
+
+    #[test]
+    fn fingerprint_strips_separators() {
+        // 64 hex chars with colons between byte pairs
+        let with_colons: String = (0..32)
+            .map(|_| "aa")
+            .collect::<Vec<_>>()
+            .join(":");
+        let result = parse_fingerprint_hex(&with_colons).expect("should parse");
+        assert_eq!(result, fp(0xaa));
+    }
 }
