@@ -33,10 +33,11 @@ use super::DEFAULT_PROXY_URL;
 AUTOMATION / AGENT / LLM USE:
   For non-interactive (single-shot) credential retrieval:
 
-    1. List cached sessions:  bw-remote cache list
-    2. Request a credential:  bw-remote connect --domain <DOMAIN> --session <HEX> --output json
+    1. Request a credential:  bw-remote connect --domain <DOMAIN> --output json
 
-  --session accepts a full 64-char hex fingerprint or any unique prefix from cache list.
+  If only one session is cached, it is used automatically.
+  With multiple cached sessions, specify one with --session <HEX>.
+  --session accepts a full 64-char hex fingerprint or any unique prefix.
   --output json returns structured JSON to stdout (status to stderr).
   Exit codes: 0=success, 1=error, 2=connection failed, 3=auth failed, 4=not found, 5=fingerprint mismatch")]
 pub struct ConnectArgs {
@@ -73,10 +74,6 @@ impl ConnectArgs {
     /// Execute the connect command
     pub async fn run(self) -> Result<()> {
         if let Some(domain) = self.domain {
-            // Single-shot mode: --domain requires --token or --session
-            if self.token.is_none() && self.session.is_none() {
-                bail!("--domain requires --token or --session");
-            }
             run_single_shot(
                 self.proxy_url,
                 self.token,
@@ -682,11 +679,26 @@ async fn run_single_shot(
                 std::process::exit(exit_code::GENERAL_ERROR);
             }
         }
-    } else {
-        // Should not happen due to validation in run(), but guard anyway
-        let msg = "--domain requires --token or --session";
+    } else if cached_sessions.len() == 1 {
+        // Single cached session — use it automatically
+        let (fingerprint, _, _, _) = &cached_sessions[0];
+        ConnectionMode::Existing {
+            remote_fingerprint: *fingerprint,
+        }
+    } else if cached_sessions.is_empty() {
+        let msg = "--domain requires --token or --session (no cached sessions found)";
         match output {
             OutputFormat::Json => emit_json_error(msg, "general_error"),
+            OutputFormat::Text => eprintln!("Error: {msg}"),
+        }
+        std::process::exit(exit_code::GENERAL_ERROR);
+    } else {
+        let msg = format!(
+            "--domain requires --token or --session (multiple cached sessions found, specify one with --session). \
+             Use `bw-remote cache list` to see available sessions."
+        );
+        match output {
+            OutputFormat::Json => emit_json_error(&msg, "general_error"),
             OutputFormat::Text => eprintln!("Error: {msg}"),
         }
         std::process::exit(exit_code::GENERAL_ERROR);
