@@ -6,8 +6,8 @@
 use bw_noise_protocol::Psk;
 use bw_proxy::ProxyClientConfig;
 use bw_rat_client::{
-    DefaultProxyClient, IdentityFingerprint, IdentityProvider, RemoteClient, RemoteClientEvent,
-    RemoteClientResponse, SessionStore,
+    ConnectionMode, DefaultProxyClient, IdentityFingerprint, IdentityProvider, RemoteClient,
+    RemoteClientEvent, RemoteClientResponse, SessionStore,
 };
 use clap::Args;
 use color_eyre::eyre::{Result, bail};
@@ -94,22 +94,6 @@ impl ConnectArgs {
             .await
         }
     }
-}
-
-/// Connection mode for establishing a connection
-#[derive(Debug)]
-enum ConnectionMode {
-    /// New connection requiring rendezvous code pairing
-    New { rendezvous_code: String },
-    /// New connection using PSK authentication
-    NewPsk {
-        psk: Psk,
-        remote_fingerprint: IdentityFingerprint,
-    },
-    /// Existing connection using cached remote fingerprint
-    Existing {
-        remote_fingerprint: IdentityFingerprint,
-    },
 }
 
 /// Token type parsed from user input
@@ -815,17 +799,16 @@ fn resolve_session_prefix(
         bail!("Session prefix must be a hex string");
     }
 
-    let matches: Vec<IdentityFingerprint> = cached_sessions
+    let mut iter = cached_sessions
         .iter()
         .filter(|(fp, _, _, _)| hex::encode(fp.0).starts_with(&clean_prefix))
-        .map(|(fp, _, _, _)| *fp)
-        .collect();
+        .map(|(fp, _, _, _)| *fp);
 
-    match matches.len() {
-        0 => bail!("No cached session matches prefix: {prefix}"),
-        1 => Ok(matches[0]),
-        n => bail!(
-            "Ambiguous session prefix '{prefix}' matches {n} sessions — provide more characters"
+    match (iter.next(), iter.next()) {
+        (None, _) => bail!("No cached session matches prefix: {prefix}"),
+        (Some(fp), None) => Ok(fp),
+        (Some(_), Some(_)) => bail!(
+            "Ambiguous session prefix '{prefix}' — provide more characters"
         ),
     }
 }
@@ -861,10 +844,10 @@ fn resolve_connection_mode(
             remote_fingerprint: *fingerprint,
         })
     } else if cached_sessions.is_empty() {
-        bail!("--domain requires --token or --session (no cached sessions found)")
+        bail!("No cached sessions found — provide --token or --session")
     } else {
         bail!(
-            "--domain requires --token or --session (multiple cached sessions found, specify one with --session). \
+            "Multiple cached sessions found — specify one with --session. \
              Use `bw-remote cache list` to see available sessions."
         )
     }
@@ -925,7 +908,7 @@ mod tests {
         let result = resolve_connection_mode(None, None, &[]);
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
-        assert!(msg.contains("no cached sessions found"));
+        assert!(msg.contains("No cached sessions found"));
     }
 
     #[test]
@@ -934,7 +917,7 @@ mod tests {
         let result = resolve_connection_mode(None, None, &sessions);
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
-        assert!(msg.contains("multiple cached sessions found"));
+        assert!(msg.contains("Multiple cached sessions found"));
     }
 
     #[test]
@@ -979,6 +962,18 @@ mod tests {
         let mode = resolve_connection_mode(Some("XYZ789"), None, &sessions)
             .expect("should succeed");
         assert!(matches!(mode, ConnectionMode::New { rendezvous_code } if rendezvous_code == "XYZ789"));
+    }
+
+    #[test]
+    fn resolve_mode_session_takes_priority_over_token() {
+        let sessions = vec![session(0xaa), session(0xbb)];
+        let prefix = &hex::encode([0xaa; 32])[..8];
+        let mode = resolve_connection_mode(Some("ABC123"), Some(prefix), &sessions)
+            .expect("should succeed");
+        assert!(matches!(
+            mode,
+            ConnectionMode::Existing { remote_fingerprint } if remote_fingerprint == fp(0xaa)
+        ));
     }
 
     // ── resolve_session_prefix ──────────────────────────────────────
