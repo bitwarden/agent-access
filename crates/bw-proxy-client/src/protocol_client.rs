@@ -2,6 +2,7 @@ use bw_proxy_protocol::{
     auth::{IdentityFingerprint, IdentityKeyPair},
     error::ProxyError,
     messages::Messages,
+    rendevouz::RendevouzCode,
 };
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
@@ -10,6 +11,12 @@ use tokio::task::JoinHandle;
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::Message};
 
 use super::config::{ClientState, IncomingMessage, ProxyClientConfig};
+
+/// Convert tungstenite errors into ProxyError (replaces the From impl that
+/// was removed from bw-proxy-protocol to keep it free of tungstenite deps).
+fn ws_err(e: tokio_tungstenite::tungstenite::Error) -> ProxyError {
+    ProxyError::WebSocket(e.to_string())
+}
 
 type WsStream = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 type WsSink = futures_util::stream::SplitSink<WsStream, Message>;
@@ -191,7 +198,7 @@ impl ProxyProtocolClient {
         // Connect WebSocket
         let (ws_stream, _) = connect_async(&self.config.proxy_url)
             .await
-            .map_err(|e| ProxyError::WebSocket(e.to_string()))?;
+            .map_err(ws_err)?;
 
         // Split into read/write
         let (ws_sink, ws_source) = ws_stream.split();
@@ -454,10 +461,7 @@ impl ProxyProtocolClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn request_identity(
-        &self,
-        rendezvous_code: bw_proxy_protocol::rendevouz::RendevouzCode,
-    ) -> Result<(), ProxyError> {
+    pub async fn request_identity(&self, rendezvous_code: RendevouzCode) -> Result<(), ProxyError> {
         // Check authenticated
         {
             let state = self.state.lock().await;
@@ -635,7 +639,7 @@ impl ProxyProtocolClient {
             .next()
             .await
             .ok_or(ProxyError::ConnectionClosed)?
-            .map_err(|e| ProxyError::WebSocket(e.to_string()))?;
+            .map_err(ws_err)?;
 
         let challenge = match challenge_msg {
             Message::Text(text) => match serde_json::from_str::<Messages>(&text)? {
@@ -665,7 +669,7 @@ impl ProxyProtocolClient {
         incoming_tx: mpsc::UnboundedSender<IncomingMessage>,
     ) -> Result<(), ProxyError> {
         while let Some(msg_result) = ws_source.next().await {
-            let msg = msg_result.map_err(|e| ProxyError::WebSocket(e.to_string()))?;
+            let msg = msg_result.map_err(ws_err)?;
 
             match msg {
                 Message::Text(text) => {

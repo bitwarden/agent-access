@@ -74,11 +74,3 @@
 
 pub(crate) mod connection;
 pub mod server;
-
-// Re-export protocol types so the server binary and tests can use them
-pub use bw_proxy_protocol as protocol;
-pub use bw_proxy_protocol::error;
-pub use bw_proxy_protocol::{
-    Challenge, ChallengeResponse, Identity, IdentityFingerprint, IdentityKeyPair, Messages,
-    ProxyError, RendevouzCode, SignatureAlgorithm,
-};

@@ -1,6 +1,10 @@
 use bw_proxy_protocol::{Challenge, IdentityFingerprint, Messages, ProxyError, RendevouzCode};
 
 use crate::{connection::AuthenticatedConnection, server::proxy_server::ServerState};
+
+fn ws_err(e: tokio_tungstenite::tungstenite::Error) -> ProxyError {
+    ProxyError::WebSocket(e.to_string())
+}
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -59,7 +63,7 @@ impl ConnectionHandler {
                     "Expected text message for auth".to_string(),
                 ));
             }
-            Some(Err(e)) => return Err(ProxyError::WebSocket(e.to_string())),
+            Some(Err(e)) => return Err(ws_err(e)),
             None => return Err(ProxyError::ConnectionClosed),
         };
 
@@ -138,7 +142,7 @@ impl ConnectionHandler {
                     return Ok(());
                 }
                 Ok(_) => continue,
-                Err(e) => return Err(ProxyError::WebSocket(e.to_string())),
+                Err(e) => return Err(ws_err(e)),
             };
 
             let parsed_msg: Messages = match serde_json::from_str(&msg) {

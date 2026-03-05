@@ -7,6 +7,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = ["experimental-post-quantum-crypto"]
+experimental-post-quantum-crypto = ["bw-proxy-protocol/experimental-post-quantum-crypto"]
+
 [dependencies]
 bw-proxy-protocol = { workspace = true }
 futures-util = { workspace = true }
