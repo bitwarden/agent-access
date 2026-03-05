@@ -6,6 +6,8 @@ members = [
     "crates/bw-rat-client",
     "crates/bw-noise-protocol",
     "crates/bw-proxy",
+    "crates/bw-proxy-client",
+    "crates/bw-proxy-protocol",
     "crates/bw-remote",
 ]
 
@@ -23,6 +25,8 @@ bw-error-macro = { path = "crates/bw-error-macro", version = "0.1.0" }
 bw-rat-client = { path = "crates/bw-rat-client", version = "0.1.0" }
 bw-noise-protocol = { path = "crates/bw-noise-protocol", version = "0.1.0" }
 bw-proxy = { path = "crates/bw-proxy", version = "0.1.0" }
+bw-proxy-client = { path = "crates/bw-proxy-client", version = "0.1.0" }
+bw-proxy-protocol = { path = "crates/bw-proxy-protocol", version = "0.1.0" }
 
 # External dependencies
 base64 = "0.22"
@@ -49,7 +53,7 @@ snow = { version = "0.9", features = ["xchachapoly"] }
 syn = "2.0"
 thiserror = "1.0"
 tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread", "sync", "time"] }
-tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.24" }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["fmt", "env-filter"] }
 

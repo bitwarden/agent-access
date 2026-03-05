@@ -1,4 +1,4 @@
-use crate::{
+use bw_proxy_protocol::{
     auth::{IdentityFingerprint, IdentityKeyPair},
     error::ProxyError,
     messages::Messages,
@@ -32,7 +32,7 @@ type WsSource = futures_util::stream::SplitStream<WsStream>;
 /// Basic usage:
 ///
 /// ```no_run
-/// use bw_proxy::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
+/// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// // Create and connect
@@ -90,7 +90,7 @@ impl ProxyProtocolClient {
     /// Create client with new identity:
     ///
     /// ```
-    /// use bw_proxy::{ProxyClientConfig, ProxyProtocolClient};
+    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient};
     ///
     /// let config = ProxyClientConfig {
     ///     proxy_url: "ws://localhost:8080".to_string(),
@@ -103,7 +103,7 @@ impl ProxyProtocolClient {
     /// Create client with existing identity:
     ///
     /// ```
-    /// use bw_proxy::{ProxyClientConfig, ProxyProtocolClient, IdentityKeyPair};
+    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IdentityKeyPair};
     ///
     /// let keypair = IdentityKeyPair::generate();
     /// let config = ProxyClientConfig {
@@ -158,7 +158,7 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```no_run
-    /// use bw_proxy::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
+    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = ProxyClientConfig {
@@ -189,7 +189,9 @@ impl ProxyProtocolClient {
         }
 
         // Connect WebSocket
-        let (ws_stream, _) = connect_async(&self.config.proxy_url).await?;
+        let (ws_stream, _) = connect_async(&self.config.proxy_url)
+            .await
+            .map_err(|e| ProxyError::WebSocket(e.to_string()))?;
 
         // Split into read/write
         let (ws_sink, ws_source) = ws_stream.split();
@@ -268,7 +270,7 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```no_run
-    /// use bw_proxy::{ProxyClientConfig, ProxyProtocolClient};
+    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = ProxyClientConfig {
@@ -350,7 +352,7 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```no_run
-    /// use bw_proxy::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
+    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = ProxyClientConfig {
@@ -419,7 +421,7 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```no_run
-    /// use bw_proxy::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage, RendevouzCode};
+    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage, RendevouzCode};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = ProxyClientConfig {
@@ -454,7 +456,7 @@ impl ProxyProtocolClient {
     /// ```
     pub async fn request_identity(
         &self,
-        rendezvous_code: crate::rendevouz::RendevouzCode,
+        rendezvous_code: bw_proxy_protocol::rendevouz::RendevouzCode,
     ) -> Result<(), ProxyError> {
         // Check authenticated
         {
@@ -489,7 +491,7 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```
-    /// use bw_proxy::{ProxyClientConfig, ProxyProtocolClient};
+    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient};
     ///
     /// let config = ProxyClientConfig {
     ///     proxy_url: "ws://localhost:8080".to_string(),
@@ -510,7 +512,7 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```no_run
-    /// use bw_proxy::{ProxyClientConfig, ProxyProtocolClient};
+    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = ProxyClientConfig {
@@ -545,7 +547,7 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```no_run
-    /// use bw_proxy::{ProxyClientConfig, ProxyProtocolClient};
+    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = ProxyClientConfig {

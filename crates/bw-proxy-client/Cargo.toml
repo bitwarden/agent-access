@@ -1,0 +1,19 @@
+[package]
+name = "bw-proxy-client"
+description = "Client library for connecting to the bw-proxy WebSocket relay"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+bw-proxy-protocol = { workspace = true }
+futures-util = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["sync", "time"] }
+tokio-tungstenite = { workspace = true, features = ["rustls-tls-webpki-roots"] }
+tracing = { workspace = true }
+
+[lints]
+workspace = true
