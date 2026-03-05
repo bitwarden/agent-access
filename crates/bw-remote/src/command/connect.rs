@@ -807,9 +807,9 @@ fn resolve_session_prefix(
     match (iter.next(), iter.next()) {
         (None, _) => bail!("No cached session matches prefix: {prefix}"),
         (Some(fp), None) => Ok(fp),
-        (Some(_), Some(_)) => bail!(
-            "Ambiguous session prefix '{prefix}' — provide more characters"
-        ),
+        (Some(_), Some(_)) => {
+            bail!("Ambiguous session prefix '{prefix}' — provide more characters")
+        }
     }
 }
 
@@ -926,8 +926,7 @@ mod tests {
     fn resolve_mode_session_prefix_selects_existing() {
         let sessions = vec![session(0xaa), session(0xbb)];
         let prefix = &hex::encode([0xaa; 32])[..8]; // first 8 chars
-        let mode =
-            resolve_connection_mode(None, Some(prefix), &sessions).expect("should succeed");
+        let mode = resolve_connection_mode(None, Some(prefix), &sessions).expect("should succeed");
         assert!(matches!(
             mode,
             ConnectionMode::Existing {
@@ -938,9 +937,10 @@ mod tests {
 
     #[test]
     fn resolve_mode_rendezvous_token() {
-        let mode =
-            resolve_connection_mode(Some("ABC123"), None, &[]).expect("should succeed");
-        assert!(matches!(mode, ConnectionMode::New { rendezvous_code } if rendezvous_code == "ABC123"));
+        let mode = resolve_connection_mode(Some("ABC123"), None, &[]).expect("should succeed");
+        assert!(
+            matches!(mode, ConnectionMode::New { rendezvous_code } if rendezvous_code == "ABC123")
+        );
     }
 
     #[test]
@@ -948,8 +948,7 @@ mod tests {
         let psk_hex = "aa".repeat(32);
         let fp_hex = "bb".repeat(32);
         let token = format!("{psk_hex}_{fp_hex}");
-        let mode =
-            resolve_connection_mode(Some(&token), None, &[]).expect("should succeed");
+        let mode = resolve_connection_mode(Some(&token), None, &[]).expect("should succeed");
         assert!(matches!(
             mode,
             ConnectionMode::NewPsk {
@@ -961,9 +960,11 @@ mod tests {
     #[test]
     fn resolve_mode_token_takes_priority_over_single_cached() {
         let sessions = vec![session(0xcc)];
-        let mode = resolve_connection_mode(Some("XYZ789"), None, &sessions)
-            .expect("should succeed");
-        assert!(matches!(mode, ConnectionMode::New { rendezvous_code } if rendezvous_code == "XYZ789"));
+        let mode =
+            resolve_connection_mode(Some("XYZ789"), None, &sessions).expect("should succeed");
+        assert!(
+            matches!(mode, ConnectionMode::New { rendezvous_code } if rendezvous_code == "XYZ789")
+        );
     }
 
     #[test]
@@ -1118,10 +1119,7 @@ mod tests {
     #[test]
     fn fingerprint_strips_separators() {
         // 64 hex chars with colons between byte pairs
-        let with_colons: String = (0..32)
-            .map(|_| "aa")
-            .collect::<Vec<_>>()
-            .join(":");
+        let with_colons: String = (0..32).map(|_| "aa").collect::<Vec<_>>().join(":");
         let result = parse_fingerprint_hex(&with_colons).expect("should parse");
         assert_eq!(result, fp(0xaa));
     }
