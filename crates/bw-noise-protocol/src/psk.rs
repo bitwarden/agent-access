@@ -116,6 +116,16 @@ impl Psk {
     pub fn as_slice(&self) -> &[u8] {
         &self.0
     }
+
+    /// Compute a 4-byte identifier for this PSK.
+    ///
+    /// The ID is the first 4 bytes of SHA-256(psk). This is used to identify
+    /// which PSK to use during handshake without revealing the key itself.
+    pub fn id(&self) -> [u8; 4] {
+        use sha2::{Digest, Sha256 as Sha256Hash};
+        let hash = Sha256Hash::digest(self.0);
+        [hash[0], hash[1], hash[2], hash[3]]
+    }
 }
 
 #[cfg(test)]
@@ -152,5 +162,26 @@ mod tests {
         assert_eq!(encoded.len(), 64);
         let decoded = Psk::from_hex(&encoded).expect("Failed to decode PSK from hex");
         assert_eq!(psk.to_bytes(), decoded.to_bytes());
+    }
+
+    #[test]
+    fn test_psk_id_is_deterministic() {
+        let psk = Psk::generate();
+        assert_eq!(psk.id(), psk.id());
+    }
+
+    #[test]
+    fn test_psk_id_is_4_bytes() {
+        let psk = Psk::generate();
+        let id = psk.id();
+        assert_eq!(id.len(), 4);
+    }
+
+    #[test]
+    fn test_different_psks_have_different_ids() {
+        let psk1 = Psk::generate();
+        let psk2 = Psk::generate();
+        // Extremely unlikely to collide with 4 bytes of SHA-256
+        assert_ne!(psk1.id(), psk2.id());
     }
 }

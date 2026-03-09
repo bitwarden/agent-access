@@ -393,9 +393,10 @@ async fn test_psk_pairing() {
             .expect("UserClient should connect");
 
             // Spawn UserClient's enable_psk in a local task
+            let psk = Psk::generate();
             let user_task = tokio::task::spawn_local(async move {
                 user_client
-                    .enable_psk(user_event_tx, user_response_rx)
+                    .enable_psk(psk, user_event_tx, user_response_rx)
                     .await
             });
 
