@@ -23,14 +23,14 @@ const DEFAULT_PROXY_URL: &str = "wss://rat1.lesspassword.dev";
 
 /// Bitwarden Remote Client CLI
 #[derive(Parser)]
-#[command(name = "bw-remote")]
+#[command(name = "reach")]
 #[command(author, version, about = "Connect to a user-client through a proxy to request credentials over a secure channel", long_about = None)]
 #[command(after_help = "\
 AUTOMATION / AGENT / LLM USE:
   For non-interactive (single-shot) credential retrieval:
 
-    1. List cached sessions:  bw-remote cache list
-    2. Request a credential:  bw-remote --domain <DOMAIN> --session <HEX> --output json
+    1. List cached sessions:  reach cache list
+    2. Request a credential:  reach --domain <DOMAIN> --session <HEX> --output json
 
   --session accepts a full 64-char hex fingerprint or any unique prefix from cache list.
   --output json returns structured JSON to stdout (status to stderr).

@@ -8,7 +8,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "bw-remote"
+name = "reach"
 path = "src/main.rs"
 
 [dependencies]

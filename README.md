@@ -24,27 +24,27 @@ Remote Access is an open protocol, CLI tool, and Rust SDK that you can use to im
 ### macOS (Apple Silicon)
 
 ```shell
-curl -L https://github.com/bitwarden/remote-access/releases/latest/download/bw-remote-macos-aarch64.tar.gz | tar xz
-sudo mv bw-remote /usr/local/bin/ # Makes it available on PATH
+curl -L https://github.com/bitwarden/remote-access/releases/latest/download/reach-macos-aarch64.tar.gz | tar xz
+sudo mv reach /usr/local/bin/ # Makes it available on PATH
 ```
 
 ### macOS (Intel)
 
 ```shell
-curl -L https://github.com/bitwarden/remote-access/releases/latest/download/bw-remote-macos-x86_64.tar.gz | tar xz
-sudo mv bw-remote /usr/local/bin/ # Makes it available on PATH
+curl -L https://github.com/bitwarden/remote-access/releases/latest/download/reach-macos-x86_64.tar.gz | tar xz
+sudo mv reach /usr/local/bin/ # Makes it available on PATH
 ```
 
 ### Linux (x86_64)
 
 ```shell
-curl -L https://github.com/bitwarden/remote-access/releases/latest/download/bw-remote-linux-x86_64.tar.gz | tar xz
-sudo mv bw-remote /usr/local/bin/ # Makes it available on PATH
+curl -L https://github.com/bitwarden/remote-access/releases/latest/download/reach-linux-x86_64.tar.gz | tar xz
+sudo mv reach /usr/local/bin/ # Makes it available on PATH
 ```
 
 ### Windows (x86_64)
 
-Download [bw-remote-windows-x86_64.zip](https://github.com/bitwarden/remote-access/releases/latest/download/bw-remote-windows-x86_64.zip) from the [latest release](https://github.com/bitwarden/remote-access/releases/latest) and extract it to a directory on your PATH.
+Download [reach-windows-x86_64.zip](https://github.com/bitwarden/remote-access/releases/latest/download/reach-windows-x86_64.zip) from the [latest release](https://github.com/bitwarden/remote-access/releases/latest) and extract it to a directory on your PATH.
 
 ### OpenClaw skill
 
@@ -58,12 +58,12 @@ curl -fsSL "https://raw.githubusercontent.com/bitwarden/remote-access/instructio
 * Automated script requesting an API-token.
 * Github Action
 
-## Getting started (cli, bitwarden)
+## Getting started (Bitwarden CLI)
 
-Once you've installed the CLI tool, it can connect to your Bitwarden vault using the Bitwarden CLI.
+In this short guide we'll walk you through setting up Remote Access on your local machine and connect it to the bitwarden CLI.
 
 ```shell
-bw-remote listen
+reach listen
 ```
 
 The interactive CLI will create a pairing code that you can use to establish a connection on the remote side.
@@ -74,16 +74,16 @@ You can run the remote side interactively (most useful for testing/demonstration
 
 ```shell
 # interactive mode
-bw-remote connect
+reach connect
 ```
 
 ```shell
 # one time pairing
-bw-remote connect --token <rendevouz-code> --output json
+reach connect --token <rendevouz-code> --output json
 
 # one shot mode
-bw-remote connect --session <sessionId> --domain example.com --output json
-bw-remote connect --session <sessionId> --domain github.com --output json
+reach connect --session <sessionId> --domain example.com --output json
+reach connect --session <sessionId> --domain github.com --output json
 
 ```
 

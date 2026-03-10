@@ -33,7 +33,7 @@ use super::DEFAULT_PROXY_URL;
 AUTOMATION / AGENT / LLM USE:
   For non-interactive (single-shot) credential retrieval:
 
-    1. Request a credential:  bw-remote connect --domain <DOMAIN> --output json
+    1. Request a credential:  reach connect --domain <DOMAIN> --output json
 
   If only one session is cached, it is used automatically.
   With multiple cached sessions, specify one with --session <HEX>.
@@ -850,7 +850,7 @@ fn resolve_connection_mode(
     } else {
         bail!(
             "Multiple cached sessions found — specify one with --session. \
-             Use `bw-remote cache list` to see available sessions."
+             Use `reach cache list` to see available sessions."
         )
     }
 }

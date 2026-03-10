@@ -11,7 +11,7 @@ Bitwarden Remote Access SDK — a Rust workspace implementing secure peer-to-pee
 ```bash
 cargo build                        # Build all crates (debug)
 cargo build --release              # Build all crates (release)
-cargo run --bin bw-remote          # Run the CLI application
+cargo run --bin reach              # Run the CLI application
 cargo run --bin bw-proxy           # Run the WebSocket proxy server
 ```
 
@@ -91,7 +91,7 @@ Noise handshake and encrypted credential payloads are layered on top as `Protoco
 
 ## Single-Shot Non-Interactive Mode
 
-For agent/LLM integration: `bw-remote connect --domain example.com [--output json|text]`
+For agent/LLM integration: `reach connect --domain example.com [--output json|text]`
 
 - No TUI — status to stderr, credential output to stdout
 - If exactly one cached session exists, it is used automatically (no `--token` or `--session` needed)
@@ -132,8 +132,8 @@ cargo test --workspace             # Run all tests
 ## Demo Flow
 
 1. Start proxy: `cargo run --bin bw-proxy`
-2. Start user-client: `cargo run --bin bw-remote -- listen`
-3. Copy the rendezvous code (9-char code, e.g. `ABC-DEF-GHI`) from step 2, connect: `cargo run --bin bw-remote -- connect --token <CODE>`
+2. Start user-client: `cargo run --bin reach -- listen`
+3. Copy the rendezvous code (9-char code, e.g. `ABC-DEF-GHI`) from step 2, connect: `cargo run --bin reach -- connect --token <CODE>`
 4. Type domains on the connect side to request credentials; approve on the listen side
 
 Use `--psk` on the listen side for PSK mode instead of rendezvous codes.
