@@ -62,6 +62,10 @@ curl -fsSL "https://raw.githubusercontent.com/bitwarden/remote-access/main/examp
 
 In this short guide we'll walk you through setting up Remote Access on your local machine and connect it to the bitwarden CLI.
 
+**Enabling Remote Access for Bitwarden**
+
+The ´reach´ CLI tool has built-in support for connecting to the Bitwarden CLI. The interactive CLI can be used to unlock your vault (`/bw-unlock`) and create a pairing code that the remote side can use to connect.
+
 ```shell
 reach listen
 ```
@@ -70,7 +74,7 @@ The interactive CLI will create a pairing code that you can use to establish a c
 
 **Setting up the remote side**
 
-You can run the remote side interactively (most useful for testing/demonstration) or in "one-shot" mode for single credential requests.
+You can run the remote side interactively (Useful for testing/demonstration) or in without interactivity which is useful for agents and automation.
 
 ```shell
 # interactive mode
@@ -78,12 +82,18 @@ reach connect
 ```
 
 ```shell
-# one time pairing
-reach connect --token <rendevouz-code> --output json
+# Pairing (wihout interactivity)
+reach connect --token <rendezvous-code> --output json
 
-# one shot mode
-reach connect --session <sessionId> --domain example.com --output json
-reach connect --session <sessionId> --domain github.com --output json
+# Fetching credentials (without interactivity)
+reach connect --domain example.com --output json
+reach connect --domain github.com --output json
+
+# Pair + Fetch in one command (without interactivity)
+reach connect --token <psk/rendezvous-code> --domain example.com --output json
+
+# Output:
+{"credential":{"notes":null,"password":"alligator5","totp":null,"uri":"https://github.com","username":"example"},"domain":"github.com","success":true}
 
 ```
 
