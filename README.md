@@ -49,7 +49,7 @@ Download [reach-windows-x86_64.zip](https://github.com/bitwarden/remote-access/r
 ### OpenClaw skill
 
 ```shell
-curl -fsSL "https://raw.githubusercontent.com/bitwarden/remote-access/instructions/oc-remote-access.md" -o ~/.openclaw/skills/remote-access/SKILL.md --create-dirs
+curl -fsSL "https://raw.githubusercontent.com/bitwarden/remote-access/main/skills/remote-access/SKILL.md" -o ~/.openclaw/skills/remote-access/SKILL.md --create-dirs
 ```
 
 ## Examples
