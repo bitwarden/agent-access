@@ -72,7 +72,10 @@ pub struct ConnectArgs {
 
 impl ConnectArgs {
     /// Execute the connect command
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(
+        self,
+        log_rx: Option<tokio::sync::mpsc::UnboundedReceiver<super::tui_tracing::TuiLogEntry>>,
+    ) -> Result<()> {
         if let Some(domain) = self.domain {
             run_single_shot(
                 self.proxy_url,
@@ -90,6 +93,7 @@ impl ConnectArgs {
                 self.session,
                 self.ephemeral_connection,
                 self.verify_fingerprint,
+                log_rx,
             )
             .await
         }
@@ -207,6 +211,7 @@ async fn run_interactive_session(
     session_fingerprint: Option<String>,
     ephemeral_connection: bool,
     verify_fingerprint: bool,
+    mut log_rx: Option<tokio::sync::mpsc::UnboundedReceiver<super::tui_tracing::TuiLogEntry>>,
 ) -> Result<()> {
     // Create identity provider and session store first
     let identity_provider: Box<dyn IdentityProvider> =
@@ -583,6 +588,23 @@ async fn run_interactive_session(
                             .map_err(|e| color_eyre::eyre::eyre!("TUI draw error: {}", e))?;
                         break;
                     }
+                }
+            }
+
+            // Handle tracing log entries routed into the TUI
+            log_entry = async {
+                match log_rx.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                if let Some(entry) = log_entry {
+                    let kind = match entry.level {
+                        tracing::Level::ERROR | tracing::Level::WARN => MessageKind::Error,
+                        _ => MessageKind::Info,
+                    };
+                    let short_target = entry.target.rsplit("::").next().unwrap_or(&entry.target);
+                    app.push_msg(kind, format!("[{short_target}] {}", entry.message));
                 }
             }
         }

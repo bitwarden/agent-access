@@ -44,8 +44,11 @@ pub struct ListenArgs {
 
 impl ListenArgs {
     /// Execute the listen command
-    pub async fn run(self) -> Result<()> {
-        run_user_client_session(self.proxy_url, self.psk).await
+    pub async fn run(
+        self,
+        log_rx: Option<tokio::sync::mpsc::UnboundedReceiver<super::tui_tracing::TuiLogEntry>>,
+    ) -> Result<()> {
+        run_user_client_session(self.proxy_url, self.psk, log_rx).await
     }
 }
 
@@ -375,6 +378,7 @@ async fn run_event_loop(
     pending_session_name: &Option<String>,
     client_handle: tokio::task::JoinHandle<Result<(), bw_rat_client::RemoteClientError>>,
     bw_session: &mut Option<String>,
+    log_rx: &mut Option<tokio::sync::mpsc::UnboundedReceiver<super::tui_tracing::TuiLogEntry>>,
 ) -> Result<EventLoopExit> {
     let mut phase = Phase::Idle;
 
@@ -677,6 +681,23 @@ async fn run_event_loop(
                     }
                 }
             }
+
+            // Handle tracing log entries routed into the TUI
+            log_entry = async {
+                match log_rx.as_mut() {
+                    Some(rx) => rx.recv().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                if let Some(entry) = log_entry {
+                    let kind = match entry.level {
+                        tracing::Level::ERROR | tracing::Level::WARN => MessageKind::Error,
+                        _ => MessageKind::Info,
+                    };
+                    let short_target = entry.target.rsplit("::").next().unwrap_or(&entry.target);
+                    app.push_msg(kind, format!("[{short_target}] {}", entry.message));
+                }
+            }
         }
     };
 
@@ -685,7 +706,11 @@ async fn run_event_loop(
 }
 
 /// Run the user client interactive session
-async fn run_user_client_session(proxy_url: String, psk_mode: bool) -> Result<()> {
+async fn run_user_client_session(
+    proxy_url: String,
+    psk_mode: bool,
+    mut log_rx: Option<tokio::sync::mpsc::UnboundedReceiver<super::tui_tracing::TuiLogEntry>>,
+) -> Result<()> {
     let local = tokio::task::LocalSet::new();
 
     local
@@ -754,6 +779,7 @@ async fn run_user_client_session(proxy_url: String, psk_mode: bool) -> Result<()
                     &pending_session_name,
                     client_handle,
                     &mut bw_session,
+                    &mut log_rx,
                 )
                 .await?
                 {
