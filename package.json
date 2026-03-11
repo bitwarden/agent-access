@@ -1,0 +1,13 @@
+{
+  "name": "@bitwarden/remote-access",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "9.1.7",
+    "lint-staged": "16.2.7"
+  }
+}
