@@ -53,9 +53,9 @@ pub struct ConnectArgs {
     #[arg(long, conflicts_with = "token")]
     pub session: Option<String>,
 
-    /// Disable session caching
+    /// Don't save this connection for future use
     #[arg(long)]
-    pub no_cache: bool,
+    pub ephemeral_connection: bool,
 
     /// Require fingerprint verification on the connect side
     #[arg(long)]
@@ -78,7 +78,7 @@ impl ConnectArgs {
                 self.proxy_url,
                 self.token,
                 self.session,
-                self.no_cache,
+                self.ephemeral_connection,
                 domain,
                 self.output,
             )
@@ -88,7 +88,7 @@ impl ConnectArgs {
                 self.proxy_url,
                 self.token,
                 self.session,
-                self.no_cache,
+                self.ephemeral_connection,
                 self.verify_fingerprint,
             )
             .await
@@ -203,7 +203,7 @@ async fn run_interactive_session(
     proxy_url: String,
     token: Option<String>,
     session_fingerprint: Option<String>,
-    no_cache: bool,
+    ephemeral_connection: bool,
     verify_fingerprint: bool,
 ) -> Result<()> {
     // Create identity provider and session store first
@@ -245,8 +245,8 @@ async fn run_interactive_session(
     // Determine starting phase (and connect immediately for CLI-flag paths)
     let mut phase = if let Some(mode) = cli_connection_mode {
         // CLI flags provided — go straight to connecting
-        if no_cache {
-            app.push_msg(MessageKind::Info, "Session caching disabled");
+        if ephemeral_connection {
+            app.push_msg(MessageKind::Info, "Ephemeral connection (won't be saved)");
         }
         app.push_msg(MessageKind::Status, "Connecting to proxy...");
         app.input_title = " Domain ";
@@ -275,7 +275,7 @@ async fn run_interactive_session(
         }
 
         Phase::Connecting
-    } else if !cached_sessions.is_empty() && !no_cache {
+    } else if !cached_sessions.is_empty() && !ephemeral_connection {
         // Cached sessions available — show pick list
         let mut sorted = cached_sessions.clone();
         sorted.sort_by(|a, b| b.3.cmp(&a.3));
@@ -560,10 +560,10 @@ async fn run_interactive_session(
                         // Transition to Connected on Ready
                         if matches!(event, RemoteClientEvent::Ready { .. }) {
                             app.push_msg(MessageKind::Success, "Connection established");
-                            if no_cache {
-                                app.push_msg(MessageKind::Info, "Session caching disabled");
+                            if ephemeral_connection {
+                                app.push_msg(MessageKind::Info, "Ephemeral connection (won't be saved)");
                             } else {
-                                app.push_msg(MessageKind::Info, "Session caching enabled (use --no-cache to disable)");
+                                app.push_msg(MessageKind::Info, "Connection will be saved (use --ephemeral-connection to disable)");
                             }
                             app.input_title = " Domain ";
                             app.footer = domain_footer();
@@ -605,7 +605,7 @@ async fn run_single_shot(
     proxy_url: String,
     token: Option<String>,
     session_fingerprint: Option<String>,
-    no_cache: bool,
+    ephemeral_connection: bool,
     domain: String,
     output: OutputFormat,
 ) -> Result<()> {
@@ -614,7 +614,7 @@ async fn run_single_shot(
     let identity_provider: Box<dyn IdentityProvider> =
         Box::new(FileIdentityStorage::load_or_generate("remote_client")?);
 
-    let session_store: Box<dyn SessionStore> = if no_cache {
+    let session_store: Box<dyn SessionStore> = if ephemeral_connection {
         // Create a fresh, empty cache that won't be persisted
         Box::new(FileSessionCache::load_or_create("remote_client")?)
     } else {
@@ -850,7 +850,7 @@ fn resolve_connection_mode(
     } else {
         bail!(
             "Multiple cached sessions found — specify one with --session. \
-             Use `bw-remote cache list` to see available sessions."
+             Use `bw-remote connections list` to see available sessions."
         )
     }
 }
