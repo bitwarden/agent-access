@@ -373,7 +373,9 @@ async fn run_event_loop(
     response_tx: mpsc::Sender<UserClientResponse>,
     sessions: &[SessionInfo],
     pending_session_name: &Option<String>,
-    client_handle: tokio::task::JoinHandle<Result<(), bw_rat_client::RemoteClientError>>,
+    mut client_handle: Option<
+        tokio::task::JoinHandle<Result<(), bw_rat_client::RemoteClientError>>,
+    >,
     bw_session: &mut Option<String>,
     log_rx: &mut Option<super::tui_tracing::LogReceiver>,
 ) -> Result<EventLoopExit> {
@@ -671,9 +673,23 @@ async fn run_event_loop(
                         }
                     }
                     None => {
-                        app.push_msg(MessageKind::Error, "Connection closed");
+                        let error_msg = match client_handle.take() {
+                            Some(handle) => match handle.await {
+                                Ok(Err(e)) => format!("Connection failed: {e}"),
+                                Err(e) if e.is_panic() => "Client task panicked".to_string(),
+                                _ => "Connection closed".to_string(),
+                            },
+                            None => "Connection closed".to_string(),
+                        };
+                        app.push_msg(MessageKind::Error, &error_msg);
+                        app.push_msg(MessageKind::Info, "Press any key to exit");
                         term.draw(|frame| app.draw(frame))
                             .map_err(|e| color_eyre::eyre::eyre!("TUI draw error: {}", e))?;
+                        while let Some(Ok(Event::Key(key))) = reader.next().await {
+                            if key.kind == KeyEventKind::Press {
+                                break;
+                            }
+                        }
                         break EventLoopExit::Quit;
                     }
                 }
@@ -693,7 +709,9 @@ async fn run_event_loop(
         }
     };
 
-    client_handle.abort();
+    if let Some(handle) = client_handle {
+        handle.abort();
+    }
     Ok(exit)
 }
 
@@ -769,7 +787,7 @@ async fn run_user_client_session(
                     response_tx,
                     &sessions,
                     &pending_session_name,
-                    client_handle,
+                    Some(client_handle),
                     &mut bw_session,
                     &mut log_rx,
                 )

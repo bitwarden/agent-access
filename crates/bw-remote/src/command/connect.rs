@@ -358,6 +358,13 @@ async fn run_interactive_session(
                                             }
                                             Err(e) => {
                                                 app.push_msg(MessageKind::Error, format!("Connection failed: {e}"));
+                                                app.push_msg(MessageKind::Info, "Press any key to exit");
+                                                term.draw(|frame| app.draw(frame)).ok();
+                                                while let Some(Ok(Event::Key(key))) = reader.next().await {
+                                                    if key.kind == KeyEventKind::Press {
+                                                        break;
+                                                    }
+                                                }
                                                 break;
                                             }
                                         }
@@ -408,6 +415,13 @@ async fn run_interactive_session(
                                                 }
                                                 Err(e) => {
                                                     app.push_msg(MessageKind::Error, format!("Connection failed: {e}"));
+                                                    app.push_msg(MessageKind::Info, "Press any key to exit");
+                                                    term.draw(|frame| app.draw(frame)).ok();
+                                                    while let Some(Ok(Event::Key(key))) = reader.next().await {
+                                                        if key.kind == KeyEventKind::Press {
+                                                            break;
+                                                        }
+                                                    }
                                                     break;
                                                 }
                                             }
@@ -578,8 +592,14 @@ async fn run_interactive_session(
                     }
                     None => {
                         app.push_msg(MessageKind::Error, "Connection closed by remote");
+                        app.push_msg(MessageKind::Info, "Press any key to exit");
                         term.draw(|frame| app.draw(frame))
                             .map_err(|e| color_eyre::eyre::eyre!("TUI draw error: {}", e))?;
+                        while let Some(Ok(Event::Key(key))) = reader.next().await {
+                            if key.kind == KeyEventKind::Press {
+                                break;
+                            }
+                        }
                         break;
                     }
                 }
@@ -604,8 +624,8 @@ async fn run_interactive_session(
     if let Some(mut c) = client {
         println!("Closing connection...");
         c.close().await;
+        println!("Connection closed. Goodbye!");
     }
-    println!("Connection closed. Goodbye!");
     Ok(())
 }
 
