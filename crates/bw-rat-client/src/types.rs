@@ -145,7 +145,14 @@ pub struct CredentialData {
 pub(crate) enum ProtocolMessage {
     /// Noise handshake init (initiator -> responder)
     #[serde(rename = "handshake-init")]
-    HandshakeInit { data: String, ciphersuite: String },
+    HandshakeInit {
+        data: String,
+        ciphersuite: String,
+        /// Hex-encoded PSK ID (first 4 bytes of SHA-256 of the PSK).
+        /// Used by the responder to look up the correct PSK from its keychain.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        psk_id: Option<String>,
+    },
     /// Noise handshake response (responder -> initiator)
     #[serde(rename = "handshake-response")]
     HandshakeResponse { data: String, ciphersuite: String },

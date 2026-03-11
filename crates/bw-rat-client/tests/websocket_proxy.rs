@@ -344,7 +344,7 @@ async fn test_e2e_psk_pairing_and_credential_request() {
             // 5. Spawn UserClient's enable_psk in a local task
             let user_task = tokio::task::spawn_local(async move {
                 user_client
-                    .enable_psk(user_event_tx, user_response_rx)
+                    .enable_psk(Psk::generate(), user_event_tx, user_response_rx)
                     .await
             });
 
@@ -692,7 +692,7 @@ async fn test_e2e_credential_request_denied() {
             // 5. Spawn UserClient's enable_psk in a local task
             let user_task = tokio::task::spawn_local(async move {
                 user_client
-                    .enable_psk(user_event_tx, user_response_rx)
+                    .enable_psk(Psk::generate(), user_event_tx, user_response_rx)
                     .await
             });
 
@@ -828,7 +828,7 @@ async fn test_e2e_multiple_credential_requests() {
             // 5. Spawn UserClient's enable_psk in a local task
             let user_task = tokio::task::spawn_local(async move {
                 user_client
-                    .enable_psk(user_event_tx, user_response_rx)
+                    .enable_psk(Psk::generate(), user_event_tx, user_response_rx)
                     .await
             });
 
@@ -987,7 +987,7 @@ async fn test_e2e_transport_state_persistence() {
             // 5. Spawn UserClient's enable_psk in a local task
             let user_task = tokio::task::spawn_local(async move {
                 user_client
-                    .enable_psk(user_event_tx, user_response_rx)
+                    .enable_psk(Psk::generate(), user_event_tx, user_response_rx)
                     .await
             });
 
@@ -1250,7 +1250,7 @@ async fn test_e2e_multi_device_credential_response() {
             // 5. Spawn UserClient Device 1's enable_psk in a local task
             let user_task1 = tokio::task::spawn_local(async move {
                 user_client1
-                    .enable_psk(user_event_tx1, user_response_rx1)
+                    .enable_psk(Psk::generate(), user_event_tx1, user_response_rx1)
                     .await
             });
 
@@ -1330,7 +1330,7 @@ async fn test_e2e_multi_device_credential_response() {
             // 11. Spawn Device 2's event loop (transports are loaded lazily when handling requests)
             let user_task2 = tokio::task::spawn_local(async move {
                 user_client2
-                    .enable_psk(user_event_tx2, user_response_rx2)
+                    .enable_psk(Psk::generate(), user_event_tx2, user_response_rx2)
                     .await
             });
 

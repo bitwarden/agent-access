@@ -23,7 +23,7 @@ use tracing::info;
 
 use super::tui::{App, AppAction, Message, MessageKind, Mode, init_terminal, restore_terminal};
 use super::util::{format_listen_event, format_relative_time};
-use crate::storage::{FileIdentityStorage, FileSessionCache};
+use crate::storage::{FileIdentityStorage, FileSessionCache, PskStorage};
 
 use super::DEFAULT_PROXY_URL;
 
@@ -37,15 +37,20 @@ pub struct ListenArgs {
     #[arg(long, default_value = DEFAULT_PROXY_URL)]
     pub proxy_url: String,
 
-    /// Use PSK (Pre-Shared Key) mode instead of rendezvous code
+    /// Use ephemeral PSK (Pre-Shared Key) mode instead of rendezvous code
     #[arg(long)]
     pub psk: bool,
+
+    /// Use a persistent reusable PSK. Optionally provide a name [default: "default"].
+    /// The PSK is stored in ~/.bw-remote/psk_{name}.hex and loaded on every startup.
+    #[arg(long, conflicts_with = "psk", default_missing_value = "default", num_args = 0..=1)]
+    pub psk_reusable: Option<String>,
 }
 
 impl ListenArgs {
     /// Execute the listen command
     pub async fn run(self) -> Result<()> {
-        run_user_client_session(self.proxy_url, self.psk).await
+        run_user_client_session(self.proxy_url, self.psk, self.psk_reusable).await
     }
 }
 
@@ -685,8 +690,22 @@ async fn run_event_loop(
 }
 
 /// Run the user client interactive session
-async fn run_user_client_session(proxy_url: String, psk_mode: bool) -> Result<()> {
+async fn run_user_client_session(
+    proxy_url: String,
+    psk_mode: bool,
+    psk_reusable: Option<String>,
+) -> Result<()> {
     let local = tokio::task::LocalSet::new();
+
+    // Always load the PSK keychain from disk
+    let stored_psks = PskStorage::load_all()?;
+
+    // Determine primary PSK for this pairing session
+    let primary_psk: Option<bw_noise_protocol::Psk> = match &psk_reusable {
+        Some(name) => Some(PskStorage::load_or_generate(name)?),
+        None if psk_mode => Some(bw_noise_protocol::Psk::generate()),
+        None => None,
+    };
 
     local
         .run_until(async move {
@@ -723,6 +742,8 @@ async fn run_user_client_session(proxy_url: String, psk_mode: bool) -> Result<()
                 let sessions = session_store.list_sessions();
 
                 let client_session_name = pending_session_name.clone();
+                let stored_psks = stored_psks.clone();
+                let primary_psk = primary_psk.clone();
                 let client_handle = tokio::task::spawn_local(async move {
                     let mut client = UserClient::listen(
                         identity_provider as Box<dyn IdentityProvider>,
@@ -731,14 +752,17 @@ async fn run_user_client_session(proxy_url: String, psk_mode: bool) -> Result<()
                     )
                     .await?;
 
+                    // Always load the PSK keychain
+                    client.load_psks(stored_psks);
+
                     if let Some(name) = client_session_name {
                         client.set_pending_session_name(name);
                     }
 
-                    if has_cached {
+                    if let Some(ref psk) = primary_psk {
+                        client.enable_psk(psk.clone(), event_tx, response_rx).await
+                    } else if has_cached {
                         client.listen_cached_only(event_tx, response_rx).await
-                    } else if psk_mode {
-                        client.enable_psk(event_tx, response_rx).await
                     } else {
                         client.enable_rendezvous(event_tx, response_rx).await
                     }

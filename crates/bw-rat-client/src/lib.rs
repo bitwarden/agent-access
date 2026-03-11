@@ -65,7 +65,7 @@
 //! ).await?;
 //!
 //! // Enable PSK mode or rendezvous mode
-//! client.enable_psk(event_tx, response_rx).await?;
+//! client.enable_psk(psk, event_tx, response_rx).await?;
 //! ```
 
 /// Error types

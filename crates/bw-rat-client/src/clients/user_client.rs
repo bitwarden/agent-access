@@ -169,8 +169,9 @@ pub struct UserClient {
     transports: HashMap<IdentityFingerprint, MultiDeviceTransport>,
     /// Current rendezvous code
     rendezvous_code: Option<RendevouzCode>,
-    /// Current PSK (if in PSK mode)
-    psk: Option<Psk>,
+    /// PSK keychain: map of psk_id (first 4 bytes of SHA-256) -> PSK.
+    /// Always loaded on startup; incoming PSK handshakes are matched against this.
+    psks: HashMap<[u8; 4], Psk>,
     /// Incoming message receiver from proxy
     incoming_rx: Option<mpsc::UnboundedReceiver<IncomingMessage>>,
     /// Pending handshake awaiting fingerprint verification
@@ -199,7 +200,7 @@ impl UserClient {
             proxy_client: Some(proxy_client),
             transports: HashMap::new(),
             rendezvous_code: None,
-            psk: None,
+            psks: HashMap::new(),
             incoming_rx: Some(incoming_rx),
             pending_verification: None,
             pending_session_name: None,
@@ -226,18 +227,19 @@ impl UserClient {
 
     /// Enable PSK mode and run the event loop
     ///
-    /// Generates a PSK and token, emits events, and runs the main event loop.
+    /// Uses the provided primary PSK for token generation and adds it to the keychain.
+    /// Emits events and runs the main event loop.
     pub async fn enable_psk(
         &mut self,
+        primary_psk: Psk,
         event_tx: mpsc::Sender<UserClientEvent>,
         response_rx: mpsc::Receiver<UserClientResponse>,
     ) -> Result<(), RemoteClientError> {
-        // Generate PSK and token
-        let psk = Psk::generate();
         let fingerprint = self.identity_provider.fingerprint();
-        let token = format!("{}_{}", psk.to_hex(), hex::encode(fingerprint.0));
+        let token = format!("{}_{}", primary_psk.to_hex(), hex::encode(fingerprint.0));
 
-        self.psk = Some(psk);
+        // Add the primary PSK to the keychain
+        self.psks.insert(primary_psk.id(), primary_psk);
 
         event_tx
             .send(UserClientEvent::PskTokenGenerated { token })
@@ -352,8 +354,12 @@ impl UserClient {
                 let protocol_msg: ProtocolMessage = serde_json::from_str(&text)?;
 
                 match protocol_msg {
-                    ProtocolMessage::HandshakeInit { data, ciphersuite } => {
-                        self.handle_handshake_init(source, data, ciphersuite, event_tx)
+                    ProtocolMessage::HandshakeInit {
+                        data,
+                        ciphersuite,
+                        psk_id,
+                    } => {
+                        self.handle_handshake_init(source, data, ciphersuite, psk_id, event_tx)
                             .await?;
                     }
                     ProtocolMessage::CredentialRequest { encrypted } => {
@@ -382,13 +388,19 @@ impl UserClient {
         source: IdentityFingerprint,
         data: String,
         ciphersuite: String,
+        psk_id: Option<String>,
         event_tx: &mpsc::Sender<UserClientEvent>,
     ) -> Result<(), RemoteClientError> {
         debug!("Received handshake init from source: {:?}", source);
         event_tx.send(UserClientEvent::HandshakeStart {}).await.ok();
 
-        let (transport, fingerprint_str) =
-            self.complete_handshake(source, &data, &ciphersuite).await?;
+        // Resolve PSK from keychain based on psk_id
+        let resolved_psk = self.resolve_psk(&psk_id)?;
+        let is_psk_connection = resolved_psk.is_some();
+
+        let (transport, fingerprint_str) = self
+            .complete_handshake(source, &data, &ciphersuite, resolved_psk)
+            .await?;
 
         event_tx
             .send(UserClientEvent::HandshakeComplete {})
@@ -397,8 +409,6 @@ impl UserClient {
 
         // Check if this is a new connection (not in cache)
         let is_new_connection = !self.session_store.has_session(&source);
-        // PSK connections are already trusted — no fingerprint verification needed
-        let is_psk_connection = self.psk.is_some();
 
         if is_new_connection && !is_psk_connection {
             // New rendezvous connection: require fingerprint verification before caching
@@ -642,12 +652,47 @@ impl UserClient {
         Ok(())
     }
 
+    /// Resolve a PSK from the keychain based on an optional psk_id.
+    ///
+    /// - If `psk_id` is provided, look up the matching PSK from the keychain.
+    /// - If `psk_id` is `None` and there is exactly one PSK, use it (backward compat).
+    /// - If `psk_id` is `None` and the keychain is empty, return `None` (rendezvous mode).
+    /// - If `psk_id` is `None` and there are multiple PSKs, return an error.
+    fn resolve_psk(&self, psk_id: &Option<String>) -> Result<Option<Psk>, RemoteClientError> {
+        match psk_id {
+            Some(id_hex) => {
+                let id_bytes = hex::decode(id_hex).map_err(|_| {
+                    RemoteClientError::NoiseProtocol("Invalid psk_id hex encoding".to_string())
+                })?;
+                if id_bytes.len() < 4 {
+                    return Err(RemoteClientError::NoiseProtocol(
+                        "psk_id too short".to_string(),
+                    ));
+                }
+                let id: [u8; 4] = id_bytes[..4].try_into().expect("slice is exactly 4 bytes");
+                self.psks
+                    .get(&id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        RemoteClientError::NoiseProtocol(format!("Unknown PSK ID: {id_hex}"))
+                    })
+                    .map(Some)
+            }
+            None if self.psks.len() == 1 => Ok(self.psks.values().next().cloned()),
+            None if self.psks.is_empty() => Ok(None),
+            None => Err(RemoteClientError::NoiseProtocol(
+                "Multiple PSKs available but no psk_id provided in handshake".to_string(),
+            )),
+        }
+    }
+
     /// Complete Noise handshake as responder
     async fn complete_handshake(
         &self,
         remote_fingerprint: IdentityFingerprint,
         handshake_data: &str,
         ciphersuite_str: &str,
+        psk: Option<Psk>,
     ) -> Result<(MultiDeviceTransport, String), RemoteClientError> {
         // Parse ciphersuite
         let ciphersuite = match ciphersuite_str {
@@ -664,8 +709,8 @@ impl UserClient {
             .map_err(|e| RemoteClientError::NoiseProtocol(format!("Invalid packet: {e}")))?;
 
         // Create responder handshake (with PSK if available)
-        let mut handshake = if let Some(ref psk) = self.psk {
-            ResponderHandshake::with_psk(psk.clone())
+        let mut handshake = if let Some(psk) = psk {
+            ResponderHandshake::with_psk(psk)
         } else {
             ResponderHandshake::new()
         };
@@ -700,6 +745,17 @@ impl UserClient {
     /// Get the current rendezvous code
     pub fn rendezvous_code(&self) -> Option<&RendevouzCode> {
         self.rendezvous_code.as_ref()
+    }
+
+    /// Load pre-existing PSKs into the keychain.
+    ///
+    /// Called on every startup to populate the keychain with stored PSKs.
+    /// These PSKs are always accepted for incoming handshakes regardless of
+    /// the current pairing mode (rendezvous, ephemeral PSK, or reusable PSK).
+    pub fn load_psks(&mut self, psks: impl IntoIterator<Item = Psk>) {
+        for psk in psks {
+            self.psks.insert(psk.id(), psk);
+        }
     }
 
     /// Set a friendly name to assign to the next newly-paired session
