@@ -58,19 +58,23 @@ curl -fsSL "https://raw.githubusercontent.com/bitwarden/remote-access/main/examp
 * Automated script requesting an API-token.
 * Github Action
 
-## Getting started (cli, bitwarden)
+## Getting started (Bitwarden CLI)
 
-Once you've installed the CLI tool, it can connect to your Bitwarden vault using the Bitwarden CLI.
+In this short guide we'll walk you through setting up Remote Access on your local machine and connect it to the bitwarden CLI.
+
+**Prerequisites**
+
+- [Bitwarden CLI](https://bitwarden.com/help/cli/) (`bw`) installed and available on your PATH
 
 **Enabling Remote Access for Bitwarden**
 
-The `aac` CLI tool has built-in support for connecting to the Bitwarden CLI. The interactive CLI can be used to unlock your vault (`/bw-unlock`) and create a pairing code that the remote side can use to connect.
+The `aac` CLI tool has built-in support for connecting to the Bitwarden CLI. The interactive CLI can be used to unlock your vault (`/bw-unlock`) and create a pairing token that the remote side can use to connect.
 
 ```shell
 aac listen
 ```
 
-The interactive CLI will create a pairing code that you can use to establish a connection on the remote side.
+The interactive CLI will create a pairing token that you can use to establish a connection on the remote side.
 
 **Setting up the remote side**
 
@@ -83,14 +87,14 @@ aac connect
 
 ```shell
 # Pairing (without interactivity)
-aac connect --token <rendezvous-code> --output json
+aac connect --token <pairing-token> --output json
 
 # Fetching credentials (without interactivity)
 aac connect --domain example.com --output json
 aac connect --domain github.com --output json
 
 # Pair + Fetch in one command (without interactivity)
-aac connect --token <psk/rendezvous-code> --domain example.com --output json
+aac connect --token <pairing-token> --domain example.com --output json
 
 # Output:
 {"credential":{"notes":null,"password":"alligator5","totp":null,"uri":"https://github.com","username":"example"},"domain":"github.com","success":true}
