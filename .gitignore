@@ -16,3 +16,6 @@ target
 # Contains mutation testing data
 **/mutants.out*/
 
+# Node
+node_modules
+
