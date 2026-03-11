@@ -11,6 +11,8 @@ pub(crate) mod tui;
 pub(crate) mod tui_tracing;
 mod util;
 
+use std::sync::LazyLock;
+
 use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{ColorChoice, CommandFactory, Parser, Subcommand};
 use color_eyre::eyre::Result;
@@ -24,9 +26,9 @@ pub use listen::ListenArgs;
 
 const DEFAULT_PROXY_URL: &str = "wss://rat1.lesspassword.dev";
 
-/// Determine color choice: disabled when `LLM` or `NO_COLOR` is set,
-/// otherwise auto-detect.
-pub fn color_choice() -> ColorChoice {
+/// Color choice: disabled when `LLM` or `NO_COLOR` is set, otherwise auto-detect.
+/// Cached once per process.
+static COLOR_CHOICE: LazyLock<ColorChoice> = LazyLock::new(|| {
     let llm = std::env::var("LLM").is_ok();
     let no_color = std::env::var("NO_COLOR").is_ok();
     if llm || no_color {
@@ -34,6 +36,10 @@ pub fn color_choice() -> ColorChoice {
     } else {
         ColorChoice::Auto
     }
+});
+
+pub fn color_choice() -> ColorChoice {
+    *COLOR_CHOICE
 }
 
 const STYLES: Styles = Styles::styled()

@@ -13,42 +13,29 @@ use super::color_choice;
 use super::util::format_relative_time;
 use crate::storage::{FileIdentityStorage, FileSessionCache};
 
-/// Returns true when colored output is allowed.
-fn use_color() -> bool {
-    !matches!(color_choice(), clap::ColorChoice::Never)
-}
-
 /// Apply a style function only when color is enabled, otherwise return the plain string.
 fn styled(s: &str, style_fn: impl FnOnce(&str) -> crossterm::style::StyledContent<&str>) -> String {
-    if use_color() {
+    if matches!(color_choice(), clap::ColorChoice::Auto) {
         format!("{}", style_fn(s))
     } else {
         s.to_string()
     }
 }
 
-/// Convenience: bold
 fn bold(s: &str) -> String {
     styled(s, |s| s.bold())
 }
 
-/// Convenience: grey
 fn grey(s: &str) -> String {
     styled(s, |s| s.grey())
 }
 
-/// Convenience: cyan
 fn cyan(s: &str) -> String {
     styled(s, |s| s.cyan())
 }
 
-/// Convenience: cyan + bold
 fn cyan_bold(s: &str) -> String {
-    if use_color() {
-        format!("{}", s.cyan().bold())
-    } else {
-        s.to_string()
-    }
+    styled(s, |s| s.cyan().bold())
 }
 
 /// Which client type to operate on
