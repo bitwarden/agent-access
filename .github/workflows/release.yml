@@ -9,6 +9,14 @@ on:
       version:
         description: "Release version (e.g. v1.0.0)"
         required: true
+      release_type:
+        description: "Release type"
+        required: true
+        default: "latest"
+        type: choice
+        options:
+          - latest
+          - pre-release
 
 permissions: {}
 
@@ -103,6 +111,23 @@ jobs:
           merge-multiple: true
           path: artifacts/
 
+      - name: Determine release flags
+        id: flags
+        env:
+          VERSION: ${{ github.event.inputs.version || github.ref_name }}
+          RELEASE_TYPE: ${{ github.event.inputs.release_type }}
+        run: |
+          FLAGS=""
+          # For workflow_dispatch, use the explicit choice; for tag pushes, detect from version string
+          if [ "$RELEASE_TYPE" = "pre-release" ]; then
+            FLAGS="--prerelease"
+          elif [ -z "$RELEASE_TYPE" ] && echo "$VERSION" | grep -qE '[-](alpha|beta|rc|dev|pre)'; then
+            FLAGS="--prerelease"
+          else
+            FLAGS="--latest"
+          fi
+          echo "flags=$FLAGS" >> "$GITHUB_OUTPUT"
+
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -112,4 +137,5 @@ jobs:
           gh release create "$VERSION" \
             --title "$VERSION" \
             --generate-notes \
+            ${{ steps.flags.outputs.flags }} \
             artifacts/*
