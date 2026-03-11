@@ -97,12 +97,12 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Manage the session cache
-    Cache(CacheArgs),
     /// Connect to proxy and request credentials (default)
     Connect(ConnectArgs),
     /// Listen for remote client connections (user-client mode)
     Listen(ListenArgs),
+    /// Manage the session cache
+    Cache(CacheArgs),
 }
 
 /// Process the parsed command and execute the appropriate handler
