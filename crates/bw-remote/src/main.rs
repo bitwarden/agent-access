@@ -6,7 +6,7 @@
 mod command;
 mod storage;
 
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches};
 use color_eyre::eyre::Result;
 
 use command::{Cli, process_command};
@@ -16,8 +16,9 @@ async fn main() -> Result<()> {
     // Initialize error handling
     color_eyre::install()?;
 
-    // Parse CLI first to check for debug flag
-    let cli = Cli::parse();
+    // Parse CLI with color choice based on LLM env var
+    let matches = Cli::command().color(command::color_choice()).get_matches();
+    let cli = Cli::from_arg_matches(&matches)?;
 
     // Initialize logging with appropriate level
     let log_level = if cli.verbose {
