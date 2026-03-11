@@ -183,19 +183,13 @@ fn list_cache(client_type: Option<ClientType>) -> Result<()> {
                 if sessions.len() == 1 { "" } else { "s" }
             );
             for (session_fp, name, cached_at, last_connected) in &sessions {
-                let hex = hex::encode(session_fp.0);
-                let short_fp: String = hex.chars().take(16).collect();
+                let fp = hex::encode(session_fp.0);
                 let paired_ago = format_relative_time(*cached_at);
                 let used_ago = format_relative_time(*last_connected);
                 if let Some(name) = name {
-                    println!(
-                        "    {} {} {}",
-                        grey("-"),
-                        cyan_bold(name),
-                        grey(&format!("{short_fp}..."))
-                    );
+                    println!("    {} {} {}", grey("-"), cyan_bold(name), grey(&fp));
                 } else {
-                    println!("    {} {}", grey("-"), cyan(&format!("{short_fp}...")));
+                    println!("    {} {}", grey("-"), cyan(&fp));
                 }
                 println!(
                     "      {} {}  {}  {} {}",
