@@ -55,7 +55,7 @@ Commands:
 
 Options:
       --proxy-url <PROXY_URL>  Proxy server URL [default: ws://localhost:8080]
-      --token <TOKEN>          Token (rendezvous code or PSK token)
+      --token <TOKEN>          Pairing token (rendezvous or PSK)
       --session <SESSION>      Session fingerprint to reconnect to (hex string)
       --no-cache               Disable session caching
       --debug-log              Enable debug logging for the multi-device Noise protocol

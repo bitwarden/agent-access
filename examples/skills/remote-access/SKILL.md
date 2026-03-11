@@ -48,7 +48,7 @@ Use `credential.username` and `credential.password` to sign in. If the site requ
 
 The user must pair with a trusted device first. Ask them to:
 1. Run `reach listen` on their trusted device
-2. Give you the 6-character rendezvous code (e.g. `ABC-DEF`)
+2. Give you the pairing token (e.g. `ABC-DEF-GHI`)
 
 Then connect with:
 ```bash
@@ -74,7 +74,7 @@ Use the bare domain of the website you need credentials for:
 | Flag | Description |
 |------|-------------|
 | `--domain <DOMAIN>` | Website domain to fetch credentials for (required for non-interactive use) |
-| `--token <TOKEN>` | Rendezvous code or PSK token for new pairing (conflicts with `--session`) |
+| `--token <TOKEN>` | Pairing token — rendezvous or PSK (conflicts with `--session`) |
 | `--session <HEX>` | Session fingerprint or unique prefix (conflicts with `--token`) |
 | `--proxy-url <URL>` | WebSocket proxy address (default: `wss://rat1.lesspassword.dev`) |
 | `--output json\|text` | Output format (default: `text`; use `json` for programmatic access) |
