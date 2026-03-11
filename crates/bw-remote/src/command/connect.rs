@@ -255,7 +255,6 @@ async fn run_interactive_session(
         if ephemeral_connection {
             app.push_msg(MessageKind::Info, EPHEMERAL_MSG);
         }
-        app.push_msg(MessageKind::Status, "Connecting to proxy...");
         app.input_title = " Domain ";
         app.footer = connecting_footer();
 
@@ -342,7 +341,6 @@ async fn run_interactive_session(
                                         };
 
                                         // Start connecting
-                                        app.push_msg(MessageKind::Status, "Connecting to proxy...");
                                         app.set_mode(Mode::TextInput);
                                         app.input_title = " Domain ";
                                         app.footer = connecting_footer();
@@ -394,7 +392,6 @@ async fn run_interactive_session(
                                                 },
                                             };
 
-                                            app.push_msg(MessageKind::Status, "Connecting to proxy...");
                                             app.input_title = " Domain ";
                                             app.footer = connecting_footer();
 
