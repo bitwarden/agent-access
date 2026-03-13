@@ -5,7 +5,7 @@ Python implementation of the **RemoteClient** (connect side) for the Bitwarden R
 ## Setup
 
 ```bash
-cd examples/python
+cd examples/python-pure
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
@@ -31,10 +31,10 @@ Copy the rendezvous code displayed (e.g., `ABC-DEF-GHI`).
 
 ```bash
 # Connect via rendezvous code and request a credential
-python examples/connect_request.py --token ABC-DEF-GHI --domain example.com
+python connect_request.py --token ABC-DEF-GHI --domain example.com
 
 # With verbose logging
-python examples/connect_request.py --token ABC-DEF-GHI --domain example.com -v
+python connect_request.py --token ABC-DEF-GHI --domain example.com -v
 ```
 
 ### 4. Approve on the listen side
@@ -46,13 +46,13 @@ On the Rust listen side, approve the credential request when prompted.
 ### Rendezvous Code (new connection)
 
 ```bash
-python examples/connect_request.py --token ABC-DEF-GHI --domain example.com
+python connect_request.py --token ABC-DEF-GHI --domain example.com
 ```
 
 ### PSK Token (pre-shared key)
 
 ```bash
-python examples/connect_request.py --token "<64hex_psk>_<64hex_fingerprint>" --domain example.com
+python connect_request.py --token "<64hex_psk>_<64hex_fingerprint>" --domain example.com
 ```
 
 ### Cached Session (reconnection)
@@ -61,10 +61,10 @@ After the first connection, session state is cached at `~/.bw-remote/`:
 
 ```bash
 # Auto-select if only one cached session exists
-python examples/connect_request.py --domain example.com
+python connect_request.py --domain example.com
 
 # Specify a session by fingerprint
-python examples/connect_request.py --session <fingerprint_hex> --domain example.com
+python connect_request.py --session <fingerprint_hex> --domain example.com
 ```
 
 ## Programmatic Usage
