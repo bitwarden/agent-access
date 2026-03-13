@@ -1,11 +1,11 @@
 ---
 name: remote-access
-description: Retrieve login credentials, API keys, and secrets (username, password, TOTP) from the user's Bitwarden vault via bw-remote. Use when you need credentials to sign into a website or service, or need an API key.
+description: Retrieve login credentials, API keys, and secrets (username, password, TOTP) from the user's Bitwarden vault via aac. Use when you need credentials to sign into a website or service, or need an API key.
 user-invocable: true
-metadata: {"openclaw":{"requires":{"bins":["bw-remote"]}}}
+metadata: {"openclaw":{"requires":{"bins":["aac"]}}}
 ---
 
-Use this skill when you need to sign into a website, retrieve a login, look up a password, or get a TOTP code. `bw-remote` fetches credentials (username, password, TOTP, URI, notes) from the user's Bitwarden vault through a trusted paired device.
+Use this skill when you need to sign into a website, retrieve a login, look up a password, or get a TOTP code. `aac` fetches credentials (username, password, TOTP, URI, notes) from the user's Bitwarden vault through a trusted paired device.
 
 ## When to use this
 
@@ -19,14 +19,14 @@ Use this skill when you need to sign into a website, retrieve a login, look up a
 
 **Step 1** — Check for an existing session:
 ```bash
-bw-remote cache list
+aac connections list
 ```
 
 **Step 2** — Fetch the credential using the website's domain:
 ```bash
-bw-remote --domain example.com --output json
+aac --domain example.com --output json
 ```
-If only one session is cached, it auto-selects. With multiple sessions, add `--session <HEX>` (use a fingerprint or unique prefix from `cache list`).
+If only one session is cached, it auto-selects. With multiple sessions, add `--session <HEX>` (use a fingerprint or unique prefix from `connections list`).
 
 **Step 3** — Parse the JSON output:
 ```json
@@ -52,12 +52,12 @@ The user must pair with a trusted device first. Ask them to:
 
 Then connect with:
 ```bash
-bw-remote --domain example.com --token <CODE> --output json
+aac --domain example.com --token <CODE> --output json
 ```
 
 Alternatively, for PSK tokens (format: `<64-hex-psk>_<64-hex-fingerprint>`):
 ```bash
-bw-remote --domain example.com --token <PSK_TOKEN> --output json
+aac --domain example.com --token <PSK_TOKEN> --output json
 ```
 
 Sessions are cached in `~/.bw-remote/` for future use — subsequent requests don't need a token.
@@ -85,9 +85,9 @@ Use the bare domain of the website you need credentials for:
 ## Session management
 
 ```bash
-bw-remote cache list                          # List all cached sessions
-bw-remote cache clear                         # Clear all sessions and identity keys
-bw-remote cache clear sessions                # Clear sessions only, keep identity key
+aac connections list                          # List all cached sessions
+aac connections clear                         # Clear all sessions and identity keys
+aac connections clear sessions                # Clear sessions only, keep identity key
 ```
 
 ## Error handling
@@ -107,5 +107,5 @@ Exit codes:
 | 4 | Credential not found | No matching login for that domain in the vault |
 | 5 | Fingerprint mismatch | Security issue; do not proceed, alert the user |
 
-If exit code is 3, try `bw-remote cache clear sessions` and ask the user for a new token.
+If exit code is 3, try `aac connections clear sessions` and ask the user for a new token.
 If exit code is 4, confirm the domain with the user — they may store it under a different name.
