@@ -40,22 +40,22 @@ The proxy binds to `127.0.0.1:8080` by default. Set the `BIND_ADDR` environment 
 
 ### CLI
 
-Run `bw-remote` to use the demo CLI. This top-level driver command lets you explore the functionality of the SDK:
+Run `aac` to use the demo CLI. This top-level driver command lets you explore the functionality of the SDK:
 
 ```shell
-Connect to a user-client through a proxy to request credentials over a secure channel
+Retrieve credentials from your password manager over a secure channel
 
-Usage: bw-remote [OPTIONS] [COMMAND]
+Usage: aac [OPTIONS] [COMMAND]
 
 Commands:
-  cache    Manage the session cache
-  connect  Connect to proxy and request credentials (default)
-  listen   Listen for remote client connections (user-client mode)
+  connect      Connect to proxy and request credentials
+  listen       Listen for remote client connections (user-client mode)
+  connections  Manage connections
   help         Print this message or the help of the given subcommand(s)
 
 Options:
-      --proxy-url <PROXY_URL>  Proxy server URL [default: ws://localhost:8080]
-      --token <TOKEN>          Pairing token (rendezvous or PSK)
+      --proxy-url <PROXY_URL>  Proxy server URL [default: wss://rat1.lesspassword.dev]
+      --token <TOKEN>          Token (rendezvous code or PSK token)
       --session <SESSION>      Session fingerprint to reconnect to (hex string)
       --no-cache               Disable session caching
       --debug-log              Enable debug logging for the multi-device Noise protocol
@@ -66,7 +66,7 @@ Options:
 ### Demo Flow
 
 1. Start the proxy server with `cargo run -p bw-proxy`
-2. Start the user-client side with `cargo run -p bw-remote -- listen`
-3. Enter the pairing token from step 2 into the `--token` argument of `cargo run -p bw-remote -- connect`
-4. Now `bw-remote`, taking the role of the remote client, will let you type in domains to request credentials for, and you will approve them on the `listen` side from step 2
+2. Start the user-client side with `cargo run --bin aac -- listen`
+3. Enter the pairing token from step 2 into the `--token` argument of `aac connect`
+4. Now `aac`, taking the role of the remote client, will let you type in domains to request credentials for, and you will approve them on the `listen` side from step 2
 5. Observe that the credential was sent to the remote side
