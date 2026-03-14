@@ -606,3 +606,127 @@ fn connect_no_token_no_sessions_gives_error() {
     // Should fail (either connection error or session error)
     assert!(result.is_err());
 }
+
+/// Test that calling connect() twice replaces the previous connection cleanly
+/// (no panic, no deadlock, second connection works).
+#[tokio::test(flavor = "current_thread")]
+async fn test_double_connect_replaces_previous() {
+    let local = LocalSet::new();
+    local
+        .run_until(async {
+            let addr = start_test_server().await;
+
+            // Set up two separate UserClient PSK sessions
+            let mut psk_tokens = Vec::new();
+            let mut user_tasks = Vec::new();
+            let mut credential_handlers = Vec::new();
+
+            for i in 0..2 {
+                let user_identity = MockIdentityProvider::new();
+                let user_keypair = user_identity.identity().clone();
+
+                let (user_event_tx, mut user_event_rx) = mpsc::channel::<UserClientEvent>(32);
+                let (user_response_tx, user_response_rx) = mpsc::channel::<UserClientResponse>(32);
+
+                let user_proxy = create_proxy_client(addr, Some(user_keypair));
+                let user_session_store = MockSessionStore::new();
+
+                let mut user_client = UserClient::listen(
+                    Box::new(user_identity),
+                    Box::new(user_session_store),
+                    Box::new(user_proxy),
+                )
+                .await
+                .expect("UserClient should connect");
+
+                let user_task = tokio::task::spawn_local(async move {
+                    user_client
+                        .enable_psk(user_event_tx, user_response_rx)
+                        .await
+                });
+
+                let psk_token = timeout(Duration::from_secs(5), async {
+                    loop {
+                        if let Some(UserClientEvent::PskTokenGenerated { token }) =
+                            user_event_rx.recv().await
+                        {
+                            return token;
+                        }
+                    }
+                })
+                .await
+                .expect("Should receive PskTokenGenerated event");
+
+                let _domain = format!("test{i}.example.com");
+                let credential_handler = tokio::task::spawn_local(async move {
+                    loop {
+                        match user_event_rx.recv().await {
+                            Some(UserClientEvent::CredentialRequest {
+                                request_id,
+                                session_id,
+                                domain: _domain,
+                            }) => {
+                                user_response_tx
+                                    .send(UserClientResponse::RespondCredential {
+                                        request_id,
+                                        session_id,
+                                        approved: true,
+                                        credential: Some(test_credential()),
+                                    })
+                                    .await
+                                    .expect("Should send response");
+                                break;
+                            }
+                            Some(_) => continue,
+                            None => break,
+                        }
+                    }
+                });
+
+                psk_tokens.push(psk_token);
+                user_tasks.push(user_task);
+                credential_handlers.push(credential_handler);
+            }
+
+            let proxy_url = format!("ws://{addr}");
+            let token1 = psk_tokens.remove(0);
+            let token2 = psk_tokens.remove(0);
+
+            let result = tokio::task::spawn_blocking(move || {
+                let client = RemoteAccessClient::new(proxy_url, "test-uniffi-double".to_string())
+                    .expect("should create client");
+
+                // First connect
+                client
+                    .connect(Some(token1), None)
+                    .expect("first connect should succeed");
+                assert!(client.is_ready(), "Should be ready after first connect");
+
+                // Second connect replaces the first
+                client
+                    .connect(Some(token2), None)
+                    .expect("second connect should succeed");
+                assert!(client.is_ready(), "Should be ready after second connect");
+
+                // Credential request works on the new connection
+                let cred = client
+                    .request_credential("test1.example.com".to_string())
+                    .expect("credential request should succeed");
+
+                client.close();
+                cred
+            })
+            .await
+            .expect("blocking task should not panic");
+
+            assert_eq!(result.username.as_deref(), Some("testuser"));
+
+            for h in credential_handlers {
+                h.abort();
+            }
+            for t in user_tasks {
+                t.abort();
+            }
+        })
+        .await;
+}

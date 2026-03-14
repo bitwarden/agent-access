@@ -3,9 +3,7 @@ use std::sync::Mutex;
 use tokio::sync::mpsc;
 
 use bw_proxy_client::ProxyClientConfig;
-use bw_rat_client::{
-    DefaultProxyClient, IdentityFingerprint, IdentityProvider, Psk, RemoteClient, RemoteClientEvent,
-};
+use bw_rat_client::{DefaultProxyClient, IdentityFingerprint, IdentityProvider, Psk, RemoteClient};
 
 use crate::error::RemoteAccessError;
 use crate::storage::{FileIdentityStorage, FileSessionCache};
@@ -15,12 +13,16 @@ use crate::types::{RemoteCredentialData, SessionInfo};
 ///
 /// Wraps the full Rust crypto/protocol stack behind a synchronous FFI-safe API.
 /// Internally owns a Tokio runtime and blocks on async operations.
+///
+/// Fingerprint verification is not performed in headless mode — the returned
+/// handshake fingerprint from `connect()` can be verified out-of-band by callers.
+///
+/// Implements `Drop` to ensure the underlying connection is closed if the caller
+/// forgets to call `close()`.
 #[derive(uniffi::Object)]
 pub struct RemoteAccessClient {
     runtime: tokio::runtime::Runtime,
     inner: Mutex<Option<RemoteClient>>,
-    #[allow(dead_code)]
-    event_rx: Mutex<Option<mpsc::Receiver<RemoteClientEvent>>>,
     proxy_url: String,
     identity_name: String,
 }
@@ -50,7 +52,6 @@ impl RemoteAccessClient {
         Ok(Self {
             runtime,
             inner: Mutex::new(None),
-            event_rx: Mutex::new(None),
             proxy_url,
             identity_name,
         })
@@ -74,7 +75,10 @@ impl RemoteAccessClient {
         let session_store = FileSessionCache::load_or_create(&self.identity_name)
             .map_err(RemoteAccessError::from)?;
 
-        let (event_tx, event_rx) = mpsc::channel(32);
+        // Large event buffer: events are not consumed in headless mode, so the channel
+        // must be big enough to hold all events emitted during connect + handshake without
+        // blocking RemoteClient. Response channel is unused (fingerprint verification disabled).
+        let (event_tx, _event_rx) = mpsc::channel(256);
         let (_response_tx, response_rx) = mpsc::channel(32);
 
         let proxy_client = Box::new(DefaultProxyClient::new(ProxyClientConfig {
@@ -162,13 +166,14 @@ impl RemoteAccessClient {
             }
         })?;
 
-        // Store the client and event receiver
-        if let Ok(mut inner) = self.inner.lock() {
-            *inner = Some(client);
-        }
-        if let Ok(mut rx) = self.event_rx.lock() {
-            *rx = Some(event_rx);
-        }
+        // Store the connected client
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| RemoteAccessError::SessionError {
+                message: "Failed to acquire client lock".to_string(),
+            })?;
+        *inner = Some(client);
 
         Ok(handshake_fingerprint)
     }
@@ -246,9 +251,12 @@ impl RemoteAccessClient {
                 });
             }
         }
-        if let Ok(mut rx) = self.event_rx.lock() {
-            *rx = None;
-        }
+    }
+}
+
+impl Drop for RemoteAccessClient {
+    fn drop(&mut self) {
+        self.close();
     }
 }
 
