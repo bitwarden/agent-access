@@ -4,6 +4,7 @@
 //! to request credentials over a secure Noise Protocol channel.
 
 mod command;
+pub(crate) mod providers;
 mod storage;
 
 use clap::{CommandFactory, FromArgMatches};
