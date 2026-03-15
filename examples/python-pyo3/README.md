@@ -8,7 +8,7 @@ Requires Python 3.9+ and a Rust toolchain.
 
 ```bash
 cd examples/python-pyo3
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install maturin
 maturin develop
@@ -16,13 +16,7 @@ maturin develop
 
 ## Demo Flow
 
-### 1. Start the Rust proxy server
-
-```bash
-cargo run --bin bw-proxy
-```
-
-### 2. Start the Rust UserClient (listen side)
+### 1. Start the Rust UserClient (listen side)
 
 ```bash
 cargo run --bin aac -- listen
@@ -30,63 +24,57 @@ cargo run --bin aac -- listen
 
 Copy the rendezvous code displayed (e.g., `ABC-DEF-GHI`).
 
-### 3. Run the Python RemoteClient
+### 2. Pair from Python
 
 ```bash
-python connect_request.py --token ABC-DEF-GHI --domain example.com
+python3 pair.py --token ABC-DEF-GHI
 ```
 
-### 4. Approve on the listen side
-
-On the Rust listen side, approve the credential request when prompted.
-
-## Connection Modes
-
-### Rendezvous Code (new connection)
+Or with a PSK token:
 
 ```bash
-python connect_request.py --token ABC-DEF-GHI --domain example.com
+python3 pair.py --token "<64hex_psk>_<64hex_fingerprint>"
 ```
 
-### PSK Token (pre-shared key)
+This clears any existing cached session and pairs with the listener. Only one session is kept at a time.
+
+### 3. Request a credential
 
 ```bash
-python connect_request.py --token "<64hex_psk>_<64hex_fingerprint>" --domain example.com
+python3 get.py --domain example.com
 ```
 
-### Cached Session (reconnection)
-
-After the first connection, session state is cached at `~/.bw-remote/`:
-
-```bash
-# Auto-select if only one cached session exists
-python connect_request.py --domain example.com
-
-# Specify a session by fingerprint
-python connect_request.py --session <fingerprint_hex> --domain example.com
-```
+Uses the cached session from step 2. Approve the request on the listen side.
 
 ## Programmatic Usage
 
 ```python
 from bw_remote_rs import RemoteClient
 
-client = RemoteClient(proxy_url="ws://localhost:8080")
+# Pair (clears previous session)
+client = RemoteClient(proxy_url="wss://rat1.lesspassword.dev")
+client.clear_sessions()
 client.connect(token="ABC-DEF-GHI")
+client.close()
 
+# Later — request a credential using cached session
+client = RemoteClient(proxy_url="wss://rat1.lesspassword.dev")
+client.connect()
 cred = client.request_credential("example.com")
 print(f"Username: {cred.username}")
 print(f"Password: {cred.password}")
-
 client.close()
 ```
 
-Note: unlike the pure-Python SDK, the PyO3 API is **synchronous** — it runs a Tokio runtime internally.
+The API is **synchronous** — all async Rust operations are handled internally.
 
 ## Architecture
 
 | File | Purpose |
 |------|---------|
+| `pair.py` | Pair with a listening peer (clears and replaces cached session) |
+| `get.py` | Request a credential using the cached session |
+| `connect_request.py` | Combined pair + request in a single script |
 | `src/lib.rs` | PyO3 module definition, `connect_and_request()` one-shot helper |
 | `src/client.rs` | `PyRemoteClient` — wraps Rust `RemoteClient` with an internal Tokio runtime |
 | `src/storage.rs` | `FileIdentityStorage` + `FileSessionCache` — file-based identity and session persistence |

@@ -3,7 +3,8 @@ use tokio::sync::mpsc;
 
 use bw_proxy_client::ProxyClientConfig;
 use bw_rat_client::{
-    DefaultProxyClient, IdentityFingerprint, IdentityProvider, Psk, RemoteClient, RemoteClientEvent,
+    DefaultProxyClient, IdentityFingerprint, IdentityProvider, Psk, RemoteClient,
+    RemoteClientEvent, SessionStore,
 };
 
 use crate::storage::{FileIdentityStorage, FileSessionCache};
@@ -13,7 +14,7 @@ use crate::types::{PyCredentialData, RemoteAccessError};
 ///
 /// Usage::
 ///
-///     client = RemoteClient("ws://localhost:8080", "python-remote")
+///     client = RemoteClient("wss://rat1.lesspassword.dev", "python-remote")
 ///     client.connect(token="ABC-DEF-GHI")
 ///     cred = client.request_credential("example.com")
 ///     print(cred.username, cred.password)
@@ -35,7 +36,7 @@ impl PyRemoteClient {
     ///     proxy_url: WebSocket URL of the proxy server.
     ///     identity_name: Name for the identity keypair file (~/.bw-remote/{name}.key).
     #[new]
-    #[pyo3(signature = (proxy_url="ws://localhost:8080", identity_name="python-remote"))]
+    #[pyo3(signature = (proxy_url="wss://rat1.lesspassword.dev", identity_name="python-remote"))]
     pub fn new(proxy_url: &str, identity_name: &str) -> PyResult<Self> {
         // Enable RUST_LOG for debugging
         let _ = tracing_subscriber::fmt()
@@ -218,6 +219,27 @@ impl PyRemoteClient {
     #[getter]
     fn is_ready(&self) -> bool {
         self.inner.as_ref().is_some_and(|c| c.is_ready())
+    }
+
+    /// Clear all cached sessions for this identity.
+    pub fn clear_sessions(&self) -> PyResult<()> {
+        let mut store = FileSessionCache::load_or_create(&self.identity_name)
+            .map_err(|e| RemoteAccessError::new_err(e.to_string()))?;
+        store
+            .clear()
+            .map_err(|e| RemoteAccessError::new_err(e.to_string()))?;
+        Ok(())
+    }
+
+    /// List cached sessions. Returns a list of (fingerprint_hex, name, cached_at, last_connected_at).
+    pub fn list_sessions(&self) -> PyResult<Vec<(String, Option<String>, u64, u64)>> {
+        let store = FileSessionCache::load_or_create(&self.identity_name)
+            .map_err(|e| RemoteAccessError::new_err(e.to_string()))?;
+        Ok(store
+            .list_sessions()
+            .into_iter()
+            .map(|(fp, name, cached, last)| (hex::encode(fp.0), name, cached, last))
+            .collect())
     }
 }
 

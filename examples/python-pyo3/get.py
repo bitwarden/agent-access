@@ -1,18 +1,10 @@
 #!/usr/bin/env python3
-"""Example: connect to a listening peer and request a credential.
+"""Request a credential using the cached session.
+
+Requires a prior pairing via pair.py.
 
 Usage:
-    # With rendezvous code:
-    python3 connect_request.py --token ABC-DEF-GHI --domain example.com
-
-    # With PSK token:
-    python3 connect_request.py --token <64hex_psk>_<64hex_fingerprint> --domain example.com
-
-    # With cached session (auto-select if only one):
-    python3 connect_request.py --domain example.com
-
-    # With specific cached session:
-    python3 connect_request.py --session <fingerprint_hex> --domain example.com
+    python3 get.py --domain example.com
 """
 
 import argparse
@@ -26,18 +18,18 @@ def main() -> int:
         description="Request a credential via Bitwarden Remote Access (Rust backend)"
     )
     parser.add_argument("--proxy", default="wss://rat1.lesspassword.dev", help="Proxy server URL")
-    parser.add_argument("--token", help="Rendezvous code or PSK token")
-    parser.add_argument("--session", help="Cached session fingerprint (hex)")
     parser.add_argument("--domain", required=True, help="Domain to request credentials for")
-    parser.add_argument("--identity", default="python-remote", help="Identity name")
+    parser.add_argument(
+        "--identity", default="python-remote",
+        help="Identity keypair name — stored at ~/.bw-remote/<name>.key",
+    )
     args = parser.parse_args()
 
     client = RemoteClient(proxy_url=args.proxy, identity_name=args.identity)
 
     try:
-        fingerprint = client.connect(token=args.token, session=args.session)
-        if fingerprint:
-            print(f"Handshake fingerprint: {fingerprint}", file=sys.stderr)
+        # Connect using the single cached session
+        client.connect()
 
         cred = client.request_credential(args.domain)
 
