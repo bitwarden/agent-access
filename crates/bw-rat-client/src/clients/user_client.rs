@@ -438,7 +438,7 @@ impl UserClient {
 
             self.audit_log
                 .write(AuditEvent::SessionRefreshed {
-                    fingerprint: &source,
+                    remote_identity: &source,
                 })
                 .await;
 
@@ -489,8 +489,8 @@ impl UserClient {
 
         self.audit_log
             .write(AuditEvent::ConnectionEstablished {
-                fingerprint: &fingerprint,
-                session_name,
+                remote_identity: &fingerprint,
+                remote_name: session_name,
                 connection_type,
             })
             .await;
@@ -530,7 +530,7 @@ impl UserClient {
         } else {
             self.audit_log
                 .write(AuditEvent::ConnectionRejected {
-                    fingerprint: &pending.source,
+                    remote_identity: &pending.source,
                 })
                 .await;
 
@@ -584,7 +584,7 @@ impl UserClient {
         self.audit_log
             .write(AuditEvent::CredentialRequested {
                 domain: &request.domain,
-                fingerprint: &source,
+                remote_identity: &source,
                 request_id: &request.request_id,
             })
             .await;
@@ -697,7 +697,7 @@ impl UserClient {
             self.audit_log
                 .write(AuditEvent::CredentialApproved {
                     domain: "unknown", // TODO: Track domain from request
-                    fingerprint: &fingerprint,
+                    remote_identity: &fingerprint,
                     request_id: &request_id,
                     fields,
                 })
@@ -713,7 +713,7 @@ impl UserClient {
             self.audit_log
                 .write(AuditEvent::CredentialDenied {
                     domain: "unknown", // TODO: Track domain from request
-                    fingerprint: &fingerprint,
+                    remote_identity: &fingerprint,
                     request_id: &request_id,
                 })
                 .await;

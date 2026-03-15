@@ -102,35 +102,35 @@ pub struct CredentialFieldSet {
 pub enum AuditEvent<'a> {
     /// A new device completed handshake and was accepted
     ConnectionEstablished {
-        fingerprint: &'a IdentityFingerprint,
-        session_name: Option<&'a str>,
+        remote_identity: &'a IdentityFingerprint,
+        remote_name: Option<&'a str>,
         connection_type: AuditConnectionType,
     },
     /// A cached/known device reconnected (transport keys refreshed)
     SessionRefreshed {
-        fingerprint: &'a IdentityFingerprint,
+        remote_identity: &'a IdentityFingerprint,
     },
     /// A new connection was rejected during fingerprint verification
     ConnectionRejected {
-        fingerprint: &'a IdentityFingerprint,
+        remote_identity: &'a IdentityFingerprint,
     },
     /// A remote device requested a credential
     CredentialRequested {
         domain: &'a str,
-        fingerprint: &'a IdentityFingerprint,
+        remote_identity: &'a IdentityFingerprint,
         request_id: &'a str,
     },
     /// A credential was approved and sent
     CredentialApproved {
         domain: &'a str,
-        fingerprint: &'a IdentityFingerprint,
+        remote_identity: &'a IdentityFingerprint,
         request_id: &'a str,
         fields: CredentialFieldSet,
     },
     /// A credential request was denied
     CredentialDenied {
         domain: &'a str,
-        fingerprint: &'a IdentityFingerprint,
+        remote_identity: &'a IdentityFingerprint,
         request_id: &'a str,
     },
 }
