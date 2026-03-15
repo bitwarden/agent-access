@@ -294,17 +294,8 @@ async fn run_event_loop(
 
                                         match provider.unlock(&input) {
                                             Ok(()) => {
-                                                // Successful unlock is proof — set status directly
-                                                // to avoid a redundant `bw status` child process.
-                                                app.vault_status = Some(vec![
-                                                    Span::styled(format!("{} ", provider.name()), Style::default().fg(Color::Green)),
-                                                    Span::styled(
-                                                        "unlocked",
-                                                        Style::default()
-                                                            .fg(Color::Green)
-                                                            .add_modifier(Modifier::BOLD),
-                                                    ),
-                                                ]);
+                                                let status = provider.status();
+                                                apply_status_spans(app, provider.name(), &status);
                                                 app.push_msg(MessageKind::Success, "Vault unlocked successfully");
                                             }
                                             Err(e) => {
