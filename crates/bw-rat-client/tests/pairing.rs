@@ -771,11 +771,13 @@ async fn run_reconnection_test(fail_count: u32) -> (Vec<UserClientEvent>, u32) {
                 while let Some(event) = event_rx.recv().await {
                     match &event {
                         UserClientEvent::Listening {} => {}
-                        UserClientEvent::Error { .. } => {
-                            panic!("Unexpected error event: {:?}", event);
-                        }
-                        _ => {
+                        UserClientEvent::ClientDisconnected {}
+                        | UserClientEvent::Reconnecting { .. }
+                        | UserClientEvent::Reconnected {} => {
                             collected.push(event.clone());
+                        }
+                        other => {
+                            panic!("Unexpected event during reconnection test: {:?}", other);
                         }
                     }
                     // Stop after seeing Reconnected
