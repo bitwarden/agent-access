@@ -9,8 +9,9 @@ use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-/// Interval between server-side WebSocket pings to connected clients.
-const SERVER_PING_INTERVAL: Duration = Duration::from_secs(45);
+/// Maximum time the server waits without receiving any message (including
+/// client pings) before considering the connection dead and closing it.
+const CLIENT_INACTIVITY_TIMEOUT: Duration = Duration::from_secs(120);
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio_tungstenite::{WebSocketStream, tungstenite::Message};
@@ -111,8 +112,7 @@ impl ConnectionHandler {
         tracing::info!("Connection #{}: Added to connection map", conn_id);
 
         let result =
-            Self::handle_authenticated_messages(&state, &mut ws_read, fingerprint, conn_id, &tx)
-                .await;
+            Self::handle_authenticated_messages(&state, &mut ws_read, fingerprint, conn_id).await;
 
         {
             let mut connections = state.connections.write().await;
@@ -137,14 +137,18 @@ impl ConnectionHandler {
         ws_read: &mut futures_util::stream::SplitStream<WebSocketStream<TcpStream>>,
         fingerprint: IdentityFingerprint,
         conn_id: u64,
-        tx: &mpsc::UnboundedSender<Message>,
     ) -> Result<(), ProxyError> {
-        let mut ping_interval = tokio::time::interval(SERVER_PING_INTERVAL);
-        ping_interval.tick().await; // consume the immediate first tick
+        let inactivity_deadline = tokio::time::sleep(CLIENT_INACTIVITY_TIMEOUT);
+        tokio::pin!(inactivity_deadline);
 
         loop {
             let msg = tokio::select! {
                 msg_result = ws_read.next() => {
+                    // Any message from the client resets the inactivity timer
+                    inactivity_deadline
+                        .as_mut()
+                        .reset(tokio::time::Instant::now() + CLIENT_INACTIVITY_TIMEOUT);
+
                     match msg_result {
                         Some(Ok(Message::Text(text))) => text,
                         Some(Ok(Message::Close(_))) => {
@@ -156,9 +160,13 @@ impl ConnectionHandler {
                         None => return Ok(()),
                     }
                 }
-                _ = ping_interval.tick() => {
-                    let _ = tx.send(Message::Ping(vec![]));
-                    continue;
+                _ = &mut inactivity_deadline => {
+                    tracing::info!(
+                        "Connection #{}: Client inactive for {}s, closing",
+                        conn_id,
+                        CLIENT_INACTIVITY_TIMEOUT.as_secs()
+                    );
+                    return Ok(());
                 }
             };
 
