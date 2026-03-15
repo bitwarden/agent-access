@@ -21,6 +21,7 @@ pub enum CredentialQuery<'a> {
 }
 
 /// Current readiness of a credential provider.
+#[derive(Debug)]
 #[allow(dead_code)]
 pub enum ProviderStatus {
     /// Provider is ready to serve credentials.
@@ -37,6 +38,7 @@ pub enum ProviderStatus {
 }
 
 /// Result of a credential lookup.
+#[derive(Debug)]
 pub enum LookupResult {
     /// A credential was found.
     Found(UserCredentialData),
@@ -74,5 +76,167 @@ pub fn create_provider(name: &str) -> Result<Box<dyn CredentialProvider>> {
     match name {
         "bitwarden" => Ok(Box::new(BitwardenProvider::new())),
         _ => bail!("Unknown credential provider: '{name}'. Available: bitwarden"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    // -- Mock provider ------------------------------------------------------
+
+    struct MockProvider {
+        name: &'static str,
+        status: ProviderStatus,
+        credentials: HashMap<String, UserCredentialData>,
+        unlock_result: Result<(), String>,
+    }
+
+    impl MockProvider {
+        fn new() -> Self {
+            Self {
+                name: "Mock",
+                status: ProviderStatus::Ready { user_info: None },
+                credentials: HashMap::new(),
+                unlock_result: Ok(()),
+            }
+        }
+
+        fn with_credential(mut self, domain: &str, cred: UserCredentialData) -> Self {
+            self.credentials.insert(domain.to_string(), cred);
+            self
+        }
+
+        fn with_unlock_error(mut self, msg: &str) -> Self {
+            self.unlock_result = Err(msg.to_string());
+            self
+        }
+    }
+
+    impl CredentialProvider for MockProvider {
+        fn name(&self) -> &str {
+            self.name
+        }
+
+        fn status(&self) -> ProviderStatus {
+            match &self.status {
+                ProviderStatus::Ready { user_info } => ProviderStatus::Ready {
+                    user_info: user_info.clone(),
+                },
+                ProviderStatus::Locked { prompt, user_info } => ProviderStatus::Locked {
+                    prompt: prompt.clone(),
+                    user_info: user_info.clone(),
+                },
+                ProviderStatus::Unavailable { reason } => ProviderStatus::Unavailable {
+                    reason: reason.clone(),
+                },
+                ProviderStatus::NotInstalled { install_hint } => ProviderStatus::NotInstalled {
+                    install_hint: install_hint.clone(),
+                },
+            }
+        }
+
+        fn unlock(&mut self, _input: &str) -> Result<(), String> {
+            self.unlock_result.clone()
+        }
+
+        fn lookup(&self, query: &CredentialQuery<'_>) -> LookupResult {
+            let search = match query {
+                CredentialQuery::Domain(d) => *d,
+                CredentialQuery::CredentialId(id) => *id,
+                CredentialQuery::Search(s) => *s,
+            };
+            match self.credentials.get(search) {
+                Some(cred) => LookupResult::Found(cred.clone()),
+                None => LookupResult::NotFound,
+            }
+        }
+    }
+
+    // -- create_provider() --------------------------------------------------
+
+    #[test]
+    fn create_provider_bitwarden() {
+        let provider = create_provider("bitwarden").expect("should create bitwarden provider");
+        assert_eq!(provider.name(), "Bitwarden");
+    }
+
+    #[test]
+    fn create_provider_unknown() {
+        match create_provider("nonexistent") {
+            Err(e) => {
+                let msg = format!("{e}");
+                assert!(
+                    msg.contains("nonexistent"),
+                    "error should mention the name: {msg}"
+                );
+            }
+            Ok(_) => panic!("should fail for unknown provider"),
+        }
+    }
+
+    #[test]
+    fn create_provider_empty() {
+        assert!(create_provider("").is_err());
+    }
+
+    // -- MockProvider / trait contract --------------------------------------
+
+    fn sample_credential() -> UserCredentialData {
+        UserCredentialData {
+            username: Some("alice".into()),
+            password: Some("s3cret".into()),
+            totp: None,
+            uri: Some("https://example.com".into()),
+            notes: None,
+            credential_id: Some("id-123".into()),
+        }
+    }
+
+    #[test]
+    fn mock_lookup_found() {
+        let provider = MockProvider::new().with_credential("example.com", sample_credential());
+        match provider.lookup(&CredentialQuery::Domain("example.com")) {
+            LookupResult::Found(cred) => {
+                assert_eq!(cred.username.as_deref(), Some("alice"));
+                assert_eq!(cred.password.as_deref(), Some("s3cret"));
+            }
+            other => panic!("expected Found, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mock_lookup_not_found() {
+        let provider = MockProvider::new();
+        assert!(matches!(
+            provider.lookup(&CredentialQuery::Domain("unknown.com")),
+            LookupResult::NotFound
+        ));
+    }
+
+    #[test]
+    fn mock_unlock_success() {
+        let mut provider = MockProvider::new();
+        assert!(provider.unlock("anything").is_ok());
+    }
+
+    #[test]
+    fn mock_unlock_error() {
+        let mut provider = MockProvider::new().with_unlock_error("vault sealed");
+        let err = provider.unlock("anything").unwrap_err();
+        assert_eq!(err, "vault sealed");
+    }
+
+    #[test]
+    fn mock_name() {
+        let provider = MockProvider::new();
+        assert_eq!(provider.name(), "Mock");
+    }
+
+    #[test]
+    fn mock_status_ready() {
+        let provider = MockProvider::new();
+        assert!(matches!(provider.status(), ProviderStatus::Ready { .. }));
     }
 }

@@ -38,6 +38,7 @@ struct BwItem {
 
 /// Credential provider backed by the Bitwarden CLI (`bw`).
 pub struct BitwardenProvider {
+    // TODO: Look into ways to keep the session key more secure (e.g. `secrecy::SecretString`)
     session: Option<String>,
     /// Cached path to the `bw` binary (resolved once on construction).
     bw_path: Option<String>,
@@ -120,9 +121,15 @@ fn check_bw_cli_status(bw: &str, session: Option<&str>) -> (Option<String>, Opti
     }
 }
 
-/// Heuristic: a BW session key is a non-empty base64-ish string with no spaces.
+/// Heuristic: a BW session key is exactly 88 characters of valid base64.
+///
+/// BW session keys are 64 bytes (two 32-byte keys), base64-encoded → 88 chars
+/// with padding.
 fn looks_like_session_key(input: &str) -> bool {
-    !input.is_empty() && !input.contains(' ') && input.len() > 20
+    input.len() == 88
+        && input
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'=')
 }
 
 /// Look up a credential from the Bitwarden CLI.
@@ -159,6 +166,18 @@ fn lookup_credential(bw: &str, search: &str, session: Option<&str>) -> Option<Us
         notes: None,
         credential_id: item.id,
     })
+}
+
+/// Create a `BitwardenProvider` with explicit fields (for testing without
+/// spawning `which`).
+#[cfg(test)]
+impl BitwardenProvider {
+    fn with_session(session: Option<String>) -> Self {
+        Self {
+            session,
+            bw_path: None,
+        }
+    }
 }
 
 impl CredentialProvider for BitwardenProvider {
@@ -247,5 +266,54 @@ impl CredentialProvider for BitwardenProvider {
                 LookupResult::NotFound
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- looks_like_session_key() -------------------------------------------
+
+    /// 88 A's — valid base64 of the right length.
+    const VALID_KEY: &str =
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+    #[test]
+    fn session_key_valid() {
+        assert_eq!(VALID_KEY.len(), 88);
+        assert!(looks_like_session_key(VALID_KEY));
+    }
+
+    #[test]
+    fn session_key_rejects_wrong_length_and_bad_chars() {
+        assert!(!looks_like_session_key(""));
+        assert!(!looks_like_session_key("short"));
+        assert!(!looks_like_session_key(&VALID_KEY[..87])); // too short
+        assert!(!looks_like_session_key("alligator5")); // typical password
+        // 88 chars but contains a space
+        let mut bad = VALID_KEY.to_string();
+        bad.replace_range(40..41, " ");
+        assert!(!looks_like_session_key(&bad));
+    }
+
+    // -- BitwardenProvider construction & name() ----------------------------
+
+    #[test]
+    fn provider_name_is_bitwarden() {
+        let p = BitwardenProvider::with_session(None);
+        assert_eq!(p.name(), "Bitwarden");
+    }
+
+    #[test]
+    fn provider_has_session_when_constructed_with_one() {
+        let p = BitwardenProvider::with_session(Some("key123".into()));
+        assert!(p.session.is_some());
+    }
+
+    #[test]
+    fn provider_has_no_session_when_constructed_without() {
+        let p = BitwardenProvider::with_session(None);
+        assert!(p.session.is_none());
     }
 }
