@@ -450,22 +450,14 @@ impl UserClient {
                 .ok();
         } else if is_psk_connection {
             // PSK connection: trust established via pre-shared key, no verification needed
-            self.transports.insert(source, transport.clone());
-            self.session_store.cache_session(source)?;
             let session_name = self.pending_session_name.take();
-            if let Some(ref name) = session_name {
-                self.session_store.set_session_name(&source, name.clone())?;
-            }
-            self.session_store
-                .save_transport_state(&source, transport)?;
-
-            self.audit_log
-                .write(AuditEvent::ConnectionEstablished {
-                    fingerprint: &source,
-                    session_name: session_name.as_deref(),
-                    connection_type: AuditConnectionType::Psk,
-                })
-                .await;
+            self.accept_new_connection(
+                source,
+                transport,
+                session_name.as_deref(),
+                AuditConnectionType::Psk,
+            )
+            .await?;
 
             event_tx
                 .send(UserClientEvent::HandshakeFingerprint {
@@ -474,6 +466,34 @@ impl UserClient {
                 .await
                 .ok();
         }
+
+        Ok(())
+    }
+
+    /// Accept a new connection: cache session, store transport, set name, and audit
+    async fn accept_new_connection(
+        &mut self,
+        fingerprint: IdentityFingerprint,
+        transport: MultiDeviceTransport,
+        session_name: Option<&str>,
+        connection_type: AuditConnectionType,
+    ) -> Result<(), RemoteClientError> {
+        self.transports.insert(fingerprint, transport.clone());
+        self.session_store.cache_session(fingerprint)?;
+        if let Some(name) = session_name {
+            self.session_store
+                .set_session_name(&fingerprint, name.to_owned())?;
+        }
+        self.session_store
+            .save_transport_state(&fingerprint, transport)?;
+
+        self.audit_log
+            .write(AuditEvent::ConnectionEstablished {
+                fingerprint: &fingerprint,
+                session_name,
+                connection_type,
+            })
+            .await;
 
         Ok(())
     }
@@ -494,25 +514,14 @@ impl UserClient {
             })?;
 
         if approved {
-            // Cache session and store transport
-            self.transports
-                .insert(pending.source, pending.transport.clone());
-            self.session_store.cache_session(pending.source)?;
             let session_name = name.or(self.pending_session_name.take());
-            if let Some(ref name) = session_name {
-                self.session_store
-                    .set_session_name(&pending.source, name.clone())?;
-            }
-            self.session_store
-                .save_transport_state(&pending.source, pending.transport)?;
-
-            self.audit_log
-                .write(AuditEvent::ConnectionEstablished {
-                    fingerprint: &pending.source,
-                    session_name: session_name.as_deref(),
-                    connection_type: AuditConnectionType::Rendezvous,
-                })
-                .await;
+            self.accept_new_connection(
+                pending.source,
+                pending.transport,
+                session_name.as_deref(),
+                AuditConnectionType::Rendezvous,
+            )
+            .await?;
 
             event_tx
                 .send(UserClientEvent::FingerprintVerified {})
@@ -675,22 +684,15 @@ impl UserClient {
 
         // Send event
         if approved {
-            let fields = credential.as_ref().map_or(
-                CredentialFieldSet {
-                    has_username: false,
-                    has_password: false,
-                    has_totp: false,
-                    has_uri: false,
-                    has_notes: false,
-                },
-                |c| CredentialFieldSet {
+            let fields = credential
+                .as_ref()
+                .map_or_else(CredentialFieldSet::default, |c| CredentialFieldSet {
                     has_username: c.username.is_some(),
                     has_password: c.password.is_some(),
                     has_totp: c.totp.is_some(),
                     has_uri: c.uri.is_some(),
                     has_notes: c.notes.is_some(),
-                },
-            );
+                });
 
             self.audit_log
                 .write(AuditEvent::CredentialApproved {

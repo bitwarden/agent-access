@@ -87,7 +87,7 @@ pub enum AuditConnectionType {
 
 /// Which credential fields were included in an approved response.
 /// Contains only presence flags, never actual values.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CredentialFieldSet {
     pub has_username: bool,
     pub has_password: bool,
