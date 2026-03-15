@@ -190,7 +190,7 @@ impl CredentialProvider for BitwardenProvider {
             Some(p) => p,
             None => {
                 return ProviderStatus::NotInstalled {
-                    install_hint: "Install with: brew install bitwarden-cli".to_string(),
+                    install_hint: "Install the Bitwarden CLI and add it to your path: https://bitwarden.com/download/#command-line-interface".to_string(),
                 };
             }
         };
