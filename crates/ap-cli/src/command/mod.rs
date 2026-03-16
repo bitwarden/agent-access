@@ -28,6 +28,18 @@ pub use run::RunArgs;
 
 const DEFAULT_PROXY_URL: &str = "wss://rat1.lesspassword.dev";
 
+/// Build a version string like "0.3.0 (abc1234)" when GIT_HASH is set by CI,
+/// or just "0.3.0" for local dev builds.
+fn version_string() -> &'static str {
+    static VERSION: LazyLock<String> = LazyLock::new(|| match option_env!("GIT_HASH") {
+        Some(hash) if !hash.is_empty() => {
+            format!("{} ({})", env!("CARGO_PKG_VERSION"), hash)
+        }
+        _ => env!("CARGO_PKG_VERSION").to_string(),
+    });
+    &VERSION
+}
+
 /// Color choice: disabled when `LLM` or `NO_COLOR` is set, otherwise auto-detect.
 /// Cached once per process.
 static COLOR_CHOICE: LazyLock<ColorChoice> = LazyLock::new(|| {
@@ -56,7 +68,7 @@ const STYLES: Styles = Styles::styled()
 /// Bitwarden Remote Client CLI
 #[derive(Parser)]
 #[command(name = "aac")]
-#[command(author, version, about = "Retrieve credentials from your password manager over a secure channel", long_about = None)]
+#[command(author, version = version_string(), about = "Retrieve credentials from your password manager over a secure channel", long_about = None)]
 #[command(styles = STYLES)]
 #[command(after_help = "\
 AUTOMATION / AGENT / LLM USE:

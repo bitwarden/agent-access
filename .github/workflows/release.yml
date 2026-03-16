@@ -69,6 +69,8 @@ jobs:
 
       - name: Build aac
         run: cargo build --release --target ${{ matrix.target }} -p ap-cli
+        env:
+          GIT_HASH: ${{ github.sha }}
 
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'
