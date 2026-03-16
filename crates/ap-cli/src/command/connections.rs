@@ -4,7 +4,7 @@
 //! - `connections list`: List cached sessions and identity fingerprints
 //! - `connections clear [sessions|all]`: Clear cached sessions and/or identity keys
 
-use bw_rat_client::SessionStore;
+use ap_client::SessionStore;
 use clap::{Args, Subcommand, ValueEnum};
 use color_eyre::eyre::Result;
 use crossterm::style::Stylize;
@@ -152,7 +152,7 @@ fn list_cache(client_type: Option<ClientType>) -> Result<()> {
         println!(
             "{}",
             bold(&format!(
-                "── {} (bw-remote {}) ──",
+                "── {} (ap-cli {}) ──",
                 side.label, side.description
             ))
         );

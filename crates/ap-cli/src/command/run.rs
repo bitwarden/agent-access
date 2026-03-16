@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use bw_rat_client::CredentialData;
+use ap_client::CredentialData;
 use clap::Args;
 use color_eyre::eyre::{Result, bail};
 
@@ -165,7 +165,7 @@ impl RunArgs {
             Ok(c) => c,
             Err(e) => {
                 let code = e
-                    .downcast_ref::<bw_rat_client::RemoteClientError>()
+                    .downcast_ref::<ap_client::RemoteClientError>()
                     .map(exit_code_for_error)
                     .unwrap_or(exit_code::GENERAL_ERROR);
                 eprintln!("Error: {e}");

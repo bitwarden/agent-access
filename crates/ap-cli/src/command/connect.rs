@@ -3,9 +3,9 @@
 //! Handles the interactive session for connecting to a proxy
 //! and requesting credentials over a secure Noise Protocol channel.
 
-use bw_noise_protocol::Psk;
-use bw_proxy_client::ProxyClientConfig;
-use bw_rat_client::{
+use ap_noise::Psk;
+use ap_proxy_client::ProxyClientConfig;
+use ap_client::{
     ConnectionMode, DefaultProxyClient, IdentityFingerprint, IdentityProvider, RemoteClient,
     RemoteClientEvent, RemoteClientResponse, SessionStore,
 };
@@ -633,7 +633,7 @@ pub(super) async fn fetch_credential(
     session_fingerprint: Option<&str>,
     ephemeral_connection: bool,
     domain: &str,
-) -> Result<bw_rat_client::CredentialData> {
+) -> Result<ap_client::CredentialData> {
     let identity_provider: Box<dyn IdentityProvider> =
         Box::new(FileIdentityStorage::load_or_generate("remote_client")?);
 
@@ -697,7 +697,7 @@ async fn run_single_shot(
         Err(e) => {
             // Try to extract a RemoteClientError for specific exit codes
             let code = e
-                .downcast_ref::<bw_rat_client::RemoteClientError>()
+                .downcast_ref::<ap_client::RemoteClientError>()
                 .map(exit_code_for_error)
                 .unwrap_or(exit_code::GENERAL_ERROR);
             let msg = format!("{e}");

@@ -6,7 +6,7 @@
 mod bitwarden;
 
 pub use bitwarden::BitwardenProvider;
-use bw_rat_client::UserCredentialData;
+use ap_client::UserCredentialData;
 use color_eyre::eyre::{Result, bail};
 
 /// What kind of credential to look up.

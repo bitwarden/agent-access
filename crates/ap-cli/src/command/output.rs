@@ -3,7 +3,7 @@
 //! Provides structured output for agent/LLM consumption: JSON or plain text,
 //! with well-defined exit codes for programmatic error handling.
 
-use bw_rat_client::{CredentialData, RemoteClientError};
+use ap_client::{CredentialData, RemoteClientError};
 use clap::ValueEnum;
 
 /// Output format for single-shot mode

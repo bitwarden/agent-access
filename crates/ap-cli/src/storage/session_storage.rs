@@ -2,9 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use bw_noise_protocol::{MultiDeviceTransport, PersistentTransportState};
-use bw_proxy_protocol::IdentityFingerprint;
-use bw_rat_client::{RemoteClientError, SessionStore};
+use ap_noise::{MultiDeviceTransport, PersistentTransportState};
+use ap_proxy_protocol::IdentityFingerprint;
+use ap_client::{RemoteClientError, SessionStore};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
@@ -36,7 +36,7 @@ fn now_seconds() -> u64 {
 
 /// File-based session cache implementation
 ///
-/// Stores sessions in a JSON file at ~/.bw-remote/session_cache_{name}.json
+/// Stores sessions in a JSON file at ~/.access-protocol/session_cache_{name}.json
 pub struct FileSessionCache {
     cache_path: PathBuf,
     data: SessionCacheData,
@@ -250,22 +250,22 @@ impl FileSessionCache {
         Ok(())
     }
 
-    /// Get default cache path (~/.bw-remote/session_cache_{cache_name}.json)
+    /// Get default cache path (~/.access-protocol/session_cache_{cache_name}.json)
     fn default_cache_path(cache_name: &str) -> Result<PathBuf, RemoteClientError> {
         let home_dir = dirs::home_dir().ok_or_else(|| {
             RemoteClientError::SessionCache("Could not find home directory".to_string())
         })?;
 
-        let bw_remote_dir = home_dir.join(".bw-remote");
-        if !bw_remote_dir.exists() {
-            fs::create_dir_all(&bw_remote_dir).map_err(|e| {
+        let ap_dir = home_dir.join(".access-protocol");
+        if !ap_dir.exists() {
+            fs::create_dir_all(&ap_dir).map_err(|e| {
                 RemoteClientError::SessionCache(format!(
-                    "Failed to create .bw-remote directory: {e}"
+                    "Failed to create .access-protocol directory: {e}"
                 ))
             })?;
         }
 
-        Ok(bw_remote_dir.join(format!("session_cache_{cache_name}.json")))
+        Ok(ap_dir.join(format!("session_cache_{cache_name}.json")))
     }
 
     /// Load cache from file

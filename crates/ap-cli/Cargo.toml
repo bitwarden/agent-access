@@ -1,6 +1,6 @@
 [package]
-name = "bw-remote"
-description = "Bitwarden Remote Client CLI"
+name = "ap-cli"
+description = "Agent Access CLI"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -12,10 +12,10 @@ name = "aac"
 path = "src/main.rs"
 
 [dependencies]
-bw-noise-protocol = { workspace = true }
-bw-proxy-client = { workspace = true, features = ["native-websocket"] }
-bw-proxy-protocol = { workspace = true }
-bw-rat-client = { workspace = true, features = ["native-websocket"] }
+ap-noise = { workspace = true }
+ap-proxy-client = { workspace = true, features = ["native-websocket"] }
+ap-proxy-protocol = { workspace = true }
+ap-client = { workspace = true, features = ["native-websocket"] }
 clap = { workspace = true }
 color-eyre = { workspace = true }
 crossterm = { workspace = true }

@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use bw_proxy_protocol::{IdentityFingerprint, IdentityKeyPair};
-use bw_rat_client::{IdentityProvider, RemoteClientError};
+use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair};
+use ap_client::{IdentityProvider, RemoteClientError};
 use tracing::debug;
 
 /// Manages persistent storage identity key pairs to a file
@@ -18,7 +18,7 @@ impl IdentityProvider for FileIdentityStorage {
 impl FileIdentityStorage {
     /// Load existing identity or generate new one
     ///
-    /// Stores the 32-byte seed in ~/.bw-remote/identity.key
+    /// Stores the 32-byte seed in ~/.access-protocol/identity.key
     pub fn load_or_generate(storage_name: &str) -> Result<Self, RemoteClientError> {
         let storage_path = Self::default_storage_path(storage_name)?;
 
@@ -66,22 +66,22 @@ impl FileIdentityStorage {
         }
     }
 
-    /// Get the default storage path (~/.bw-remote/identity.key)
+    /// Get the default storage path (~/.access-protocol/identity.key)
     fn default_storage_path(storage_name: &str) -> Result<PathBuf, RemoteClientError> {
         let home_dir = dirs::home_dir().ok_or_else(|| {
             RemoteClientError::IdentityStorageFailed("Could not find home directory".to_string())
         })?;
 
-        let bw_remote_dir = home_dir.join(".bw-remote");
-        if !bw_remote_dir.exists() {
-            fs::create_dir_all(&bw_remote_dir).map_err(|e| {
+        let ap_dir = home_dir.join(".access-protocol");
+        if !ap_dir.exists() {
+            fs::create_dir_all(&ap_dir).map_err(|e| {
                 RemoteClientError::IdentityStorageFailed(format!(
-                    "Failed to create .bw-remote directory: {e}"
+                    "Failed to create .access-protocol directory: {e}"
                 ))
             })?;
         }
 
-        Ok(bw_remote_dir.join(format!("{storage_name}.key")))
+        Ok(ap_dir.join(format!("{storage_name}.key")))
     }
 
     /// Load keypair from file

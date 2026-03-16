@@ -8,7 +8,7 @@ members = [
     "crates/ap-proxy",
     "crates/ap-proxy-client",
     "crates/ap-proxy-protocol",
-    "crates/bw-remote",
+    "crates/ap-cli",
 ]
 
 [workspace.package]

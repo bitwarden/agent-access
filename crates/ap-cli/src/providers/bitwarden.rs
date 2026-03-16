@@ -5,7 +5,7 @@
 
 use std::process::Command;
 
-use bw_rat_client::UserCredentialData;
+use ap_client::UserCredentialData;
 use serde::Deserialize;
 use tracing::info;
 

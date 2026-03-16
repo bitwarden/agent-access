@@ -3,9 +3,9 @@
 //! Handles the user-client (trusted device) mode for receiving and
 //! approving connection requests from remote clients.
 
-use bw_proxy_client::ProxyClientConfig;
-use bw_proxy_protocol::IdentityFingerprint;
-use bw_rat_client::{
+use ap_proxy_client::ProxyClientConfig;
+use ap_proxy_protocol::IdentityFingerprint;
+use ap_client::{
     DefaultProxyClient, IdentityProvider, SessionStore, UserClient, UserClientEvent,
     UserClientResponse, UserCredentialData,
 };
@@ -230,7 +230,7 @@ async fn run_event_loop(
     sessions: &[SessionInfo],
     pending_session_name: &Option<String>,
     mut client_handle: Option<
-        tokio::task::JoinHandle<Result<(), bw_rat_client::RemoteClientError>>,
+        tokio::task::JoinHandle<Result<(), ap_client::RemoteClientError>>,
     >,
     provider: &mut dyn CredentialProvider,
     log_rx: &mut Option<super::tui_tracing::LogReceiver>,

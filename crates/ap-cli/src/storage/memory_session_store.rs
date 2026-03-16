@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use bw_noise_protocol::{MultiDeviceTransport, PersistentTransportState};
-use bw_proxy_protocol::IdentityFingerprint;
-use bw_rat_client::{RemoteClientError, SessionStore};
+use ap_noise::{MultiDeviceTransport, PersistentTransportState};
+use ap_proxy_protocol::IdentityFingerprint;
+use ap_client::{RemoteClientError, SessionStore};
 
 struct SessionEntry {
     fingerprint: IdentityFingerprint,

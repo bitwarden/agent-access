@@ -20,7 +20,7 @@ pub struct TuiLogEntry {
     pub level: Level,
     pub message: String,
     /// Last segment of the tracing target (e.g. `"remote_client"` from
-    /// `"bw_rat_client::clients::remote_client"`).
+    /// `"ap_client::clients::remote_client"`).
     pub short_target: String,
 }
 
