@@ -12,7 +12,7 @@
 	}
 
 	handle /version {
-		respond "bw-proxy {env.VERSION}" 200
+		respond "ap-proxy {env.VERSION}" 200
 	}
 
 	@websocket `header({'Connection':'*Upgrade*','Upgrade':'websocket'}) || header({':protocol': 'websocket'})`
@@ -23,7 +23,7 @@
 	}
 
 	handle {
-		respond "Bitwarden Remote Access Proxy {env.VERSION}" 200
+		respond "Agent Access Proxy {env.VERSION}" 200
 	}
 
 	header {
