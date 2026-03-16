@@ -3,8 +3,6 @@
 //! Handles the user-client (trusted device) mode for receiving and
 //! approving connection requests from remote clients.
 
-use std::process::Command;
-
 use bw_proxy_client::ProxyClientConfig;
 use bw_proxy_protocol::IdentityFingerprint;
 use bw_rat_client::{
@@ -17,20 +15,19 @@ use crossterm::event::{Event, EventStream, KeyEventKind};
 use futures_util::StreamExt;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use serde::Deserialize;
 use tokio::sync::mpsc;
-use tracing::info;
 
 use super::tui::{
     App, AppAction, Message, MessageKind, Mode, init_terminal, restore_terminal, wait_for_keypress,
 };
 use super::util::{format_listen_event, format_relative_time};
+use crate::providers::{CredentialProvider, CredentialQuery, LookupResult, ProviderStatus};
 use crate::storage::{FileIdentityStorage, FileSessionCache};
 
 use super::DEFAULT_PROXY_URL;
 
 /// Slash commands available in idle mode.
-const IDLE_COMMANDS: &[&str] = &["/pair [name]", "/bw-unlock", "/bw-session <key>", "/exit"];
+const IDLE_COMMANDS: &[&str] = &["/pair [name]", "/unlock", "/exit"];
 
 /// Arguments for the listen command
 #[derive(Args)]
@@ -42,12 +39,17 @@ pub struct ListenArgs {
     /// Use PSK (Pre-Shared Key) mode instead of rendezvous code
     #[arg(long)]
     pub psk: bool,
+
+    /// Credential provider to use
+    #[arg(long, default_value = "bitwarden")]
+    pub provider: String,
 }
 
 impl ListenArgs {
     /// Execute the listen command
     pub async fn run(self, log_rx: Option<super::tui_tracing::LogReceiver>) -> Result<()> {
-        run_user_client_session(self.proxy_url, self.psk, log_rx).await
+        let mut provider = crate::providers::create_provider(&self.provider)?;
+        run_user_client_session(self.proxy_url, self.psk, &mut *provider, log_rx).await
     }
 }
 
@@ -67,8 +69,8 @@ enum Phase {
         session_id: String,
         credential: UserCredentialData,
     },
-    /// Waiting for the user to enter their master password for `bw unlock`.
-    BwUnlockPassword,
+    /// Waiting for the user to enter unlock input (password or session key).
+    UnlockInput,
 }
 
 /// Whether the event loop exited normally or because `/pair` was requested.
@@ -77,212 +79,61 @@ enum EventLoopExit {
     NewSession { name: Option<String> },
 }
 
-/// Bitwarden CLI login item structure
-#[derive(Deserialize)]
-struct BwLogin {
-    username: Option<String>,
-    password: Option<String>,
-    totp: Option<String>,
-    uris: Option<Vec<BwUri>>,
-}
-
-/// Bitwarden CLI URI structure
-#[derive(Deserialize)]
-struct BwUri {
-    uri: Option<String>,
-}
-
-/// Bitwarden CLI item structure
-#[derive(Deserialize)]
-struct BwItem {
-    id: Option<String>,
-    login: Option<BwLogin>,
-}
-
-/// Look up a credential from the Bitwarden CLI
-fn lookup_credential(domain: &str, session: Option<&str>) -> Option<UserCredentialData> {
-    let mut cmd = Command::new(bw_path());
-    cmd.args(["get", "item", domain]);
-    if let Some(key) = session {
-        cmd.env("BW_SESSION", key);
-    }
-    let output = cmd.output().ok()?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if !stderr.contains("Not found") {
-            info!("bw get item failed: {}", stderr);
-        }
-        return None;
-    }
-
-    let item: BwItem = serde_json::from_slice(&output.stdout).ok()?;
-    let login = item.login?;
-
-    // Get the first URI if available
-    let uri = login
-        .uris
-        .as_ref()
-        .and_then(|uris| uris.first())
-        .and_then(|u| u.uri.clone());
-
-    Some(UserCredentialData {
-        username: login.username,
-        password: login.password,
-        totp: login.totp,
-        uri,
-        notes: None,
-        credential_id: item.id,
-    })
-}
-
-/// Fallback path when `bw` is not found on `$PATH` (macOS Homebrew default).
-const BW_FALLBACK_PATH: &str = "/opt/homebrew/bin/bw";
-
-/// Find bw executable on PATH.
-fn which_bw() -> Option<String> {
-    Command::new("which")
-        .arg("bw")
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
-/// Find bw executable on PATH, falling back to a well-known location.
-fn bw_path() -> String {
-    which_bw().unwrap_or_else(|| BW_FALLBACK_PATH.to_string())
-}
-
-/// Run `bw unlock` with the given master password and return the session key.
-///
-/// The password is passed via the `BW_MASTER_PASSWORD` environment variable on the
-/// child process only (not set in the host environment).
-fn run_bw_unlock(password: &str) -> Result<String, String> {
-    let output = Command::new(bw_path())
-        .args(["unlock", "--passwordenv", "BW_MASTER_PASSWORD", "--raw"])
-        .env("BW_MASTER_PASSWORD", password)
-        .output()
-        .map_err(|e| format!("Failed to run bw unlock: {e}"))?;
-
-    if output.status.success() {
-        let key = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if key.is_empty() {
-            Err("bw unlock returned empty session key".to_string())
-        } else {
-            Ok(key)
-        }
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        Err(if stderr.is_empty() {
-            "bw unlock failed".to_string()
-        } else {
-            stderr
-        })
-    }
-}
-
-/// Result of checking the Bitwarden CLI status.
-struct BwStatus {
-    /// The account email from `bw status`, if available.
-    user_email: Option<String>,
-    /// Styled spans summarising the vault status (for the header).
-    status_spans: Vec<Span<'static>>,
-    /// Whether the vault is unlocked and ready for credential lookups.
-    is_unlocked: bool,
-}
-
-/// Check if the Bitwarden CLI is available and unlocked.
-///
-/// When a `session` key is provided it is set as the `BW_SESSION` environment
-/// variable on the child process so that `bw status` correctly reports the
-/// vault as unlocked.
-fn check_bw_status(session: Option<&str>) -> BwStatus {
-    let path = match which_bw() {
-        Some(p) => p,
-        None => {
-            return BwStatus {
-                user_email: None,
-                is_unlocked: false,
-                status_spans: vec![
-                    Span::styled("CLI ", Style::default().fg(Color::Red)),
-                    Span::styled(
-                        "not found",
-                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                    ),
-                ],
-            };
-        }
-    };
-
-    let mut cmd = Command::new(path);
-    cmd.arg("status");
-    if let Some(key) = session {
-        cmd.env("BW_SESSION", key);
-    }
-    let output = cmd.output();
-
-    match output {
-        Ok(o) if o.status.success() => {
-            let json: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap_or_default();
-            let status = json["status"].as_str().unwrap_or("unknown");
-            let user_email = json["userEmail"].as_str().map(String::from);
-            let is_unlocked = status == "unlocked";
-
-            let status_spans = match status {
-                "unlocked" => vec![
-                    Span::styled("Vault ", Style::default().fg(Color::Green)),
-                    Span::styled(
-                        "unlocked",
-                        Style::default()
-                            .fg(Color::Green)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ],
-                "locked" => vec![
-                    Span::styled("Vault ", Style::default().fg(Color::Red)),
-                    Span::styled(
-                        "locked",
-                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(" — type /bw-unlock", Style::default().fg(Color::DarkGray)),
-                ],
-                _ => vec![
-                    Span::styled("Vault ", Style::default().fg(Color::Red)),
-                    Span::styled(
-                        status.to_string(),
-                        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(" — run: bw login", Style::default().fg(Color::DarkGray)),
-                ],
-            };
-
-            BwStatus {
-                user_email,
-                is_unlocked,
-                status_spans,
-            }
-        }
-        _ => BwStatus {
-            user_email: None,
-            is_unlocked: false,
-            status_spans: vec![
-                Span::styled("CLI ", Style::default().fg(Color::Red)),
+/// Map a [`ProviderStatus`] to TUI header spans and apply them.
+fn apply_status_spans(app: &mut App, name: &str, status: &ProviderStatus) {
+    let (spans, user_info) = match status {
+        ProviderStatus::Ready { user_info } => (
+            vec![
+                Span::styled(format!("{name} "), Style::default().fg(Color::Green)),
                 Span::styled(
-                    "error",
+                    "unlocked",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ],
+            user_info.clone(),
+        ),
+        ProviderStatus::Locked { user_info, .. } => (
+            vec![
+                Span::styled(format!("{name} "), Style::default().fg(Color::Red)),
+                Span::styled(
+                    "locked",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" — type /unlock", Style::default().fg(Color::DarkGray)),
+            ],
+            user_info.clone(),
+        ),
+        ProviderStatus::Unavailable { reason } => (
+            vec![
+                Span::styled(format!("{name} "), Style::default().fg(Color::Red)),
+                Span::styled(
+                    reason.clone(),
                     Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                 ),
             ],
-        },
-    }
-}
+            None,
+        ),
+        ProviderStatus::NotInstalled { install_hint } => (
+            vec![
+                Span::styled(format!("{name} "), Style::default().fg(Color::Red)),
+                Span::styled(
+                    "not found",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!(" — {install_hint}"),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ],
+            None,
+        ),
+    };
 
-/// Apply vault status information to the TUI header.
-fn apply_bw_status(app: &mut App, status: BwStatus) {
-    app.vault_status = Some(status.status_spans);
-    if let Some(email) = status.user_email {
-        app.account_name = Some(email);
+    app.vault_status = Some(spans);
+    if let Some(info) = user_info {
+        app.account_name = Some(info);
     }
 }
 
@@ -354,7 +205,7 @@ fn idle_footer() -> Line<'static> {
         Span::styled(" /pair", Style::default().fg(Color::Cyan)),
         Span::styled(" [name]", Style::default().fg(Color::DarkGray)),
         Span::raw(" session  "),
-        Span::styled("/bw-unlock", Style::default().fg(Color::Cyan)),
+        Span::styled("/unlock", Style::default().fg(Color::Cyan)),
         Span::raw(" vault  "),
         Span::styled("/exit", Style::default().fg(Color::Cyan)),
         Span::raw(" quit  "),
@@ -381,7 +232,7 @@ async fn run_event_loop(
     mut client_handle: Option<
         tokio::task::JoinHandle<Result<(), bw_rat_client::RemoteClientError>>,
     >,
-    bw_session: &mut Option<String>,
+    provider: &mut dyn CredentialProvider,
     log_rx: &mut Option<super::tui_tracing::LogReceiver>,
 ) -> Result<EventLoopExit> {
     let mut phase = Phase::Idle;
@@ -416,77 +267,44 @@ async fn run_event_loop(
                                 (Phase::Idle, AppAction::Submit(s)) if s == "/exit" => {
                                     break EventLoopExit::Quit;
                                 }
-                                (Phase::Idle, AppAction::Submit(s)) if s == "/bw-unlock" => {
-                                    phase = Phase::BwUnlockPassword;
+                                (Phase::Idle, AppAction::Submit(s)) if s == "/unlock" => {
+                                    phase = Phase::UnlockInput;
                                     app.set_mode(Mode::TextInput);
                                     app.password_mode = true;
-                                    app.input_title = " Master Password ";
+                                    app.input_title = " Unlock ";
                                     app.commands = &[];
                                     app.footer = Line::from(Span::styled(
-                                        " Type your master password, then press Enter (empty to cancel)",
+                                        " Type your master password or session key, then press Enter (empty to cancel)",
                                         Style::default().fg(Color::Yellow),
                                     ));
                                 }
-                                (Phase::Idle, AppAction::Submit(s)) if s.starts_with("/bw-session ") => {
-                                    let key = s.strip_prefix("/bw-session ").unwrap_or("").trim().to_string();
-                                    if key.is_empty() {
-                                        app.push_msg(MessageKind::Error, "Usage: /bw-session <key>");
-                                    } else {
-                                        let status = check_bw_status(Some(&key));
-                                        let unlocked = status.is_unlocked;
-                                        apply_bw_status(app, status);
-                                        if unlocked {
-                                            *bw_session = Some(key);
-                                            app.push_msg(MessageKind::Success, "Session key accepted — vault unlocked");
-                                        } else {
-                                            app.push_msg(MessageKind::Error, "Invalid session key — vault still locked");
-                                        }
-                                    }
-                                }
 
-                                // BwUnlockPassword phase
-                                (Phase::BwUnlockPassword, AppAction::Submit(s)) => {
+                                // Unlock input phase
+                                (Phase::UnlockInput, AppAction::Submit(s)) => {
                                     if s.is_empty() {
                                         app.push_msg(MessageKind::Info, "Unlock cancelled");
                                         phase = Phase::Idle;
                                         app.enter_idle(idle_footer(), IDLE_COMMANDS);
                                     } else {
-                                        let password = s.clone();
+                                        let input = s.clone();
                                         app.push_msg(MessageKind::Status, "Unlocking vault...");
                                         // Force a redraw before the blocking call
                                         term.draw(|frame| app.draw(frame))
                                             .map_err(|e| color_eyre::eyre::eyre!("TUI draw error: {}", e))?;
 
-                                        let result = tokio::task::spawn_blocking(move || {
-                                            run_bw_unlock(&password)
-                                        }).await;
+                                        match provider.unlock(&input) {
+                                            Ok(()) => {
+                                                let status = provider.status();
+                                                apply_status_spans(app, provider.name(), &status);
+                                                app.push_msg(MessageKind::Success, "Vault unlocked successfully");
+                                            }
+                                            Err(e) => {
+                                                app.push_msg(MessageKind::Error, format!("Unlock failed: {e}"));
+                                            }
+                                        }
 
                                         phase = Phase::Idle;
                                         app.enter_idle(idle_footer(), IDLE_COMMANDS);
-
-                                        match result {
-                                            Ok(Ok(key)) => {
-                                                *bw_session = Some(key);
-                                                // Successful unlock is proof — set status directly
-                                                // to avoid a redundant `bw status` child process.
-                                                app.vault_status = Some(vec![
-                                                    Span::styled("Vault ", Style::default().fg(Color::Green)),
-                                                    Span::styled(
-                                                        "unlocked",
-                                                        Style::default()
-                                                            .fg(Color::Green)
-                                                            .add_modifier(Modifier::BOLD),
-                                                    ),
-                                                ]);
-                                                app.push_msg(MessageKind::Success, "Vault unlocked successfully");
-                                            }
-                                            Ok(Err(e)) => {
-                                                app.push_msg(MessageKind::Error, format!("Unlock failed: {e}"));
-                                            }
-                                            Err(e) => {
-                                                app.push_msg(MessageKind::Error, format!("Unlock task failed: {e}"));
-                                            }
-                                        }
                                     }
                                 }
 
@@ -628,8 +446,8 @@ async fn run_event_loop(
                                 ]);
                             }
                             UserClientEvent::CredentialRequest { domain, request_id, session_id } => {
-                                match lookup_credential(&domain, bw_session.as_deref()) {
-                                    Some(credential) => {
+                                match provider.lookup(&CredentialQuery::Domain(&domain)) {
+                                    LookupResult::Found(credential) => {
                                         let found_msg = format!(
                                             "Found: {} ({})",
                                             credential.username.as_deref().unwrap_or("no username"),
@@ -662,17 +480,14 @@ async fn run_event_loop(
                                             )
                                         );
                                     }
-                                    None => {
-                                        let is_unlocked = bw_session.is_some()
-                                            || tokio::task::spawn_blocking(|| {
-                                                check_bw_status(None).is_unlocked
-                                            })
-                                            .await
-                                            .unwrap_or(false);
-                                        if !is_unlocked {
-                                            app.push_msg(MessageKind::Warning, format!("Vault is locked — cannot look up credential for {domain}"));
-                                        } else {
-                                            app.push_msg(MessageKind::Error, format!("No credential found in vault for {domain}"));
+                                    result @ (LookupResult::NotReady { .. } | LookupResult::NotFound) => {
+                                        match result {
+                                            LookupResult::NotReady { message } => {
+                                                app.push_msg(MessageKind::Warning, format!("{message} — cannot look up credential for {domain}"));
+                                            }
+                                            _ => {
+                                                app.push_msg(MessageKind::Error, format!("No credential found in vault for {domain}"));
+                                            }
                                         }
                                         response_tx
                                             .send(UserClientResponse::RespondCredential {
@@ -745,6 +560,7 @@ async fn run_event_loop(
 async fn run_user_client_session(
     proxy_url: String,
     psk_mode: bool,
+    provider: &mut dyn CredentialProvider,
     mut log_rx: Option<super::tui_tracing::LogReceiver>,
 ) -> Result<()> {
     let local = tokio::task::LocalSet::new();
@@ -759,15 +575,29 @@ async fn run_user_client_session(
             // Create TUI state once — it survives across `/pair` restarts.
             let mut app = App::new();
             app.client_label = "User client";
-            let mut bw_session: Option<String> = None;
-            let initial_status = check_bw_status(None);
-            if !initial_status.is_unlocked {
-                app.push_msg(
-                    MessageKind::Warning,
-                    "Bitwarden vault is not unlocked — credential lookups will fail. Use /bw-unlock or /bw-session <key>",
-                );
+
+            // Show initial provider status (single status() call)
+            let initial_status = provider.status();
+            let name = provider.name();
+            match &initial_status {
+                ProviderStatus::Ready { .. } => {}
+                ProviderStatus::Locked { .. } => {
+                    app.push_msg(
+                        MessageKind::Warning,
+                        format!("{name} vault is not unlocked — credential lookups will fail. Use /unlock"),
+                    );
+                }
+                ProviderStatus::Unavailable { reason } => {
+                    app.push_msg(MessageKind::Warning, format!("{name}: {reason}"));
+                }
+                ProviderStatus::NotInstalled { install_hint } => {
+                    app.push_msg(
+                        MessageKind::Warning,
+                        format!("{name} not found. {install_hint}"),
+                    );
+                }
             }
-            apply_bw_status(&mut app, initial_status);
+            apply_status_spans(&mut app, name, &initial_status);
             let mut term = init_terminal();
             let mut reader = EventStream::new();
 
@@ -821,7 +651,7 @@ async fn run_user_client_session(
                     &sessions,
                     &pending_session_name,
                     Some(client_handle),
-                    &mut bw_session,
+                    provider,
                     &mut log_rx,
                 )
                 .await?
