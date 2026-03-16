@@ -290,6 +290,7 @@ mod tests {
         let env_vars = build_env_vars(&cred, true, &[]);
 
         assert_eq!(env_vars.len(), 1);
+        assert_eq!(env_vars.get("AAC_DOMAIN").expect("domain"), "example.com");
     }
 
     #[test]
