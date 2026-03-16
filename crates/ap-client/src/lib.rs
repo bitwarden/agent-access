@@ -80,9 +80,7 @@ pub mod types;
 mod clients;
 
 pub use clients::remote_client::RemoteClient;
-pub use clients::user_client::{
-    CredentialData as UserCredentialData, UserClient, UserClientEvent, UserClientResponse,
-};
+pub use clients::user_client::{UserClient, UserClientEvent, UserClientResponse};
 pub use error::RemoteClientError;
 #[cfg(feature = "native-websocket")]
 pub use proxy::DefaultProxyClient;

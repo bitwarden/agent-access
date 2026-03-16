@@ -5,7 +5,7 @@
 
 use std::process::Command;
 
-use ap_client::UserCredentialData;
+use ap_client::CredentialData;
 use serde::Deserialize;
 use tracing::info;
 
@@ -133,7 +133,7 @@ fn looks_like_session_key(input: &str) -> bool {
 }
 
 /// Look up a credential from the Bitwarden CLI.
-fn lookup_credential(bw: &str, search: &str, session: Option<&str>) -> Option<UserCredentialData> {
+fn lookup_credential(bw: &str, search: &str, session: Option<&str>) -> Option<CredentialData> {
     let mut cmd = Command::new(bw);
     cmd.args(["get", "item", search]);
     if let Some(key) = session {
@@ -158,7 +158,7 @@ fn lookup_credential(bw: &str, search: &str, session: Option<&str>) -> Option<Us
         .and_then(|uris| uris.first())
         .and_then(|u| u.uri.clone());
 
-    Some(UserCredentialData {
+    Some(CredentialData {
         username: login.username,
         password: login.password,
         totp: login.totp,

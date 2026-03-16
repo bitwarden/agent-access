@@ -8,9 +8,8 @@ use std::net::SocketAddr;
 use std::sync::Mutex;
 
 use ap_client::{
-    DefaultProxyClient, IdentityProvider, Psk, RemoteClient, RemoteClientEvent,
+    CredentialData, DefaultProxyClient, IdentityProvider, Psk, RemoteClient, RemoteClientEvent,
     RemoteClientResponse, SessionStore, UserClient, UserClientEvent, UserClientResponse,
-    UserCredentialData,
 };
 use ap_noise::MultiDeviceTransport;
 use ap_proxy::server::ProxyServer;
@@ -295,8 +294,8 @@ fn create_proxy_client(addr: SocketAddr, keypair: Option<IdentityKeyPair>) -> De
 }
 
 /// Create a test credential for use in tests
-fn test_credential() -> UserCredentialData {
-    UserCredentialData {
+fn test_credential() -> CredentialData {
+    CredentialData {
         username: Some("testuser".to_string()),
         password: Some("testpassword123".to_string()),
         totp: Some("123456".to_string()),
@@ -902,7 +901,7 @@ async fn test_e2e_multiple_credential_requests() {
                         request_count += 1;
 
                         // Create credential with domain-specific data
-                        let credential = UserCredentialData {
+                        let credential = CredentialData {
                             username: Some(format!("user_{domain}")),
                             password: Some(format!("pass_{domain}")),
                             totp: None,
@@ -1370,7 +1369,7 @@ async fn test_e2e_multi_device_credential_response() {
                                     session_id,
                                     domain,
                                     approved: true,
-                                    credential: Some(UserCredentialData {
+                                    credential: Some(CredentialData {
                                         username: Some("device1_user".into()),
                                         password: Some("device1_pass".into()),
                                         totp: None,
@@ -1403,7 +1402,7 @@ async fn test_e2e_multi_device_credential_response() {
                                     session_id,
                                     domain,
                                     approved: true,
-                                    credential: Some(UserCredentialData {
+                                    credential: Some(CredentialData {
                                         username: Some("device2_user".into()),
                                         password: Some("device2_pass".into()),
                                         totp: None,
