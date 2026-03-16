@@ -700,8 +700,8 @@ async fn run_single_shot(
     {
         Ok(credential) => {
             match output {
-                OutputFormat::Json => emit_json_success(&query, &credential),
-                OutputFormat::Text => emit_text_credential(&query, &credential),
+                OutputFormat::Json => emit_json_success(&credential),
+                OutputFormat::Text => emit_text_credential(&credential),
             }
             std::process::exit(exit_code::SUCCESS);
         }

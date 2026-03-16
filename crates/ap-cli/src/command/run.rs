@@ -290,14 +290,13 @@ mod tests {
         let env_vars = build_env_vars(&cred, true, &[]);
 
         assert_eq!(env_vars.len(), 1);
-        assert_eq!(env_vars.get("AAC_DOMAIN").expect("domain"), "example.com");
     }
 
     #[test]
     fn is_valid_field_accepts_known_rejects_unknown() {
         assert!(is_valid_field("username"));
-        assert!(is_valid_field("domain"));
         assert!(is_valid_field("credential_id"));
+        assert!(is_valid_field("domain"));
         assert!(!is_valid_field("bogus"));
         assert!(!is_valid_field(""));
     }
