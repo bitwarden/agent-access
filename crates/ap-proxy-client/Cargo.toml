@@ -1,0 +1,24 @@
+[package]
+name = "ap-proxy-client"
+description = "Client library for connecting to the ap-proxy WebSocket relay"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[features]
+default = ["experimental-post-quantum-crypto", "native-websocket"]
+experimental-post-quantum-crypto = ["ap-proxy-protocol/experimental-post-quantum-crypto"]
+native-websocket = ["dep:futures-util", "dep:tokio-tungstenite", "dep:tracing", "tokio/time"]
+
+[dependencies]
+ap-proxy-protocol = { workspace = true }
+futures-util = { workspace = true, optional = true }
+serde_json = { workspace = true }
+tokio = { version = "1.36.0", default-features = false, features = ["sync"] }
+tokio-tungstenite = { workspace = true, features = ["native-tls"], optional = true }
+tracing = { workspace = true, optional = true }
+
+[lints]
+workspace = true

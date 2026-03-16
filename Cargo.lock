@@ -93,6 +93,131 @@ dependencies = [
 ]
 
 [[package]]
+name = "ap-cli"
+version = "0.1.0"
+dependencies = [
+ "ap-client",
+ "ap-noise",
+ "ap-proxy-client",
+ "ap-proxy-protocol",
+ "clap",
+ "color-eyre",
+ "crossterm",
+ "dirs",
+ "futures-util",
+ "hex",
+ "rand",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "ap-client"
+version = "0.1.0"
+dependencies = [
+ "ap-error",
+ "ap-noise",
+ "ap-proxy",
+ "ap-proxy-client",
+ "ap-proxy-protocol",
+ "async-trait",
+ "base64",
+ "dirs",
+ "futures-util",
+ "hex",
+ "rand",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "ap-error"
+version = "0.1.0"
+dependencies = [
+ "ap-error-macro",
+]
+
+[[package]]
+name = "ap-error-macro"
+version = "0.1.0"
+dependencies = [
+ "darling 0.20.11",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "ap-noise"
+version = "0.1.0"
+dependencies = [
+ "ap-error",
+ "base64",
+ "chacha20poly1305",
+ "ciborium",
+ "clatter",
+ "hex",
+ "hkdf",
+ "js-sys",
+ "rand",
+ "serde",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
+name = "ap-proxy"
+version = "0.1.0"
+dependencies = [
+ "ap-proxy-client",
+ "ap-proxy-protocol",
+ "futures-util",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "ap-proxy-client"
+version = "0.1.0"
+dependencies = [
+ "ap-proxy-protocol",
+ "futures-util",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+]
+
+[[package]]
+name = "ap-proxy-protocol"
+version = "0.1.0"
+dependencies = [
+ "ap-error",
+ "coset",
+ "ed25519-dalek",
+ "hex",
+ "ml-dsa",
+ "rand",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -165,131 +290,6 @@ name = "bumpalo"
 version = "3.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d20789868f4b01b2f2caec9f5c4e0213b41e3e5702a50157d699ae31ced2fcb"
-
-[[package]]
-name = "bw-error"
-version = "0.1.0"
-dependencies = [
- "bw-error-macro",
-]
-
-[[package]]
-name = "bw-error-macro"
-version = "0.1.0"
-dependencies = [
- "darling 0.20.11",
- "proc-macro2",
- "quote",
- "syn 2.0.117",
-]
-
-[[package]]
-name = "bw-noise-protocol"
-version = "0.1.0"
-dependencies = [
- "base64",
- "bw-error",
- "chacha20poly1305",
- "ciborium",
- "clatter",
- "hex",
- "hkdf",
- "js-sys",
- "rand",
- "serde",
- "sha2",
- "thiserror",
- "tokio",
- "tracing",
- "zeroize",
-]
-
-[[package]]
-name = "bw-proxy"
-version = "0.1.0"
-dependencies = [
- "bw-proxy-client",
- "bw-proxy-protocol",
- "futures-util",
- "serde_json",
- "tokio",
- "tokio-tungstenite",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "bw-proxy-client"
-version = "0.1.0"
-dependencies = [
- "bw-proxy-protocol",
- "futures-util",
- "serde_json",
- "tokio",
- "tokio-tungstenite",
- "tracing",
-]
-
-[[package]]
-name = "bw-proxy-protocol"
-version = "0.1.0"
-dependencies = [
- "bw-error",
- "coset",
- "ed25519-dalek",
- "hex",
- "ml-dsa",
- "rand",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
-]
-
-[[package]]
-name = "bw-rat-client"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64",
- "bw-error",
- "bw-noise-protocol",
- "bw-proxy",
- "bw-proxy-client",
- "bw-proxy-protocol",
- "dirs",
- "futures-util",
- "hex",
- "rand",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "bw-remote"
-version = "0.1.0"
-dependencies = [
- "bw-noise-protocol",
- "bw-proxy-client",
- "bw-proxy-protocol",
- "bw-rat-client",
- "clap",
- "color-eyre",
- "crossterm",
- "dirs",
- "futures-util",
- "hex",
- "rand",
- "ratatui",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "byteorder"
