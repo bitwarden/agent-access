@@ -139,14 +139,21 @@ pub fn format_connect_event(event: &RemoteClientEvent) -> Option<Message> {
             "Secure channel established",
         )),
         RemoteClientEvent::Ready { .. } => None,
-        RemoteClientEvent::CredentialRequestSent { domain } => Some(Message::rich(
-            MessageKind::Status,
-            vec![
-                Span::styled("Requesting credential for: ", text()),
-                Span::styled(domain.clone(), val_style()),
-                Span::styled("...", dim()),
-            ],
-        )),
+        RemoteClientEvent::CredentialRequestSent { query } => {
+            let label = match query {
+                ap_client::CredentialQuery::Domain(d) => d.clone(),
+                ap_client::CredentialQuery::Id(id) => format!("id:{id}"),
+                ap_client::CredentialQuery::Search(s) => format!("search:{s}"),
+            };
+            Some(Message::rich(
+                MessageKind::Status,
+                vec![
+                    Span::styled("Requesting credential for: ", text()),
+                    Span::styled(label, val_style()),
+                    Span::styled("...", dim()),
+                ],
+            ))
+        }
         RemoteClientEvent::CredentialReceived { credential } => Some(Message::rich(
             MessageKind::Success,
             vec![
@@ -299,11 +306,11 @@ pub fn format_listen_event(event: &UserClientEvent) -> Option<Message> {
             ],
         )),
 
-        UserClientEvent::CredentialRequest { domain, .. } => Some(Message::rich(
+        UserClientEvent::CredentialRequest { query, .. } => Some(Message::rich(
             MessageKind::Prompt,
             vec![
                 Span::styled("Credential request for: ", text()),
-                Span::styled(domain.clone(), val_style()),
+                Span::styled(query.to_string(), val_style()),
             ],
         )),
 

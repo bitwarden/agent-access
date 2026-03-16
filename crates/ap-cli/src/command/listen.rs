@@ -21,7 +21,7 @@ use super::tui::{
     App, AppAction, Message, MessageKind, Mode, init_terminal, restore_terminal, wait_for_keypress,
 };
 use super::util::{format_listen_event, format_relative_time};
-use crate::providers::{CredentialProvider, CredentialQuery, LookupResult, ProviderStatus};
+use crate::providers::{CredentialProvider, LookupResult, ProviderStatus};
 use crate::storage::{FileIdentityStorage, FileSessionCache};
 
 use super::DEFAULT_PROXY_URL;
@@ -443,8 +443,9 @@ async fn run_event_loop(
                                     Span::styled(" reject", Style::default().fg(Color::Yellow)),
                                 ]);
                             }
-                            UserClientEvent::CredentialRequest { domain, request_id, session_id } => {
-                                match provider.lookup(&CredentialQuery::Domain(&domain)) {
+                            UserClientEvent::CredentialRequest { query, request_id, session_id } => {
+                                let domain = query.to_string();
+                                match provider.lookup(&query) {
                                     LookupResult::Found(credential) => {
                                         let found_msg = format!(
                                             "Found: {} ({})",

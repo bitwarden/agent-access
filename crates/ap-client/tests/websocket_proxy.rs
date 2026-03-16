@@ -438,9 +438,14 @@ async fn test_e2e_psk_pairing_and_credential_request() {
                     if let UserClientEvent::CredentialRequest {
                         request_id,
                         session_id,
-                        domain,
+                        query,
+                        ..
                     } = event
                     {
+                        let domain = match &query {
+                            ap_client::CredentialQuery::Domain(d) => d.clone(),
+                            _ => panic!("expected Domain query"),
+                        };
                         assert_eq!(domain, "example.com", "Domain should match request");
                         user_response_tx
                             .send(UserClientResponse::RespondCredential {
@@ -461,7 +466,9 @@ async fn test_e2e_psk_pairing_and_credential_request() {
             // 13. RemoteClient requests credential
             let credential = timeout(
                 Duration::from_secs(10),
-                remote_client.request_credential("example.com"),
+                remote_client.request_credential(&ap_client::CredentialQuery::Domain(
+                    "example.com".to_string(),
+                )),
             )
             .await
             .expect("Credential request should not timeout")
@@ -617,9 +624,14 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
                     if let UserClientEvent::CredentialRequest {
                         request_id,
                         session_id,
-                        domain,
+                        query,
+                        ..
                     } = event
                     {
+                        let domain = match &query {
+                            ap_client::CredentialQuery::Domain(d) => d.clone(),
+                            _ => panic!("expected Domain query"),
+                        };
                         assert_eq!(domain, "example.com", "Domain should match request");
                         user_response_tx
                             .send(UserClientResponse::RespondCredential {
@@ -640,7 +652,9 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
             // 15. RemoteClient requests credential
             let credential = timeout(
                 Duration::from_secs(10),
-                remote_client.request_credential("example.com"),
+                remote_client.request_credential(&ap_client::CredentialQuery::Domain(
+                    "example.com".to_string(),
+                )),
             )
             .await
             .expect("Credential request should not timeout")
@@ -757,9 +771,14 @@ async fn test_e2e_credential_request_denied() {
                     if let UserClientEvent::CredentialRequest {
                         request_id,
                         session_id,
-                        domain,
+                        query,
+                        ..
                     } = event
                     {
+                        let domain = match &query {
+                            ap_client::CredentialQuery::Domain(d) => d.clone(),
+                            _ => panic!("expected Domain query"),
+                        };
                         // Deny the credential request
                         user_response_tx
                             .send(UserClientResponse::RespondCredential {
@@ -780,7 +799,9 @@ async fn test_e2e_credential_request_denied() {
             // 10. RemoteClient requests credential - should fail
             let result = timeout(
                 Duration::from_secs(10),
-                remote_client.request_credential("example.com"),
+                remote_client.request_credential(&ap_client::CredentialQuery::Domain(
+                    "example.com".to_string(),
+                )),
             )
             .await
             .expect("Credential request should not timeout");
@@ -896,9 +917,14 @@ async fn test_e2e_multiple_credential_requests() {
                     if let UserClientEvent::CredentialRequest {
                         request_id,
                         session_id,
-                        domain,
+                        query,
+                        ..
                     } = event
                     {
+                        let domain = match &query {
+                            ap_client::CredentialQuery::Domain(d) => d.clone(),
+                            _ => panic!("expected Domain query"),
+                        };
                         request_count += 1;
 
                         // Create credential with domain-specific data
@@ -937,7 +963,9 @@ async fn test_e2e_multiple_credential_requests() {
             for domain in &domains {
                 let credential = timeout(
                     Duration::from_secs(10),
-                    remote_client.request_credential(domain),
+                    remote_client.request_credential(&ap_client::CredentialQuery::Domain(
+                        domain.to_string(),
+                    )),
                 )
                 .await
                 .expect("Credential request should not timeout")
@@ -1361,9 +1389,14 @@ async fn test_e2e_multi_device_credential_response() {
                     if let UserClientEvent::CredentialRequest {
                         request_id,
                         session_id,
-                        domain,
+                        query,
+                        ..
                     } = event
                     {
+                        let domain = match &query {
+                            ap_client::CredentialQuery::Domain(d) => d.clone(),
+                            _ => panic!("expected Domain query"),
+                        };
                         if should_device1_handle(&request_id) {
                             user_response_tx1
                                 .send(UserClientResponse::RespondCredential {
@@ -1395,9 +1428,14 @@ async fn test_e2e_multi_device_credential_response() {
                     if let UserClientEvent::CredentialRequest {
                         request_id,
                         session_id,
-                        domain,
+                        query,
+                        ..
                     } = event
                     {
+                        let domain = match &query {
+                            ap_client::CredentialQuery::Domain(d) => d.clone(),
+                            _ => panic!("expected Domain query"),
+                        };
                         if !should_device1_handle(&request_id) {
                             user_response_tx2
                                 .send(UserClientResponse::RespondCredential {
@@ -1430,7 +1468,9 @@ async fn test_e2e_multi_device_credential_response() {
             for _ in 0..100 {
                 let credential = timeout(
                     Duration::from_secs(10),
-                    remote_client.request_credential("example.com"),
+                    remote_client.request_credential(&ap_client::CredentialQuery::Domain(
+                        "example.com".to_string(),
+                    )),
                 )
                 .await
                 .expect("Should not timeout")

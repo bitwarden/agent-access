@@ -63,8 +63,12 @@ pub struct ConnectArgs {
     pub verify_fingerprint: bool,
 
     /// Domain to request credentials for (single-shot, non-interactive)
-    #[arg(long)]
+    #[arg(long, conflicts_with = "id")]
     pub domain: Option<String>,
+
+    /// Vault item ID to request credentials for (single-shot, non-interactive)
+    #[arg(long, conflicts_with = "domain")]
+    pub id: Option<String>,
 
     /// Output format for single-shot mode
     #[arg(long, default_value = "text", value_enum)]
@@ -74,13 +78,19 @@ pub struct ConnectArgs {
 impl ConnectArgs {
     /// Execute the connect command
     pub async fn run(self, log_rx: Option<super::tui_tracing::LogReceiver>) -> Result<()> {
-        if let Some(domain) = self.domain {
+        let query = match (&self.domain, &self.id) {
+            (Some(domain), _) => Some(ap_client::CredentialQuery::Domain(domain.clone())),
+            (_, Some(id)) => Some(ap_client::CredentialQuery::Id(id.clone())),
+            _ => None,
+        };
+
+        if let Some(query) = query {
             run_single_shot(
                 self.proxy_url,
                 self.token,
                 self.session,
                 self.ephemeral_connection,
-                domain,
+                query,
                 self.output,
             )
             .await
@@ -462,7 +472,8 @@ async fn run_interactive_session(
                                     app.push_msg(MessageKind::User, format!("Requesting: {domain}"));
 
                                     if let Some(ref mut c) = client {
-                                        let mut cred_fut = std::pin::pin!(c.request_credential(&domain));
+                                        let query = ap_client::CredentialQuery::Domain(domain.clone());
+                                        let mut cred_fut = std::pin::pin!(c.request_credential(&query));
                                         let mut user_quit = false;
                                         let cred_result = loop {
                                             term.draw(|frame| app.draw(frame))
@@ -632,7 +643,7 @@ pub(super) async fn fetch_credential(
     token: Option<&str>,
     session_fingerprint: Option<&str>,
     ephemeral_connection: bool,
-    domain: &str,
+    query: &ap_client::CredentialQuery,
 ) -> Result<ap_client::CredentialData> {
     let identity_provider: Box<dyn IdentityProvider> =
         Box::new(FileIdentityStorage::load_or_generate("remote_client")?);
@@ -654,9 +665,9 @@ pub(super) async fn fetch_credential(
     // Drain events in background (prevents channel backpressure)
     tokio::spawn(async move { while event_rx.recv().await.is_some() {} });
 
-    eprintln!("Requesting credential for: {domain}");
+    eprintln!("Requesting credential for {query}");
 
-    match client.request_credential(domain).await {
+    match client.request_credential(query).await {
         Ok(credential) => {
             client.close().await;
             Ok(credential)
@@ -673,7 +684,7 @@ async fn run_single_shot(
     token: Option<String>,
     session_fingerprint: Option<String>,
     ephemeral_connection: bool,
-    domain: String,
+    query: ap_client::CredentialQuery,
     output: OutputFormat,
 ) -> Result<()> {
     use super::output::{exit_code, exit_code_name};
@@ -683,14 +694,14 @@ async fn run_single_shot(
         token.as_deref(),
         session_fingerprint.as_deref(),
         ephemeral_connection,
-        &domain,
+        &query,
     )
     .await
     {
         Ok(credential) => {
             match output {
-                OutputFormat::Json => emit_json_success(&domain, &credential),
-                OutputFormat::Text => emit_text_credential(&domain, &credential),
+                OutputFormat::Json => emit_json_success(&query, &credential),
+                OutputFormat::Text => emit_text_credential(&query, &credential),
             }
             std::process::exit(exit_code::SUCCESS);
         }

@@ -71,8 +71,8 @@ pub enum UserClientEvent {
     },
     /// Credential request received
     CredentialRequest {
-        /// Domain being requested
-        domain: String,
+        /// The credential query
+        query: crate::types::CredentialQuery,
         /// Request ID
         request_id: String,
         /// Session ID for routing responses (fingerprint)
@@ -641,10 +641,17 @@ impl UserClient {
             })
             .await;
 
+        // Build query from the request payload
+        let query = if let Some(id) = request.id {
+            crate::types::CredentialQuery::Id(id)
+        } else {
+            crate::types::CredentialQuery::Domain(request.domain.clone())
+        };
+
         // Send credential request event
         event_tx
             .send(UserClientEvent::CredentialRequest {
-                domain: request.domain.clone(),
+                query,
                 request_id: request.request_id.clone(),
                 session_id: format!("{source:?}"),
             })

@@ -1,8 +1,31 @@
 //! Types for the remote client protocol
 
+use std::fmt;
+
 use ap_noise::Psk;
 use ap_proxy_protocol::IdentityFingerprint;
 use serde::{Deserialize, Serialize};
+
+/// What kind of credential to look up.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum CredentialQuery {
+    /// Look up by domain / URL.
+    Domain(String),
+    /// Look up by vault item ID.
+    Id(String),
+    /// Free-text search.
+    Search(String),
+}
+
+impl fmt::Display for CredentialQuery {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CredentialQuery::Domain(d) => write!(f, "domain: {d}"),
+            CredentialQuery::Id(id) => write!(f, "id: {id}"),
+            CredentialQuery::Search(s) => write!(f, "search: {s}"),
+        }
+    }
+}
 
 /// Connection mode for establishing a connection
 #[derive(Debug, Clone)]
@@ -95,8 +118,8 @@ pub enum RemoteClientEvent {
     },
     /// Credential request was sent
     CredentialRequestSent {
-        /// Domain requested
-        domain: String,
+        /// The query used for the request
+        query: CredentialQuery,
     },
     /// Credential was received
     CredentialReceived {
@@ -166,6 +189,8 @@ pub(crate) struct CredentialRequestPayload {
     #[serde(rename = "type")]
     pub request_type: String,
     pub domain: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub timestamp: u64,
     #[serde(rename = "requestId")]
     pub request_id: String,

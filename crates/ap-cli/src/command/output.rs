@@ -3,7 +3,7 @@
 //! Provides structured output for agent/LLM consumption: JSON or plain text,
 //! with well-defined exit codes for programmatic error handling.
 
-use ap_client::{CredentialData, RemoteClientError};
+use ap_client::{CredentialData, CredentialQuery, RemoteClientError};
 use clap::ValueEnum;
 
 /// Output format for single-shot mode
@@ -47,10 +47,15 @@ pub fn exit_code_for_error(err: &RemoteClientError) -> i32 {
 }
 
 /// Print a successful credential result as JSON to stdout
-pub fn emit_json_success(domain: &str, credential: &CredentialData) {
+pub fn emit_json_success(query: &CredentialQuery, credential: &CredentialData) {
+    let (query_key, query_val) = match query {
+        CredentialQuery::Domain(d) => ("domain", d.as_str()),
+        CredentialQuery::Id(id) => ("id", id.as_str()),
+        CredentialQuery::Search(s) => ("search", s.as_str()),
+    };
     let obj = serde_json::json!({
         "success": true,
-        "domain": domain,
+        query_key: query_val,
         "credential": {
             "username": credential.username,
             "password": credential.password,
@@ -88,8 +93,8 @@ pub fn exit_code_name(code: i32) -> &'static str {
 }
 
 /// Print a credential result as plain text key: value lines to stdout
-pub fn emit_text_credential(domain: &str, credential: &CredentialData) {
-    println!("domain: {domain}");
+pub fn emit_text_credential(query: &CredentialQuery, credential: &CredentialData) {
+    println!("{query}");
     if let Some(username) = &credential.username {
         println!("username: {username}");
     }
