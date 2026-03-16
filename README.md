@@ -49,12 +49,12 @@ Download [aac-windows-x86_64.zip](https://github.com/bitwarden/remote-access/rel
 ### OpenClaw skill
 
 ```shell
-curl -fsSL "https://raw.githubusercontent.com/bitwarden/remote-access/main/examples/skills/remote-access/SKILL.md" -o ~/.openclaw/skills/remote-access/SKILL.md --create-dirs
+curl -fsSL "https://raw.githubusercontent.com/bitwarden/remote-access/main/examples/skills/agent-access/SKILL.md" -o ~/.openclaw/skills/agent-access/SKILL.md --create-dirs
 ```
 
 ## Examples
 
-* [OpenClaw skill](examples/skills/remote-access/SKILL.md)
+* [OpenClaw skill](examples/skills/agent-access/SKILL.md)
 * Automated script requesting an API-token.
 * Github Action
 
