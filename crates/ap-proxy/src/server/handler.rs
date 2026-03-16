@@ -1,4 +1,4 @@
-use bw_proxy_protocol::{Challenge, IdentityFingerprint, Messages, ProxyError, RendevouzCode};
+use ap_proxy_protocol::{Challenge, IdentityFingerprint, Messages, ProxyError, RendevouzCode};
 
 use crate::{connection::AuthenticatedConnection, server::proxy_server::ServerState};
 

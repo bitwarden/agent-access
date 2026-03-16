@@ -1,6 +1,6 @@
 //! Proxy server implementation.
 //!
-//! This module provides the server-side implementation of the bw-proxy relay.
+//! This module provides the server-side implementation of the ap-proxy relay.
 //! The server can be run standalone using the binary, or embedded in custom applications.
 //!
 //! # Running as a Binary
@@ -8,7 +8,7 @@
 //! The simplest way to run the proxy server:
 //!
 //! ```bash
-//! cargo run --bin bw-proxy
+//! cargo run --bin ap-proxy
 //! ```
 //!
 //! # Embedding in Your Application
@@ -16,7 +16,7 @@
 //! You can embed the proxy server in your own application:
 //!
 //! ```no_run
-//! use bw_proxy::server::ProxyServer;
+//! use ap_proxy::server::ProxyServer;
 //! use std::net::SocketAddr;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {

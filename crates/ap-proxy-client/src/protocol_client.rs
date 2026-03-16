@@ -1,4 +1,4 @@
-use bw_proxy_protocol::{
+use ap_proxy_protocol::{
     IdentityFingerprint, IdentityKeyPair, Messages, ProxyError, RendevouzCode,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -17,7 +17,7 @@ const PONG_TIMEOUT: Duration = Duration::from_secs(60);
 use super::config::{ClientState, IncomingMessage, ProxyClientConfig};
 
 /// Convert tungstenite errors into ProxyError (replaces the From impl that
-/// was removed from bw-proxy-protocol to keep it free of tungstenite deps).
+/// was removed from ap-proxy-protocol to keep it free of tungstenite deps).
 fn ws_err(e: tokio_tungstenite::tungstenite::Error) -> ProxyError {
     ProxyError::WebSocket(e.to_string())
 }
@@ -26,7 +26,7 @@ type WsStream = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::Tc
 type WsSink = futures_util::stream::SplitSink<WsStream, Message>;
 type WsSource = futures_util::stream::SplitStream<WsStream>;
 
-/// Client for connecting to and communicating through a bw-proxy server.
+/// Client for connecting to and communicating through a ap-proxy server.
 ///
 /// This is the main client API for connecting to a proxy server, authenticating,
 /// discovering peers via rendezvous codes, and sending messages.
@@ -43,7 +43,7 @@ type WsSource = futures_util::stream::SplitStream<WsStream>;
 /// Basic usage:
 ///
 /// ```no_run
-/// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
+/// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// // Create and connect
@@ -101,7 +101,7 @@ impl ProxyProtocolClient {
     /// Create client with new identity:
     ///
     /// ```
-    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient};
+    /// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient};
     ///
     /// let config = ProxyClientConfig {
     ///     proxy_url: "ws://localhost:8080".to_string(),
@@ -114,7 +114,7 @@ impl ProxyProtocolClient {
     /// Create client with existing identity:
     ///
     /// ```
-    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IdentityKeyPair};
+    /// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IdentityKeyPair};
     ///
     /// let keypair = IdentityKeyPair::generate();
     /// let config = ProxyClientConfig {
@@ -169,7 +169,7 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```no_run
-    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
+    /// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = ProxyClientConfig {
@@ -289,7 +289,7 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```no_run
-    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient};
+    /// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = ProxyClientConfig {
@@ -371,7 +371,7 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```no_run
-    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
+    /// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = ProxyClientConfig {
@@ -440,7 +440,7 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```no_run
-    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage, RendevouzCode};
+    /// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage, RendevouzCode};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = ProxyClientConfig {
@@ -507,7 +507,7 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```
-    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient};
+    /// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient};
     ///
     /// let config = ProxyClientConfig {
     ///     proxy_url: "ws://localhost:8080".to_string(),
@@ -528,7 +528,7 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```no_run
-    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient};
+    /// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = ProxyClientConfig {
@@ -563,7 +563,7 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```no_run
-    /// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient};
+    /// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = ProxyClientConfig {

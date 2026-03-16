@@ -1,10 +1,10 @@
-# bw-proxy-client
+# ap-proxy-client
 
-A client library for connecting to a `bw-proxy` WebSocket relay server.
+A client library for connecting to an `ap-proxy` WebSocket relay server.
 
 ## Overview
 
-`bw-proxy-client` provides `ProxyProtocolClient` for connecting to a proxy server, authenticating with cryptographic identities, and exchanging messages with other clients. It uses rustls for TLS.
+`ap-proxy-client` provides `ProxyProtocolClient` for connecting to a proxy server, authenticating with cryptographic identities, and exchanging messages with other clients. It uses rustls for TLS.
 
 ## Quick Start
 
@@ -12,13 +12,13 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-bw-proxy-client = "0.1.0"
+ap-proxy-client = "0.1.0"
 ```
 
 Basic client example:
 
 ```rust
-use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
+use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

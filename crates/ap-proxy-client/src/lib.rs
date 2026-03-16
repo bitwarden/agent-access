@@ -1,4 +1,4 @@
-//! Client library for connecting to a bw-proxy WebSocket relay server.
+//! Client library for connecting to a ap-proxy WebSocket relay server.
 //!
 //! This crate provides [`ProxyProtocolClient`] for connecting to a proxy server,
 //! authenticating, and sending/receiving messages.
@@ -6,7 +6,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
+//! use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let config = ProxyClientConfig {
@@ -46,8 +46,8 @@ pub use config::{IncomingMessage, ProxyClientConfig};
 #[cfg(feature = "native-websocket")]
 pub use protocol_client::ProxyProtocolClient;
 
-// Re-export key types from bw-proxy-protocol for ergonomics
-pub use bw_proxy_protocol::{
+// Re-export key types from ap-proxy-protocol for ergonomics
+pub use ap_proxy_protocol::{
     Challenge, ChallengeResponse, Identity, IdentityFingerprint, IdentityKeyPair, Messages,
     ProxyError, RendevouzCode, SignatureAlgorithm,
 };

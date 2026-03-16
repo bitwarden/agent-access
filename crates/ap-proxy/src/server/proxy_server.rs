@@ -1,4 +1,4 @@
-use bw_proxy_protocol::{IdentityFingerprint, ProxyError};
+use ap_proxy_protocol::{IdentityFingerprint, ProxyError};
 
 use crate::connection::AuthenticatedConnection;
 use crate::server::handler::ConnectionHandler;
@@ -50,7 +50,7 @@ impl ServerState {
 /// Run a standalone server:
 ///
 /// ```no_run
-/// use bw_proxy::server::ProxyServer;
+/// use ap_proxy::server::ProxyServer;
 /// use std::net::SocketAddr;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -66,7 +66,7 @@ impl ServerState {
 /// Embed in an application with cancellation:
 ///
 /// ```no_run
-/// use bw_proxy::server::ProxyServer;
+/// use ap_proxy::server::ProxyServer;
 /// use std::net::SocketAddr;
 /// use tokio::signal;
 ///
@@ -100,7 +100,7 @@ impl ProxyServer {
     /// # Examples
     ///
     /// ```
-    /// use bw_proxy::server::ProxyServer;
+    /// use ap_proxy::server::ProxyServer;
     /// use std::net::SocketAddr;
     ///
     /// let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
@@ -128,7 +128,7 @@ impl ProxyServer {
     /// Use `tokio::select!` or similar to cancel the server:
     ///
     /// ```no_run
-    /// use bw_proxy::server::ProxyServer;
+    /// use ap_proxy::server::ProxyServer;
     /// use std::net::SocketAddr;
     /// use tokio::signal;
     ///
@@ -156,7 +156,7 @@ impl ProxyServer {
     /// # Examples
     ///
     /// ```no_run
-    /// use bw_proxy::server::ProxyServer;
+    /// use ap_proxy::server::ProxyServer;
     /// use std::net::SocketAddr;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {

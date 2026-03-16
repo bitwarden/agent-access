@@ -1,5 +1,5 @@
-use bw_proxy::server::ProxyServer;
-use bw_proxy_client::{IdentityKeyPair, IncomingMessage, ProxyClientConfig, ProxyProtocolClient};
+use ap_proxy::server::ProxyServer;
+use ap_proxy_client::{IdentityKeyPair, IncomingMessage, ProxyClientConfig, ProxyProtocolClient};
 use std::net::SocketAddr;
 
 /// Small delay to allow the server to finish registering a connection after

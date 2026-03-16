@@ -1,16 +1,16 @@
-# bw-proxy
+# ap-proxy
 
-A WebSocket relay server for `aac` (bw-remote) that routes messages between authenticated clients without access to message contents.
+A WebSocket relay server for `aac` (ap-cli) that routes messages between authenticated clients without access to message contents.
 
-For the client library, see [`bw-proxy-client`](../bw-proxy-client/).
-For shared protocol types, see [`bw-proxy-protocol`](../bw-proxy-protocol/).
+For the client library, see [`ap-proxy-client`](../ap-proxy-client/).
+For shared protocol types, see [`ap-proxy-protocol`](../ap-proxy-protocol/).
 
 ## Quick Start
 
 ### Running the Proxy Server
 
 ```bash
-cargo run --bin bw-proxy
+cargo run --bin ap-proxy
 ```
 
 The server will start listening on `ws://localhost:8080` by default.
@@ -18,7 +18,7 @@ The server will start listening on `ws://localhost:8080` by default.
 ### Embedding in Your Application
 
 ```rust
-use bw_proxy::server::ProxyServer;
+use ap_proxy::server::ProxyServer;
 use std::net::SocketAddr;
 
 #[tokio::main]

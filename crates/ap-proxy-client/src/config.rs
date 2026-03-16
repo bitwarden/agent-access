@@ -1,4 +1,4 @@
-use bw_proxy_protocol::{Identity, IdentityFingerprint, IdentityKeyPair, RendevouzCode};
+use ap_proxy_protocol::{Identity, IdentityFingerprint, IdentityKeyPair, RendevouzCode};
 
 /// Configuration for creating a proxy client.
 ///
@@ -7,7 +7,7 @@ use bw_proxy_protocol::{Identity, IdentityFingerprint, IdentityKeyPair, Rendevou
 /// Create a client with a new identity:
 ///
 /// ```
-/// use bw_proxy_client::ProxyClientConfig;
+/// use ap_proxy_client::ProxyClientConfig;
 ///
 /// let config = ProxyClientConfig {
 ///     proxy_url: "ws://localhost:8080".to_string(),
@@ -18,7 +18,7 @@ use bw_proxy_protocol::{Identity, IdentityFingerprint, IdentityKeyPair, Rendevou
 /// Create a client with an existing identity:
 ///
 /// ```
-/// use bw_proxy_client::{ProxyClientConfig, IdentityKeyPair};
+/// use ap_proxy_client::{ProxyClientConfig, IdentityKeyPair};
 ///
 /// let keypair = IdentityKeyPair::generate();
 /// let config = ProxyClientConfig {
@@ -54,7 +54,7 @@ pub struct ProxyClientConfig {
 /// # Examples
 ///
 /// ```no_run
-/// use bw_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
+/// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage};
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = ProxyClientConfig {

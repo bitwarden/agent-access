@@ -4,8 +4,8 @@
 //! authenticates clients, and routes messages between them. The server is
 //! zero-knowledge and cannot decrypt client payloads.
 //!
-//! For the client library, see [`bw-proxy-client`](https://docs.rs/bw-proxy-client).
-//! For shared protocol types, see [`bw-proxy-protocol`](https://docs.rs/bw-proxy-protocol).
+//! For the client library, see [`ap-proxy-client`](https://docs.rs/ap-proxy-client).
+//! For shared protocol types, see [`ap-proxy-protocol`](https://docs.rs/ap-proxy-protocol).
 //!
 //! # Architecture
 //!
@@ -55,13 +55,13 @@
 //! # Running as a Binary
 //!
 //! ```bash
-//! cargo run --bin bw-proxy
+//! cargo run --bin ap-proxy
 //! ```
 //!
 //! # Embedding in Your Application
 //!
 //! ```no_run
-//! use bw_proxy::server::ProxyServer;
+//! use ap_proxy::server::ProxyServer;
 //! use std::net::SocketAddr;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
