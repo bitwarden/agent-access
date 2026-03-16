@@ -24,32 +24,32 @@ Agent Access is an open protocol, CLI tool, and Rust SDK that you can use to imp
 ### macOS (Apple Silicon)
 
 ```shell
-curl -L https://github.com/bitwarden/remote-access/releases/latest/download/aac-macos-aarch64.tar.gz | tar xz
+curl -L https://github.com/bitwarden/agent-access/releases/latest/download/aac-macos-aarch64.tar.gz | tar xz
 sudo mv aac /usr/local/bin/ # Makes it available on PATH
 ```
 
 ### macOS (Intel)
 
 ```shell
-curl -L https://github.com/bitwarden/remote-access/releases/latest/download/aac-macos-x86_64.tar.gz | tar xz
+curl -L https://github.com/bitwarden/agent-access/releases/latest/download/aac-macos-x86_64.tar.gz | tar xz
 sudo mv aac /usr/local/bin/ # Makes it available on PATH
 ```
 
 ### Linux (x86_64)
 
 ```shell
-curl -L https://github.com/bitwarden/remote-access/releases/latest/download/aac-linux-x86_64.tar.gz | tar xz
+curl -L https://github.com/bitwarden/agent-access/releases/latest/download/aac-linux-x86_64.tar.gz | tar xz
 sudo mv aac /usr/local/bin/ # Makes it available on PATH
 ```
 
 ### Windows (x86_64)
 
-Download [aac-windows-x86_64.zip](https://github.com/bitwarden/remote-access/releases/latest/download/aac-windows-x86_64.zip) from the [latest release](https://github.com/bitwarden/remote-access/releases/latest) and extract it to a directory on your PATH.
+Download [aac-windows-x86_64.zip](https://github.com/bitwarden/agent-access/releases/latest/download/aac-windows-x86_64.zip) from the [latest release](https://github.com/bitwarden/agent-access/releases/latest) and extract it to a directory on your PATH.
 
 ### OpenClaw skill
 
 ```shell
-curl -fsSL "https://raw.githubusercontent.com/bitwarden/remote-access/main/examples/skills/agent-access/SKILL.md" -o ~/.openclaw/skills/agent-access/SKILL.md --create-dirs
+curl -fsSL "https://raw.githubusercontent.com/bitwarden/agent-access/main/examples/skills/agent-access/SKILL.md" -o ~/.openclaw/skills/agent-access/SKILL.md --create-dirs
 ```
 
 ## Examples
