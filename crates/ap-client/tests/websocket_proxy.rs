@@ -451,7 +451,7 @@ async fn test_e2e_psk_pairing_and_credential_request() {
                             .send(UserClientResponse::RespondCredential {
                                 request_id,
                                 session_id,
-                                domain,
+                                query: query.clone(),
                                 approved: true,
                                 credential: Some(test_credential()),
                                 credential_id: Some("test-item-id".to_string()),
@@ -637,7 +637,7 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
                             .send(UserClientResponse::RespondCredential {
                                 request_id,
                                 session_id,
-                                domain,
+                                query: query.clone(),
                                 approved: true,
                                 credential: Some(test_credential()),
                                 credential_id: Some("test-item-id".to_string()),
@@ -775,16 +775,13 @@ async fn test_e2e_credential_request_denied() {
                         ..
                     } = event
                     {
-                        let domain = match &query {
-                            ap_client::CredentialQuery::Domain(d) => d.clone(),
-                            _ => panic!("expected Domain query"),
-                        };
+                        assert!(matches!(&query, ap_client::CredentialQuery::Domain(d) if d == "example.com"));
                         // Deny the credential request
                         user_response_tx
                             .send(UserClientResponse::RespondCredential {
                                 request_id,
                                 session_id,
-                                domain,
+                                query: query.clone(),
                                 approved: false,
                                 credential: None,
                                 credential_id: None,
@@ -942,7 +939,7 @@ async fn test_e2e_multiple_credential_requests() {
                             .send(UserClientResponse::RespondCredential {
                                 request_id,
                                 session_id,
-                                domain,
+                                query: query.clone(),
                                 approved: true,
                                 credential: Some(credential),
                                 credential_id: None,
@@ -1393,16 +1390,12 @@ async fn test_e2e_multi_device_credential_response() {
                         ..
                     } = event
                     {
-                        let domain = match &query {
-                            ap_client::CredentialQuery::Domain(d) => d.clone(),
-                            _ => panic!("expected Domain query"),
-                        };
                         if should_device1_handle(&request_id) {
                             user_response_tx1
                                 .send(UserClientResponse::RespondCredential {
                                     request_id,
                                     session_id,
-                                    domain,
+                                    query: query.clone(),
                                     approved: true,
                                     credential: Some(CredentialData {
                                         username: Some("device1_user".into()),
@@ -1432,16 +1425,12 @@ async fn test_e2e_multi_device_credential_response() {
                         ..
                     } = event
                     {
-                        let domain = match &query {
-                            ap_client::CredentialQuery::Domain(d) => d.clone(),
-                            _ => panic!("expected Domain query"),
-                        };
                         if !should_device1_handle(&request_id) {
                             user_response_tx2
                                 .send(UserClientResponse::RespondCredential {
                                     request_id,
                                     session_id,
-                                    domain,
+                                    query: query.clone(),
                                     approved: true,
                                     credential: Some(CredentialData {
                                         username: Some("device2_user".into()),

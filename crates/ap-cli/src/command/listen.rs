@@ -64,7 +64,7 @@ enum Phase {
     NameInput,
     /// Credential approval pending.
     CredentialApproval {
-        domain: String,
+        query: ap_client::CredentialQuery,
         request_id: String,
         session_id: String,
         credential: CredentialData,
@@ -357,34 +357,35 @@ async fn run_event_loop(
                                 (Phase::CredentialApproval { .. }, AppAction::Confirmed(approved)) => {
                                     let approved = *approved;
                                     let old_phase = std::mem::replace(&mut phase, Phase::Idle);
-                                    if let Phase::CredentialApproval { domain, request_id, session_id, credential } = old_phase {
+                                    if let Phase::CredentialApproval { query, request_id, session_id, credential } = old_phase {
+                                        let label = credential.domain.clone().unwrap_or_else(|| query.to_string());
                                         if approved {
                                             let cred_id = credential.credential_id.clone();
                                             response_tx
                                                 .send(UserClientResponse::RespondCredential {
                                                     request_id,
                                                     session_id,
-                                                    domain: domain.clone(),
+                                                    query,
                                                     approved: true,
                                                     credential: Some(credential),
                                                     credential_id: cred_id,
                                                 })
                                                 .await
                                                 .ok();
-                                            app.push_msg(MessageKind::Success, format!("Credential sent for {domain}"));
+                                            app.push_msg(MessageKind::Success, format!("Credential sent for {label}"));
                                         } else {
                                             response_tx
                                                 .send(UserClientResponse::RespondCredential {
                                                     request_id,
                                                     session_id,
-                                                    domain: domain.clone(),
+                                                    query,
                                                     approved: false,
                                                     credential: None,
                                                     credential_id: credential.credential_id,
                                                 })
                                                 .await
                                                 .ok();
-                                            app.push_msg(MessageKind::Error, format!("Credential denied for {domain}"));
+                                            app.push_msg(MessageKind::Error, format!("Credential denied for {label}"));
                                         }
                                     }
                                     app.enter_idle(idle_footer(), IDLE_COMMANDS);
@@ -463,7 +464,7 @@ async fn run_event_loop(
                                             })
                                             .unwrap_or_else(|| "unknown device".to_string());
                                         phase = Phase::CredentialApproval {
-                                            domain: domain.clone(),
+                                            query,
                                             request_id,
                                             session_id,
                                             credential,
@@ -493,7 +494,7 @@ async fn run_event_loop(
                                             .send(UserClientResponse::RespondCredential {
                                                 request_id,
                                                 session_id,
-                                                domain: label,
+                                                query,
                                                 approved: false,
                                                 credential: None,
                                                 credential_id: None,
