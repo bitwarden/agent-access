@@ -42,7 +42,7 @@ impl RendevouzCode {
     /// # Examples
     ///
     /// ```
-    /// use bw_proxy_protocol::RendevouzCode;
+    /// use ap_proxy_protocol::RendevouzCode;
     ///
     /// let code1 = RendevouzCode::new();
     /// let code2 = RendevouzCode::new();
@@ -84,7 +84,7 @@ impl RendevouzCode {
     /// # Examples
     ///
     /// ```
-    /// use bw_proxy_protocol::RendevouzCode;
+    /// use ap_proxy_protocol::RendevouzCode;
     ///
     /// let code = RendevouzCode::from_string("ABC-DEF-GHI".to_string());
     /// assert_eq!(code.as_str(), "ABC-DEF-GHI");
@@ -101,7 +101,7 @@ impl RendevouzCode {
     /// # Examples
     ///
     /// ```
-    /// use bw_proxy_protocol::RendevouzCode;
+    /// use ap_proxy_protocol::RendevouzCode;
     ///
     /// let code = RendevouzCode::new();
     /// println!("Your code: {}", code.as_str());

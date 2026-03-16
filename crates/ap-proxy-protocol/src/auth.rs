@@ -1,4 +1,4 @@
-//! Authentication module for the bw-proxy crate. Authentication works by creating a cryptographic
+//! Authentication module for the ap-proxy crate. Authentication works by creating a cryptographic
 //! identity - a signature key-pair. The identity is the public key. It is proven to the relay, by
 //! signing a challenge provided by the relay using the signature key.
 
@@ -238,7 +238,7 @@ impl IdentityKeyPair {
     /// # Examples
     ///
     /// ```
-    /// use bw_proxy_protocol::IdentityKeyPair;
+    /// use ap_proxy_protocol::IdentityKeyPair;
     ///
     /// let keypair = IdentityKeyPair::generate();
     /// let public_identity = keypair.identity();
@@ -259,7 +259,7 @@ impl IdentityKeyPair {
 /// # Examples
 ///
 /// ```
-/// use bw_proxy_protocol::IdentityKeyPair;
+/// use ap_proxy_protocol::IdentityKeyPair;
 ///
 /// let keypair = IdentityKeyPair::generate();
 /// let identity = keypair.identity();
@@ -377,7 +377,7 @@ impl Identity {
     /// # Examples
     ///
     /// ```
-    /// use bw_proxy_protocol::IdentityKeyPair;
+    /// use ap_proxy_protocol::IdentityKeyPair;
     ///
     /// let keypair = IdentityKeyPair::generate();
     /// let identity = keypair.identity();
@@ -404,7 +404,7 @@ impl Identity {
 /// # Examples
 ///
 /// ```
-/// use bw_proxy_protocol::IdentityKeyPair;
+/// use ap_proxy_protocol::IdentityKeyPair;
 /// use std::collections::HashMap;
 ///
 /// let keypair = IdentityKeyPair::generate();
@@ -442,7 +442,7 @@ impl std::fmt::Debug for IdentityFingerprint {
 /// Server-side challenge generation:
 ///
 /// ```
-/// use bw_proxy_protocol::Challenge;
+/// use ap_proxy_protocol::Challenge;
 ///
 /// let challenge = Challenge::new();
 /// // Send to client for signing
@@ -451,7 +451,7 @@ impl std::fmt::Debug for IdentityFingerprint {
 /// Client-side challenge signing:
 ///
 /// ```
-/// use bw_proxy_protocol::{Challenge, IdentityKeyPair};
+/// use ap_proxy_protocol::{Challenge, IdentityKeyPair};
 ///
 /// let keypair = IdentityKeyPair::generate();
 /// # let challenge = Challenge::new();
@@ -476,7 +476,7 @@ impl Challenge {
     /// # Examples
     ///
     /// ```
-    /// use bw_proxy_protocol::Challenge;
+    /// use ap_proxy_protocol::Challenge;
     ///
     /// let challenge = Challenge::new();
     /// // Each call produces a different random challenge
@@ -494,7 +494,7 @@ impl Challenge {
     /// # Examples
     ///
     /// ```
-    /// use bw_proxy_protocol::{Challenge, IdentityKeyPair};
+    /// use ap_proxy_protocol::{Challenge, IdentityKeyPair};
     ///
     /// let keypair = IdentityKeyPair::generate();
     /// let challenge = Challenge::new();
@@ -568,7 +568,7 @@ impl Challenge {
 /// Create and verify a challenge response:
 ///
 /// ```
-/// use bw_proxy_protocol::{Challenge, IdentityKeyPair};
+/// use ap_proxy_protocol::{Challenge, IdentityKeyPair};
 ///
 /// // Client signs challenge
 /// let keypair = IdentityKeyPair::generate();
@@ -605,7 +605,7 @@ impl ChallengeResponse {
     /// # Examples
     ///
     /// ```
-    /// use bw_proxy_protocol::{Challenge, IdentityKeyPair};
+    /// use ap_proxy_protocol::{Challenge, IdentityKeyPair};
     ///
     /// let keypair = IdentityKeyPair::generate();
     /// let challenge = Challenge::new();

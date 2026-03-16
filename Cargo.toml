@@ -7,7 +7,7 @@ members = [
     "crates/bw-noise-protocol",
     "crates/bw-proxy",
     "crates/bw-proxy-client",
-    "crates/bw-proxy-protocol",
+    "crates/ap-proxy-protocol",
     "crates/bw-remote",
 ]
 
@@ -26,7 +26,7 @@ bw-rat-client = { path = "crates/bw-rat-client", version = "0.1.0" }
 bw-noise-protocol = { path = "crates/bw-noise-protocol", version = "0.1.0" }
 bw-proxy = { path = "crates/bw-proxy", version = "0.1.0" }
 bw-proxy-client = { path = "crates/bw-proxy-client", version = "0.1.0", default-features = false }
-bw-proxy-protocol = { path = "crates/bw-proxy-protocol", version = "0.1.0" }
+ap-proxy-protocol = { path = "crates/ap-proxy-protocol", version = "0.1.0" }
 
 # External dependencies
 base64 = "0.22"

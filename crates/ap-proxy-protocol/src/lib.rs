@@ -1,4 +1,4 @@
-//! Shared wire protocol types for the bw-proxy WebSocket relay.
+//! Shared wire protocol types for the ap-proxy WebSocket relay.
 //!
 //! This crate contains the protocol types used by both the proxy server
 //! and proxy client, with zero TLS dependencies.

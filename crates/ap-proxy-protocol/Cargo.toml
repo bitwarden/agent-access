@@ -1,6 +1,6 @@
 [package]
-name = "bw-proxy-protocol"
-description = "Shared wire protocol types for the bw-proxy WebSocket relay"
+name = "ap-proxy-protocol"
+description = "Shared wire protocol types for the ap-proxy WebSocket relay"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -12,7 +12,7 @@ default = []
 experimental-post-quantum-crypto = []
 
 [dependencies]
-bw-error = { workspace = true }
+ap-error = { workspace = true }
 coset = { workspace = true }
 ed25519-dalek = { workspace = true }
 hex = { workspace = true }
