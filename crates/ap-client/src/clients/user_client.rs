@@ -7,7 +7,7 @@ use ap_proxy_protocol::{IdentityFingerprint, RendevouzCode};
 use base64::{Engine, engine::general_purpose::STANDARD};
 
 use crate::proxy::ProxyClient;
-use serde::{Deserialize, Serialize};
+use crate::types::CredentialData;
 use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
@@ -30,7 +30,7 @@ use crate::{
         AuditConnectionType, AuditEvent, AuditLog, CredentialFieldSet, IdentityProvider,
         NoOpAuditLog, SessionStore,
     },
-    types::ProtocolMessage,
+    types::{CredentialRequestPayload, CredentialResponsePayload, ProtocolMessage},
 };
 
 /// Events emitted by the user client during operation
@@ -71,8 +71,8 @@ pub enum UserClientEvent {
     },
     /// Credential request received
     CredentialRequest {
-        /// Domain being requested
-        domain: String,
+        /// The credential query
+        query: crate::types::CredentialQuery,
         /// Request ID
         request_id: String,
         /// Session ID for routing responses (fingerprint)
@@ -80,15 +80,15 @@ pub enum UserClientEvent {
     },
     /// Credential was approved and sent
     CredentialApproved {
-        /// Domain
-        domain: String,
+        /// Domain from the matched credential
+        domain: Option<String>,
         /// Vault item ID
         credential_id: Option<String>,
     },
     /// Credential was denied
     CredentialDenied {
-        /// Domain
-        domain: String,
+        /// Domain from the matched credential
+        domain: Option<String>,
         /// Vault item ID
         credential_id: Option<String>,
     },
@@ -132,8 +132,8 @@ pub enum UserClientResponse {
         request_id: String,
         /// Session ID for routing to correct transport (fingerprint)
         session_id: String,
-        /// The requested domain
-        domain: String,
+        /// The query that triggered this request
+        query: crate::types::CredentialQuery,
         /// Whether approved
         approved: bool,
         /// The credential to send (if approved)
@@ -141,51 +141,6 @@ pub enum UserClientResponse {
         /// Vault item ID (for audit logging)
         credential_id: Option<String>,
     },
-}
-
-/// Credential data to send to remote client
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CredentialData {
-    /// Username for the credential
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub username: Option<String>,
-    /// Password for the credential
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub password: Option<String>,
-    /// TOTP code if available
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub totp: Option<String>,
-    /// URI associated with the credential
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub uri: Option<String>,
-    /// Additional notes
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub notes: Option<String>,
-    /// Vault item ID
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub credential_id: Option<String>,
-}
-
-/// Credential request payload (decrypted)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct CredentialRequestPayload {
-    #[serde(rename = "type")]
-    request_type: Option<String>,
-    domain: String,
-    timestamp: Option<u64>,
-    #[serde(rename = "requestId")]
-    request_id: String,
-}
-
-/// Credential response payload (to be encrypted)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct CredentialResponsePayload {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    credential: Option<CredentialData>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-    #[serde(rename = "requestId")]
-    request_id: String,
 }
 
 /// User client for acting as trusted device
@@ -680,7 +635,7 @@ impl UserClient {
 
         self.audit_log
             .write(AuditEvent::CredentialRequested {
-                domain: &request.domain,
+                query: &request.query,
                 remote_identity: &source,
                 request_id: &request.request_id,
             })
@@ -689,7 +644,7 @@ impl UserClient {
         // Send credential request event
         event_tx
             .send(UserClientEvent::CredentialRequest {
-                domain: request.domain.clone(),
+                query: request.query,
                 request_id: request.request_id.clone(),
                 session_id: format!("{source:?}"),
             })
@@ -713,7 +668,7 @@ impl UserClient {
             UserClientResponse::RespondCredential {
                 request_id,
                 session_id,
-                domain,
+                query,
                 approved,
                 credential,
                 credential_id,
@@ -721,7 +676,7 @@ impl UserClient {
                 self.handle_credential_response(
                     request_id,
                     session_id,
-                    domain,
+                    query,
                     approved,
                     credential,
                     credential_id,
@@ -739,7 +694,7 @@ impl UserClient {
         &mut self,
         request_id: String,
         session_id: String,
-        domain: String,
+        query: crate::types::CredentialQuery,
         approved: bool,
         credential: Option<CredentialData>,
         credential_id: Option<String>,
@@ -758,7 +713,8 @@ impl UserClient {
             .get_mut(&fingerprint)
             .ok_or(RemoteClientError::SecureChannelNotEstablished)?;
 
-        // Compute audit fields before credential is moved into the response payload
+        // Extract domain and audit fields before credential is moved into the response payload
+        let domain = credential.as_ref().and_then(|c| c.domain.clone());
         let fields = credential
             .as_ref()
             .map_or_else(CredentialFieldSet::default, |c| CredentialFieldSet {
@@ -777,7 +733,7 @@ impl UserClient {
             } else {
                 None
             },
-            request_id: request_id.clone(),
+            request_id: Some(request_id.clone()),
         };
 
         // Encrypt and send
@@ -805,7 +761,8 @@ impl UserClient {
         if approved {
             self.audit_log
                 .write(AuditEvent::CredentialApproved {
-                    domain: &domain,
+                    query: &query,
+                    domain: domain.as_deref(),
                     remote_identity: &fingerprint,
                     request_id: &request_id,
                     credential_id: credential_id.as_deref(),
@@ -823,7 +780,8 @@ impl UserClient {
         } else {
             self.audit_log
                 .write(AuditEvent::CredentialDenied {
-                    domain: &domain,
+                    query: &query,
+                    domain: domain.as_deref(),
                     remote_identity: &fingerprint,
                     request_id: &request_id,
                     credential_id: credential_id.as_deref(),

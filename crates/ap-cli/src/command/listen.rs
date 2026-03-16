@@ -4,8 +4,8 @@
 //! approving connection requests from remote clients.
 
 use ap_client::{
-    DefaultProxyClient, IdentityProvider, SessionStore, UserClient, UserClientEvent,
-    UserClientResponse, UserCredentialData,
+    CredentialData, DefaultProxyClient, IdentityProvider, SessionStore, UserClient,
+    UserClientEvent, UserClientResponse,
 };
 use ap_proxy_client::ProxyClientConfig;
 use ap_proxy_protocol::IdentityFingerprint;
@@ -21,7 +21,7 @@ use super::tui::{
     App, AppAction, Message, MessageKind, Mode, init_terminal, restore_terminal, wait_for_keypress,
 };
 use super::util::{format_listen_event, format_relative_time};
-use crate::providers::{CredentialProvider, CredentialQuery, LookupResult, ProviderStatus};
+use crate::providers::{CredentialProvider, LookupResult, ProviderStatus};
 use crate::storage::{FileIdentityStorage, FileSessionCache};
 
 use super::DEFAULT_PROXY_URL;
@@ -64,10 +64,10 @@ enum Phase {
     NameInput,
     /// Credential approval pending.
     CredentialApproval {
-        domain: String,
+        query: ap_client::CredentialQuery,
         request_id: String,
         session_id: String,
-        credential: UserCredentialData,
+        credential: CredentialData,
     },
     /// Waiting for the user to enter unlock input (password or session key).
     UnlockInput,
@@ -357,34 +357,35 @@ async fn run_event_loop(
                                 (Phase::CredentialApproval { .. }, AppAction::Confirmed(approved)) => {
                                     let approved = *approved;
                                     let old_phase = std::mem::replace(&mut phase, Phase::Idle);
-                                    if let Phase::CredentialApproval { domain, request_id, session_id, credential } = old_phase {
+                                    if let Phase::CredentialApproval { query, request_id, session_id, credential } = old_phase {
+                                        let label = credential.domain.clone().unwrap_or_else(|| query.to_string());
                                         if approved {
                                             let cred_id = credential.credential_id.clone();
                                             response_tx
                                                 .send(UserClientResponse::RespondCredential {
                                                     request_id,
                                                     session_id,
-                                                    domain: domain.clone(),
+                                                    query,
                                                     approved: true,
                                                     credential: Some(credential),
                                                     credential_id: cred_id,
                                                 })
                                                 .await
                                                 .ok();
-                                            app.push_msg(MessageKind::Success, format!("Credential sent for {domain}"));
+                                            app.push_msg(MessageKind::Success, format!("Credential sent for {label}"));
                                         } else {
                                             response_tx
                                                 .send(UserClientResponse::RespondCredential {
                                                     request_id,
                                                     session_id,
-                                                    domain: domain.clone(),
+                                                    query,
                                                     approved: false,
                                                     credential: None,
                                                     credential_id: credential.credential_id,
                                                 })
                                                 .await
                                                 .ok();
-                                            app.push_msg(MessageKind::Error, format!("Credential denied for {domain}"));
+                                            app.push_msg(MessageKind::Error, format!("Credential denied for {label}"));
                                         }
                                     }
                                     app.enter_idle(idle_footer(), IDLE_COMMANDS);
@@ -443,9 +444,10 @@ async fn run_event_loop(
                                     Span::styled(" reject", Style::default().fg(Color::Yellow)),
                                 ]);
                             }
-                            UserClientEvent::CredentialRequest { domain, request_id, session_id } => {
-                                match provider.lookup(&CredentialQuery::Domain(&domain)) {
+                            UserClientEvent::CredentialRequest { query, request_id, session_id } => {
+                                match provider.lookup(&query) {
                                     LookupResult::Found(credential) => {
+                                        let domain = credential.domain.clone().unwrap_or_else(|| query.to_string());
                                         let found_msg = format!(
                                             "Found: {} ({})",
                                             credential.username.as_deref().unwrap_or("no username"),
@@ -462,7 +464,7 @@ async fn run_event_loop(
                                             })
                                             .unwrap_or_else(|| "unknown device".to_string());
                                         phase = Phase::CredentialApproval {
-                                            domain: domain.clone(),
+                                            query,
                                             request_id,
                                             session_id,
                                             credential,
@@ -479,19 +481,20 @@ async fn run_event_loop(
                                         );
                                     }
                                     result @ (LookupResult::NotReady { .. } | LookupResult::NotFound) => {
+                                        let label = query.to_string();
                                         match result {
                                             LookupResult::NotReady { message } => {
-                                                app.push_msg(MessageKind::Warning, format!("{message} — cannot look up credential for {domain}"));
+                                                app.push_msg(MessageKind::Warning, format!("{message} — cannot look up credential for {label}"));
                                             }
                                             _ => {
-                                                app.push_msg(MessageKind::Error, format!("No credential found in vault for {domain}"));
+                                                app.push_msg(MessageKind::Error, format!("No credential found in vault for {label}"));
                                             }
                                         }
                                         response_tx
                                             .send(UserClientResponse::RespondCredential {
                                                 request_id,
                                                 session_id,
-                                                domain,
+                                                query,
                                                 approved: false,
                                                 credential: None,
                                                 credential_id: None,

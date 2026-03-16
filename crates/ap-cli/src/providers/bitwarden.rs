@@ -5,7 +5,7 @@
 
 use std::process::Command;
 
-use ap_client::UserCredentialData;
+use ap_client::CredentialData;
 use serde::Deserialize;
 use tracing::info;
 
@@ -133,7 +133,7 @@ fn looks_like_session_key(input: &str) -> bool {
 }
 
 /// Look up a credential from the Bitwarden CLI.
-fn lookup_credential(bw: &str, search: &str, session: Option<&str>) -> Option<UserCredentialData> {
+fn lookup_credential(bw: &str, search: &str, session: Option<&str>) -> Option<CredentialData> {
     let mut cmd = Command::new(bw);
     cmd.args(["get", "item", search]);
     if let Some(key) = session {
@@ -158,14 +158,37 @@ fn lookup_credential(bw: &str, search: &str, session: Option<&str>) -> Option<Us
         .and_then(|uris| uris.first())
         .and_then(|u| u.uri.clone());
 
-    Some(UserCredentialData {
+    let domain = uri.as_deref().and_then(domain_from_uri);
+
+    Some(CredentialData {
         username: login.username,
         password: login.password,
         totp: login.totp,
         uri,
         notes: None,
         credential_id: item.id,
+        domain,
     })
+}
+
+/// Extract the domain (host) from a URI string, e.g. `https://example.com/path` → `example.com`.
+fn domain_from_uri(uri: &str) -> Option<String> {
+    // Strip scheme (e.g. "https://")
+    let after_scheme = match uri.split_once("://") {
+        Some((_, rest)) => rest,
+        None => uri,
+    };
+    // Strip userinfo (e.g. "user:pass@")
+    let after_userinfo = match after_scheme.split_once('@') {
+        Some((_, rest)) => rest,
+        None => after_scheme,
+    };
+    // Take host (before any '/' or ':')
+    let host = after_userinfo.split(['/', ':']).next()?;
+    if host.is_empty() {
+        return None;
+    }
+    Some(host.to_string())
 }
 
 /// Create a `BitwardenProvider` with explicit fields (for testing without
@@ -233,7 +256,7 @@ impl CredentialProvider for BitwardenProvider {
         Ok(())
     }
 
-    fn lookup(&self, query: &CredentialQuery<'_>) -> LookupResult {
+    fn lookup(&self, query: &CredentialQuery) -> LookupResult {
         let bw = match &self.bw_path {
             Some(p) => p,
             None => {
@@ -243,11 +266,7 @@ impl CredentialProvider for BitwardenProvider {
             }
         };
 
-        let search = match query {
-            CredentialQuery::Domain(d) => d,
-            CredentialQuery::CredentialId(id) => id,
-            CredentialQuery::Search(s) => s,
-        };
+        let search = query.search_string();
 
         match lookup_credential(bw, search, self.session.as_deref()) {
             Some(cred) => LookupResult::Found(cred),
@@ -295,6 +314,47 @@ mod tests {
         let mut bad = VALID_KEY.to_string();
         bad.replace_range(40..41, " ");
         assert!(!looks_like_session_key(&bad));
+    }
+
+    // -- domain_from_uri() ---------------------------------------------------
+
+    #[test]
+    fn domain_from_uri_with_scheme_and_path() {
+        assert_eq!(
+            domain_from_uri("https://example.com/path"),
+            Some("example.com".into())
+        );
+    }
+
+    #[test]
+    fn domain_from_uri_with_port() {
+        assert_eq!(
+            domain_from_uri("https://example.com:8080/path"),
+            Some("example.com".into())
+        );
+    }
+
+    #[test]
+    fn domain_from_uri_no_scheme() {
+        assert_eq!(domain_from_uri("example.com"), Some("example.com".into()));
+    }
+
+    #[test]
+    fn domain_from_uri_with_userinfo() {
+        assert_eq!(
+            domain_from_uri("https://user:pass@example.com"),
+            Some("example.com".into())
+        );
+    }
+
+    #[test]
+    fn domain_from_uri_empty_host() {
+        assert_eq!(domain_from_uri("https://"), None);
+    }
+
+    #[test]
+    fn domain_from_uri_bare_scheme() {
+        assert_eq!(domain_from_uri(""), None);
     }
 
     // -- BitwardenProvider construction & name() ----------------------------

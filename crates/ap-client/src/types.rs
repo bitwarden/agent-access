@@ -1,8 +1,43 @@
 //! Types for the remote client protocol
 
+use std::fmt;
+
 use ap_noise::Psk;
 use ap_proxy_protocol::IdentityFingerprint;
 use serde::{Deserialize, Serialize};
+
+/// What kind of credential to look up.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CredentialQuery {
+    /// Look up by domain / URL.
+    Domain(String),
+    /// Look up by vault item ID.
+    Id(String),
+    /// Free-text search.
+    Search(String),
+}
+
+impl CredentialQuery {
+    /// Extract the inner search string from any query variant.
+    pub fn search_string(&self) -> &str {
+        match self {
+            Self::Domain(d) => d.as_str(),
+            Self::Id(id) => id.as_str(),
+            Self::Search(s) => s.as_str(),
+        }
+    }
+}
+
+impl fmt::Display for CredentialQuery {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CredentialQuery::Domain(d) => write!(f, "domain: {d}"),
+            CredentialQuery::Id(id) => write!(f, "id: {id}"),
+            CredentialQuery::Search(s) => write!(f, "search: {s}"),
+        }
+    }
+}
 
 /// Connection mode for establishing a connection
 #[derive(Debug, Clone)]
@@ -95,13 +130,11 @@ pub enum RemoteClientEvent {
     },
     /// Credential request was sent
     CredentialRequestSent {
-        /// Domain requested
-        domain: String,
+        /// The query used for the request
+        query: CredentialQuery,
     },
     /// Credential was received
     CredentialReceived {
-        /// Domain of the credential
-        domain: String,
         /// The credential data
         credential: CredentialData,
     },
@@ -121,6 +154,7 @@ pub enum RemoteClientEvent {
 
 /// Credential data returned from a request
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CredentialData {
     /// Username for the credential
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -140,6 +174,10 @@ pub struct CredentialData {
     /// Vault item ID
     #[serde(skip_serializing_if = "Option::is_none")]
     pub credential_id: Option<String>,
+    /// Domain associated with this credential
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
 }
 
 /// Internal protocol messages sent over WebSocket
@@ -163,7 +201,7 @@ pub(crate) enum ProtocolMessage {
 pub(crate) struct CredentialRequestPayload {
     #[serde(rename = "type")]
     pub request_type: String,
-    pub domain: String,
+    pub query: CredentialQuery,
     pub timestamp: u64,
     #[serde(rename = "requestId")]
     pub request_id: String,

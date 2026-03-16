@@ -47,18 +47,10 @@ pub fn exit_code_for_error(err: &RemoteClientError) -> i32 {
 }
 
 /// Print a successful credential result as JSON to stdout
-pub fn emit_json_success(domain: &str, credential: &CredentialData) {
+pub fn emit_json_success(credential: &CredentialData) {
     let obj = serde_json::json!({
         "success": true,
-        "domain": domain,
-        "credential": {
-            "username": credential.username,
-            "password": credential.password,
-            "totp": credential.totp,
-            "uri": credential.uri,
-            "notes": credential.notes,
-            "credential_id": credential.credential_id,
-        }
+        "credential": credential,
     });
     println!("{obj}");
 }
@@ -88,8 +80,10 @@ pub fn exit_code_name(code: i32) -> &'static str {
 }
 
 /// Print a credential result as plain text key: value lines to stdout
-pub fn emit_text_credential(domain: &str, credential: &CredentialData) {
-    println!("domain: {domain}");
+pub fn emit_text_credential(credential: &CredentialData) {
+    if let Some(domain) = &credential.domain {
+        println!("domain: {domain}");
+    }
     if let Some(username) = &credential.username {
         println!("username: {username}");
     }

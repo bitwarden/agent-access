@@ -44,8 +44,12 @@ pub struct RunArgs {
     pub proxy_url: String,
 
     /// Domain to request credentials for
-    #[arg(long, required = true)]
-    pub domain: String,
+    #[arg(long, conflicts_with = "id")]
+    pub domain: Option<String>,
+
+    /// Vault item ID to request credentials for
+    #[arg(long, conflicts_with = "domain")]
+    pub id: Option<String>,
 
     /// Token (rendezvous code or PSK token)
     #[arg(long, conflicts_with = "session")]
@@ -74,7 +78,7 @@ pub struct RunArgs {
 }
 
 /// Look up a credential field value by name
-fn get_field<'a>(credential: &'a CredentialData, domain: &'a str, field: &str) -> Option<&'a str> {
+fn get_field<'a>(credential: &'a CredentialData, field: &str) -> Option<&'a str> {
     match field {
         "username" => credential.username.as_deref(),
         "password" => credential.password.as_deref(),
@@ -82,7 +86,7 @@ fn get_field<'a>(credential: &'a CredentialData, domain: &'a str, field: &str) -
         "uri" => credential.uri.as_deref(),
         "notes" => credential.notes.as_deref(),
         "credential_id" => credential.credential_id.as_deref(),
-        "domain" => Some(domain),
+        "domain" => credential.domain.as_deref(),
         _ => None,
     }
 }
@@ -90,7 +94,6 @@ fn get_field<'a>(credential: &'a CredentialData, domain: &'a str, field: &str) -
 /// Build the environment variable map from credential data and mapping options.
 fn build_env_vars(
     credential: &CredentialData,
-    domain: &str,
     env_all: bool,
     explicit_mappings: &[(String, String)],
 ) -> HashMap<String, String> {
@@ -98,7 +101,7 @@ fn build_env_vars(
 
     if env_all {
         for &(field_name, env_key) in CREDENTIAL_FIELDS {
-            if let Some(value) = get_field(credential, domain, field_name) {
+            if let Some(value) = get_field(credential, field_name) {
                 env_vars.insert(env_key.to_string(), value.to_string());
             }
         }
@@ -106,7 +109,7 @@ fn build_env_vars(
 
     // Apply explicit mappings (override any --env-all defaults)
     for (var_name, field) in explicit_mappings {
-        if let Some(value) = get_field(credential, domain, field) {
+        if let Some(value) = get_field(credential, field) {
             env_vars.insert(var_name.clone(), value.to_string());
         }
     }
@@ -121,6 +124,14 @@ fn is_valid_field(field: &str) -> bool {
 
 impl RunArgs {
     pub async fn run(self) -> Result<()> {
+        // Validate that exactly one of --domain or --id is provided
+        let query = match (&self.domain, &self.id) {
+            (Some(domain), None) => ap_client::CredentialQuery::Domain(domain.clone()),
+            (None, Some(id)) => ap_client::CredentialQuery::Id(id.clone()),
+            (None, None) => bail!("Either --domain or --id is required"),
+            (Some(_), Some(_)) => unreachable!("clap conflicts_with prevents this"),
+        };
+
         // Validate that at least one env mapping method is specified
         if !self.env_all && self.env_mappings.is_empty() {
             bail!("At least one of --env or --env-all is required");
@@ -158,7 +169,7 @@ impl RunArgs {
             self.token.as_deref(),
             self.session.as_deref(),
             self.ephemeral_connection,
-            &self.domain,
+            &query,
         )
         .await
         {
@@ -173,7 +184,7 @@ impl RunArgs {
             }
         };
 
-        let env_vars = build_env_vars(&credential, &self.domain, self.env_all, &explicit_mappings);
+        let env_vars = build_env_vars(&credential, self.env_all, &explicit_mappings);
 
         if env_vars.is_empty() {
             eprintln!(
@@ -207,31 +218,26 @@ mod tests {
             uri: Some("https://example.com".to_string()),
             notes: None,
             credential_id: Some("item-uuid-123".to_string()),
+            domain: Some("example.com".to_string()),
         }
     }
 
     #[test]
     fn get_field_returns_correct_values() {
         let cred = make_credential();
-        assert_eq!(get_field(&cred, "example.com", "username"), Some("admin"));
-        assert_eq!(get_field(&cred, "example.com", "password"), Some("s3cret"));
-        assert_eq!(get_field(&cred, "example.com", "totp"), Some("123456"));
-        assert_eq!(
-            get_field(&cred, "example.com", "domain"),
-            Some("example.com")
-        );
-        assert_eq!(get_field(&cred, "example.com", "notes"), None);
-        assert_eq!(
-            get_field(&cred, "example.com", "credential_id"),
-            Some("item-uuid-123")
-        );
-        assert_eq!(get_field(&cred, "example.com", "invalid"), None);
+        assert_eq!(get_field(&cred, "username"), Some("admin"));
+        assert_eq!(get_field(&cred, "password"), Some("s3cret"));
+        assert_eq!(get_field(&cred, "totp"), Some("123456"));
+        assert_eq!(get_field(&cred, "domain"), Some("example.com"));
+        assert_eq!(get_field(&cred, "notes"), None);
+        assert_eq!(get_field(&cred, "credential_id"), Some("item-uuid-123"));
+        assert_eq!(get_field(&cred, "invalid"), None);
     }
 
     #[test]
     fn build_env_vars_with_env_all() {
         let cred = make_credential();
-        let env_vars = build_env_vars(&cred, "example.com", true, &[]);
+        let env_vars = build_env_vars(&cred, true, &[]);
 
         assert_eq!(env_vars.get("AAC_USERNAME").expect("username"), "admin");
         assert_eq!(env_vars.get("AAC_PASSWORD").expect("password"), "s3cret");
@@ -253,7 +259,7 @@ mod tests {
             ("DB_USER".to_string(), "username".to_string()),
             ("DB_PASS".to_string(), "password".to_string()),
         ];
-        let env_vars = build_env_vars(&cred, "example.com", false, &mappings);
+        let env_vars = build_env_vars(&cred, false, &mappings);
 
         assert_eq!(env_vars.get("DB_USER").expect("DB_USER"), "admin");
         assert_eq!(env_vars.get("DB_PASS").expect("DB_PASS"), "s3cret");
@@ -264,7 +270,7 @@ mod tests {
     fn build_env_vars_explicit_overrides_env_all() {
         let cred = make_credential();
         let mappings = vec![("AAC_USERNAME".to_string(), "password".to_string())];
-        let env_vars = build_env_vars(&cred, "example.com", true, &mappings);
+        let env_vars = build_env_vars(&cred, true, &mappings);
 
         // Explicit mapping overrides the AAC_USERNAME from env_all
         assert_eq!(env_vars.get("AAC_USERNAME").expect("overridden"), "s3cret");
@@ -279,8 +285,9 @@ mod tests {
             uri: None,
             notes: None,
             credential_id: None,
+            domain: Some("example.com".to_string()),
         };
-        let env_vars = build_env_vars(&cred, "example.com", true, &[]);
+        let env_vars = build_env_vars(&cred, true, &[]);
 
         assert_eq!(env_vars.len(), 1);
         assert_eq!(env_vars.get("AAC_DOMAIN").expect("domain"), "example.com");
@@ -289,8 +296,8 @@ mod tests {
     #[test]
     fn is_valid_field_accepts_known_rejects_unknown() {
         assert!(is_valid_field("username"));
-        assert!(is_valid_field("domain"));
         assert!(is_valid_field("credential_id"));
+        assert!(is_valid_field("domain"));
         assert!(!is_valid_field("bogus"));
         assert!(!is_valid_field(""));
     }
