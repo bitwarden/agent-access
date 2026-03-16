@@ -7,7 +7,7 @@ use ap_proxy_protocol::{IdentityFingerprint, RendevouzCode};
 use base64::{Engine, engine::general_purpose::STANDARD};
 
 use crate::proxy::ProxyClient;
-use serde::{Deserialize, Serialize};
+use crate::types::CredentialData;
 use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
@@ -30,7 +30,7 @@ use crate::{
         AuditConnectionType, AuditEvent, AuditLog, CredentialFieldSet, IdentityProvider,
         NoOpAuditLog, SessionStore,
     },
-    types::ProtocolMessage,
+    types::{CredentialRequestPayload, CredentialResponsePayload, ProtocolMessage},
 };
 
 /// Events emitted by the user client during operation
@@ -141,51 +141,6 @@ pub enum UserClientResponse {
         /// Vault item ID (for audit logging)
         credential_id: Option<String>,
     },
-}
-
-/// Credential data to send to remote client
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CredentialData {
-    /// Username for the credential
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub username: Option<String>,
-    /// Password for the credential
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub password: Option<String>,
-    /// TOTP code if available
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub totp: Option<String>,
-    /// URI associated with the credential
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub uri: Option<String>,
-    /// Additional notes
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub notes: Option<String>,
-    /// Vault item ID
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub credential_id: Option<String>,
-}
-
-/// Credential request payload (decrypted)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct CredentialRequestPayload {
-    #[serde(rename = "type")]
-    request_type: Option<String>,
-    domain: String,
-    timestamp: Option<u64>,
-    #[serde(rename = "requestId")]
-    request_id: String,
-}
-
-/// Credential response payload (to be encrypted)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct CredentialResponsePayload {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    credential: Option<CredentialData>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-    #[serde(rename = "requestId")]
-    request_id: String,
 }
 
 /// User client for acting as trusted device
@@ -777,7 +732,7 @@ impl UserClient {
             } else {
                 None
             },
-            request_id: request_id.clone(),
+            request_id: Some(request_id.clone()),
         };
 
         // Encrypt and send

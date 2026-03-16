@@ -681,7 +681,6 @@ impl RemoteClient {
                 // Emit success event
                 event_tx
                     .send(RemoteClientEvent::CredentialReceived {
-                        domain: "unknown".to_string(), // Could be enhanced by tracking domain in pending requests
                         credential: credential.clone(),
                     })
                     .await

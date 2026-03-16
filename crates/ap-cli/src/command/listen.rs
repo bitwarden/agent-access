@@ -4,8 +4,8 @@
 //! approving connection requests from remote clients.
 
 use ap_client::{
-    DefaultProxyClient, IdentityProvider, SessionStore, UserClient, UserClientEvent,
-    UserClientResponse, UserCredentialData,
+    CredentialData, DefaultProxyClient, IdentityProvider, SessionStore, UserClient,
+    UserClientEvent, UserClientResponse,
 };
 use ap_proxy_client::ProxyClientConfig;
 use ap_proxy_protocol::IdentityFingerprint;
@@ -67,7 +67,7 @@ enum Phase {
         domain: String,
         request_id: String,
         session_id: String,
-        credential: UserCredentialData,
+        credential: CredentialData,
     },
     /// Waiting for the user to enter unlock input (password or session key).
     UnlockInput,

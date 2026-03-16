@@ -5,7 +5,7 @@
 
 mod bitwarden;
 
-use ap_client::UserCredentialData;
+use ap_client::CredentialData;
 pub use bitwarden::BitwardenProvider;
 use color_eyre::eyre::{Result, bail};
 
@@ -41,7 +41,7 @@ pub enum ProviderStatus {
 #[derive(Debug)]
 pub enum LookupResult {
     /// A credential was found.
-    Found(UserCredentialData),
+    Found(CredentialData),
     /// No matching credential exists.
     NotFound,
     /// The provider is not ready (e.g. vault locked).
@@ -89,7 +89,7 @@ mod tests {
     struct MockProvider {
         name: &'static str,
         status: ProviderStatus,
-        credentials: HashMap<String, UserCredentialData>,
+        credentials: HashMap<String, CredentialData>,
         unlock_result: Result<(), String>,
     }
 
@@ -103,7 +103,7 @@ mod tests {
             }
         }
 
-        fn with_credential(mut self, domain: &str, cred: UserCredentialData) -> Self {
+        fn with_credential(mut self, domain: &str, cred: CredentialData) -> Self {
             self.credentials.insert(domain.to_string(), cred);
             self
         }
@@ -183,14 +183,15 @@ mod tests {
 
     // -- MockProvider / trait contract --------------------------------------
 
-    fn sample_credential() -> UserCredentialData {
-        UserCredentialData {
+    fn sample_credential() -> CredentialData {
+        CredentialData {
             username: Some("alice".into()),
             password: Some("s3cret".into()),
             totp: None,
             uri: Some("https://example.com".into()),
             notes: None,
             credential_id: Some("id-123".into()),
+            domain: Some("example.com".into()),
         }
     }
 
