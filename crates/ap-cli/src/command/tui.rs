@@ -483,14 +483,14 @@ impl App {
         let hchunks =
             Layout::horizontal([Constraint::Length(SHIELD_WIDTH), Constraint::Fill(1)]).split(area);
 
-        // Shield rendered in Bitwarden blue
-        let bw_blue = Color::Rgb(23, 93, 220);
+        // Shield accent color
+        let nice_blue = Color::Rgb(23, 93, 220);
         let shield_lines: Vec<Line<'_>> = SHIELD
             .iter()
             .map(|row| {
                 Line::from(Span::styled(
                     *row,
-                    Style::default().fg(bw_blue).add_modifier(Modifier::BOLD),
+                    Style::default().fg(nice_blue).add_modifier(Modifier::BOLD),
                 ))
             })
             .collect();
@@ -515,7 +515,7 @@ impl App {
             Line::from(vec![
                 Span::styled(
                     "Agent Access",
-                    Style::default().fg(bw_blue).add_modifier(Modifier::BOLD),
+                    Style::default().fg(nice_blue).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     format!(" v{}", env!("CARGO_PKG_VERSION")),
