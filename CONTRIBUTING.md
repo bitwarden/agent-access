@@ -4,7 +4,7 @@ Our [Contributing Guidelines](https://contributing.bitwarden.com/contributing/) 
 
 ## Overview
 
-This repo contains multiple building blocks that power Remote Access.
+This repo contains multiple building blocks that power Agent Access.
 
 It contains:
 

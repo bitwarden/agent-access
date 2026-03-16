@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Bitwarden Remote Access SDK — a Rust workspace implementing secure peer-to-peer credential sharing over WebSocket relay with end-to-end encryption via the Noise Protocol (NNpsk2 pattern). The proxy server is zero-knowledge and cannot decrypt traffic.
+Agent Access SDK — a Rust workspace implementing secure peer-to-peer credential sharing over WebSocket relay with end-to-end encryption via the Noise Protocol (NNpsk2 pattern). The proxy server is zero-knowledge and cannot decrypt traffic.
 
 ## Build & Run Commands
 

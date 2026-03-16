@@ -4,7 +4,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
     <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.svg">
-    <img alt="Bitwarden Remote Access" src="assets/logo-light.svg" height="60">
+    <img alt="Bitwarden Agent Access" src="assets/logo-light.svg" height="60">
   </picture>
   <br>
   <br>
@@ -12,12 +12,12 @@
 </p>
 
 
-# Remote Access
+# Agent Access
 
-Remote Access allows users to access credentials from their password manager on remote systems, without exposing their entire vault.
+Agent Access allows users to access credentials from their password manager on remote systems, without exposing their entire vault.
 It creates an end-to-end encrypted tunnel between the remote system and the password manager.
 
-Remote Access is an open protocol, CLI tool, and Rust SDK that you can use to implement it directly into agents or custom software. While we at Bitwarden have built it, it's open for any password manager to leverage to further support agentic or automation use cases without exposing your entire vault.
+Agent Access is an open protocol, CLI tool, and Rust SDK that you can use to implement it directly into agents or custom software. While we at Bitwarden have built it, it's open for any password manager to leverage to further support agentic or automation use cases without exposing your entire vault.
 
 ## Installation
 
@@ -60,13 +60,13 @@ curl -fsSL "https://raw.githubusercontent.com/bitwarden/remote-access/main/examp
 
 ## Getting started (Bitwarden CLI)
 
-In this short guide we'll walk you through setting up Remote Access on your local machine and connect it to the bitwarden CLI.
+In this short guide we'll walk you through setting up Agent Access on your local machine and connect it to the bitwarden CLI.
 
 **Prerequisites**
 
 - [Bitwarden CLI](https://bitwarden.com/help/cli/) (`bw`) installed and available on your PATH
 
-**Enabling Remote Access for Bitwarden**
+**Enabling Agent Access for Bitwarden**
 
 The `aac` CLI tool has built-in support for connecting to the Bitwarden CLI. The interactive CLI can be used to unlock your vault (`/unlock`) and create a pairing token that the remote side can use to connect.
 
@@ -103,7 +103,7 @@ aac connect --token <pairing-token> --domain example.com --output json
 
 ## Contributing
 
-This repo contains multiple building blocks that power Remote Access.
+This repo contains multiple building blocks that power Agent Access.
 
 It contains:
 

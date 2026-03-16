@@ -514,7 +514,7 @@ impl App {
             Line::from(""),
             Line::from(vec![
                 Span::styled(
-                    "Bitwarden Remote Access",
+                    "Agent Access",
                     Style::default().fg(bw_blue).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(

@@ -103,7 +103,7 @@ pub struct CredentialFieldSet {
 
 /// Audit events emitted by the [`UserClient`] (trusted device) for security-relevant actions.
 ///
-/// Each variant represents a discrete, auditable action in the remote access protocol.
+/// Each variant represents a discrete, auditable action in the access protocol.
 /// Implementations of [`AuditLog`] receive these events and can persist them to files,
 /// databases, or external services.
 ///

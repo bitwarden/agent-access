@@ -1,5 +1,5 @@
 ---
-name: remote-access
+name: agent-access
 description: Retrieve login credentials, API keys, and secrets (username, password, TOTP) from the user's Bitwarden vault via aac. Use when you need credentials to sign into a website or service, or need an API key.
 user-invocable: true
 metadata: {"openclaw":{"requires":{"bins":["aac"]}}}
