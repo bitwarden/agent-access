@@ -62,6 +62,20 @@ curl -fsSL "https://raw.githubusercontent.com/bitwarden/agent-access/main/exampl
 * Automated script requesting an API-token.
 * Github Action
 
+### Custom integration with Python (PyO3)
+
+Use Agent Access directly from Python via PyO3 bindings to request credentials over an end-to-end encrypted tunnel.
+
+```python
+from agent_access import RemoteClient
+
+client = RemoteClient("python-remote")
+client.connect(token="ABC-DEF-GHI")
+cred = client.request_credential("example.com")
+print(cred.username, cred.password)
+client.close()
+```
+
 ## Getting started (Bitwarden CLI)
 
 In this short guide we'll walk you through setting up Agent Access on your local machine and connect it to the bitwarden CLI.
