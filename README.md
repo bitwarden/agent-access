@@ -19,6 +19,11 @@ It creates an end-to-end encrypted tunnel between the remote system and the pass
 
 Agent Access is an open protocol, CLI tool, and Rust SDK that you can use to implement it directly into agents or custom software. While we at Bitwarden have built it, it's open for any password manager to leverage to further support agentic or automation use cases without exposing your entire vault.
 
+> [!WARNING]
+> This project is in an **early preview stage**. APIs and protocols are subject to change. We do not recommend inputting sensitive credentials directly into LLMs or AI agents (any unknown software, really).
+> 
+> For LLM's specifically, where possible use environment injection (e.g. `aac run`) to pass secrets to processes without exposing them in recorded context.
+
 <p align="center">
   <img src="assets/overview.webp" alt="Agent Access overview" width="960">
 </p>
