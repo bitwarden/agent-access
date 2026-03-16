@@ -256,7 +256,7 @@ impl CredentialProvider for BitwardenProvider {
         Ok(())
     }
 
-    fn lookup(&self, query: &CredentialQuery<'_>) -> LookupResult {
+    fn lookup(&self, query: &CredentialQuery) -> LookupResult {
         let bw = match &self.bw_path {
             Some(p) => p,
             None => {
@@ -266,11 +266,7 @@ impl CredentialProvider for BitwardenProvider {
             }
         };
 
-        let search = match query {
-            CredentialQuery::Domain(d) => d,
-            CredentialQuery::CredentialId(id) => id,
-            CredentialQuery::Search(s) => s,
-        };
+        let search = query.search_string();
 
         match lookup_credential(bw, search, self.session.as_deref()) {
             Some(cred) => LookupResult::Found(cred),

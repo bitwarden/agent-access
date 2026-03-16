@@ -19,8 +19,8 @@ use crate::traits::{IdentityProvider, SessionStore};
 use crate::{
     error::RemoteClientError,
     types::{
-        CredentialData, CredentialRequestPayload, CredentialResponsePayload, ProtocolMessage,
-        RemoteClientEvent, RemoteClientResponse,
+        CredentialData, CredentialQuery, CredentialRequestPayload, CredentialResponsePayload,
+        ProtocolMessage, RemoteClientEvent, RemoteClientResponse,
     },
 };
 
@@ -369,7 +369,7 @@ impl RemoteClient {
     /// Request a credential over the secure channel
     pub async fn request_credential(
         &mut self,
-        domain: &str,
+        query: &CredentialQuery,
     ) -> Result<CredentialData, RemoteClientError> {
         let transport = self
             .transport
@@ -384,12 +384,12 @@ impl RemoteClient {
         #[allow(clippy::string_slice)]
         let request_id = format!("req-{}-{}", now_millis(), &uuid_v4()[..8]);
 
-        debug!("Requesting credential for domain: {}", domain);
+        debug!("Requesting credential for query: {:?}", query);
 
         // Create and encrypt request
         let request = CredentialRequestPayload {
             request_type: "credential_request".to_string(),
-            domain: domain.to_string(),
+            query: query.clone(),
             timestamp: now_millis(),
             request_id: request_id.clone(),
         };
@@ -414,7 +414,7 @@ impl RemoteClient {
         // Emit event
         self.event_tx
             .send(RemoteClientEvent::CredentialRequestSent {
-                domain: domain.to_string(),
+                query: query.clone(),
             })
             .await
             .ok();
@@ -432,7 +432,7 @@ impl RemoteClient {
         match timeout(DEFAULT_TIMEOUT, response_rx).await {
             Ok(Ok(Ok(credential))) => {
                 // Success - sender already removed by handler
-                debug!("Received credential for domain: {}", domain);
+                debug!("Received credential for query: {:?}", query);
                 Ok(credential)
             }
             Ok(Ok(Err(e))) => {
@@ -448,7 +448,7 @@ impl RemoteClient {
                 // Timeout - clean up pending request
                 self.pending_requests.lock().await.remove(&request_id);
                 Err(RemoteClientError::Timeout(format!(
-                    "Timeout waiting for credential response for domain: {domain}"
+                    "Timeout waiting for credential response for query: {query:?}"
                 )))
             }
         }

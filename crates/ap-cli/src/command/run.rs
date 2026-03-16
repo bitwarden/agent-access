@@ -44,8 +44,12 @@ pub struct RunArgs {
     pub proxy_url: String,
 
     /// Domain to request credentials for
-    #[arg(long, required = true)]
-    pub domain: String,
+    #[arg(long, conflicts_with = "id")]
+    pub domain: Option<String>,
+
+    /// Vault item ID to request credentials for
+    #[arg(long, conflicts_with = "domain")]
+    pub id: Option<String>,
 
     /// Token (rendezvous code or PSK token)
     #[arg(long, conflicts_with = "session")]
@@ -120,6 +124,14 @@ fn is_valid_field(field: &str) -> bool {
 
 impl RunArgs {
     pub async fn run(self) -> Result<()> {
+        // Validate that exactly one of --domain or --id is provided
+        let query = match (&self.domain, &self.id) {
+            (Some(domain), None) => ap_client::CredentialQuery::Domain(domain.clone()),
+            (None, Some(id)) => ap_client::CredentialQuery::Id(id.clone()),
+            (None, None) => bail!("Either --domain or --id is required"),
+            (Some(_), Some(_)) => unreachable!("clap conflicts_with prevents this"),
+        };
+
         // Validate that at least one env mapping method is specified
         if !self.env_all && self.env_mappings.is_empty() {
             bail!("At least one of --env or --env-all is required");
@@ -157,7 +169,7 @@ impl RunArgs {
             self.token.as_deref(),
             self.session.as_deref(),
             self.ephemeral_connection,
-            &self.domain,
+            &query,
         )
         .await
         {
@@ -284,8 +296,8 @@ mod tests {
     #[test]
     fn is_valid_field_accepts_known_rejects_unknown() {
         assert!(is_valid_field("username"));
-        assert!(is_valid_field("domain"));
         assert!(is_valid_field("credential_id"));
+        assert!(is_valid_field("domain"));
         assert!(!is_valid_field("bogus"));
         assert!(!is_valid_field(""));
     }

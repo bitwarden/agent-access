@@ -19,10 +19,10 @@ use command::{Cli, Commands, process_command};
 fn is_tui_mode(cli: &Cli) -> bool {
     match &cli.command {
         Some(Commands::Listen(_)) => true,
-        Some(Commands::Connect(args)) => args.domain.is_none(),
+        Some(Commands::Connect(args)) => args.domain.is_none() && args.id.is_none(),
         Some(Commands::Connections(_)) | Some(Commands::Run(_)) => false,
         // Default (no subcommand) behaves like `connect`
-        None => cli.domain.is_none(),
+        None => cli.domain.is_none() && cli.id.is_none(),
     }
 }
 

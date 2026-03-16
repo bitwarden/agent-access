@@ -139,14 +139,21 @@ pub fn format_connect_event(event: &RemoteClientEvent) -> Option<Message> {
             "Secure channel established",
         )),
         RemoteClientEvent::Ready { .. } => None,
-        RemoteClientEvent::CredentialRequestSent { domain } => Some(Message::rich(
-            MessageKind::Status,
-            vec![
-                Span::styled("Requesting credential for: ", text()),
-                Span::styled(domain.clone(), val_style()),
-                Span::styled("...", dim()),
-            ],
-        )),
+        RemoteClientEvent::CredentialRequestSent { query } => {
+            let label = match query {
+                ap_client::CredentialQuery::Domain(d) => d.clone(),
+                ap_client::CredentialQuery::Id(id) => format!("id:{id}"),
+                ap_client::CredentialQuery::Search(s) => format!("search:{s}"),
+            };
+            Some(Message::rich(
+                MessageKind::Status,
+                vec![
+                    Span::styled("Requesting credential for: ", text()),
+                    Span::styled(label, val_style()),
+                    Span::styled("...", dim()),
+                ],
+            ))
+        }
         RemoteClientEvent::CredentialReceived { credential } => Some(Message::rich(
             MessageKind::Success,
             vec![
@@ -299,11 +306,11 @@ pub fn format_listen_event(event: &UserClientEvent) -> Option<Message> {
             ],
         )),
 
-        UserClientEvent::CredentialRequest { domain, .. } => Some(Message::rich(
+        UserClientEvent::CredentialRequest { query, .. } => Some(Message::rich(
             MessageKind::Prompt,
             vec![
-                Span::styled("Credential request for: ", text()),
-                Span::styled(domain.clone(), val_style()),
+                Span::styled("Credential request - ", text()),
+                Span::styled(query.to_string(), val_style()),
             ],
         )),
 
@@ -311,14 +318,20 @@ pub fn format_listen_event(event: &UserClientEvent) -> Option<Message> {
             MessageKind::Success,
             vec![
                 Span::styled("Credential approved: ", text()),
-                Span::styled(domain.clone(), val_style()),
+                Span::styled(
+                    domain.clone().unwrap_or_else(|| "(unknown)".into()),
+                    val_style(),
+                ),
             ],
         )),
         UserClientEvent::CredentialDenied { domain, .. } => Some(Message::rich(
             MessageKind::Error,
             vec![
                 Span::styled("Credential denied: ", Style::default().fg(Color::Red)),
-                Span::styled(domain.clone(), val_style()),
+                Span::styled(
+                    domain.clone().unwrap_or_else(|| "(unknown)".into()),
+                    val_style(),
+                ),
             ],
         )),
 

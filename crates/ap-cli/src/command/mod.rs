@@ -76,6 +76,7 @@ AUTOMATION / AGENT / LLM USE:
 
     1. List cached sessions:  aac connections list
     2. Request a credential:  aac --domain <DOMAIN> --session <HEX> --output json
+       Or by vault item ID:  aac --id <ID> --session <HEX> --output json
 
   --session accepts a full 64-char hex fingerprint or any unique prefix from cache list.
   --output json returns structured JSON to stdout (status to stderr).
@@ -109,8 +110,12 @@ pub struct Cli {
     pub verbose: bool,
 
     /// Domain to request credentials for (single-shot, non-interactive)
-    #[arg(long)]
+    #[arg(long, conflicts_with = "id")]
     pub domain: Option<String>,
+
+    /// Vault item ID to request credentials for (single-shot, non-interactive)
+    #[arg(long, conflicts_with = "domain")]
+    pub id: Option<String>,
 
     /// Output format (text or json) for single-shot mode
     #[arg(long, default_value = "text", value_enum, global = true)]
@@ -136,7 +141,11 @@ pub async fn process_command(cli: Cli, log_rx: Option<LogReceiver>) -> Result<()
         Some(Commands::Connect(args)) => args.run(log_rx).await,
         Some(Commands::Listen(args)) => args.run(log_rx).await,
         Some(Commands::Run(args)) => args.run().await,
-        None if cli.domain.is_some() || cli.token.is_some() || cli.session.is_some() => {
+        None if cli.domain.is_some()
+            || cli.id.is_some()
+            || cli.token.is_some()
+            || cli.session.is_some() =>
+        {
             // Single-shot / shorthand connect with top-level args
             let args = ConnectArgs {
                 proxy_url: cli.proxy_url,
@@ -145,6 +154,7 @@ pub async fn process_command(cli: Cli, log_rx: Option<LogReceiver>) -> Result<()
                 ephemeral_connection: cli.ephemeral_connection,
                 verify_fingerprint: cli.verify_fingerprint,
                 domain: cli.domain,
+                id: cli.id,
                 output: cli.output,
             };
             args.run(log_rx).await

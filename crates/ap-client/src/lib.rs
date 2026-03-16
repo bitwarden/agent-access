@@ -37,7 +37,8 @@
 //! // Pair with rendezvous code
 //! client.pair_with_handshake("ABCDEF123").await?;
 //!
-//! let credential = client.request_credential("example.com").await?;
+//! let query = ap_client::CredentialQuery::Domain("example.com".to_string());
+//! let credential = client.request_credential(&query).await?;
 //! ```
 //!
 //! ## User Client Usage (trusted device)
@@ -89,7 +90,9 @@ pub use traits::{
     AuditConnectionType, AuditEvent, AuditLog, CredentialFieldSet, IdentityProvider, NoOpAuditLog,
     SessionStore,
 };
-pub use types::{ConnectionMode, CredentialData, RemoteClientEvent, RemoteClientResponse};
+pub use types::{
+    ConnectionMode, CredentialData, CredentialQuery, RemoteClientEvent, RemoteClientResponse,
+};
 
 // Re-export ap-proxy-protocol types
 pub use ap_proxy_protocol::{IdentityFingerprint, RendevouzCode};

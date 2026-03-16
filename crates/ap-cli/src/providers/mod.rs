@@ -6,19 +6,9 @@
 mod bitwarden;
 
 use ap_client::CredentialData;
+pub use ap_client::CredentialQuery;
 pub use bitwarden::BitwardenProvider;
 use color_eyre::eyre::{Result, bail};
-
-/// What kind of credential to look up.
-#[allow(dead_code)]
-pub enum CredentialQuery<'a> {
-    /// Look up by domain / URL.
-    Domain(&'a str),
-    /// Look up by credential ID.
-    CredentialId(&'a str),
-    /// Free-text search.
-    Search(&'a str),
-}
 
 /// Current readiness of a credential provider.
 #[derive(Debug)]
@@ -68,7 +58,7 @@ pub trait CredentialProvider: Send + Sync {
     fn unlock(&mut self, input: &str) -> Result<(), String>;
 
     /// Look up a credential.
-    fn lookup(&self, query: &CredentialQuery<'_>) -> LookupResult;
+    fn lookup(&self, query: &CredentialQuery) -> LookupResult;
 }
 
 /// Create a provider by name.
@@ -141,13 +131,8 @@ mod tests {
             self.unlock_result.clone()
         }
 
-        fn lookup(&self, query: &CredentialQuery<'_>) -> LookupResult {
-            let search = match query {
-                CredentialQuery::Domain(d) => *d,
-                CredentialQuery::CredentialId(id) => *id,
-                CredentialQuery::Search(s) => *s,
-            };
-            match self.credentials.get(search) {
+        fn lookup(&self, query: &CredentialQuery) -> LookupResult {
+            match self.credentials.get(query.search_string()) {
                 Some(cred) => LookupResult::Found(cred.clone()),
                 None => LookupResult::NotFound,
             }
@@ -198,7 +183,7 @@ mod tests {
     #[test]
     fn mock_lookup_found() {
         let provider = MockProvider::new().with_credential("example.com", sample_credential());
-        match provider.lookup(&CredentialQuery::Domain("example.com")) {
+        match provider.lookup(&CredentialQuery::Domain("example.com".to_string())) {
             LookupResult::Found(cred) => {
                 assert_eq!(cred.username.as_deref(), Some("alice"));
                 assert_eq!(cred.password.as_deref(), Some("s3cret"));
@@ -211,7 +196,7 @@ mod tests {
     fn mock_lookup_not_found() {
         let provider = MockProvider::new();
         assert!(matches!(
-            provider.lookup(&CredentialQuery::Domain("unknown.com")),
+            provider.lookup(&CredentialQuery::Domain("unknown.com".to_string())),
             LookupResult::NotFound
         ));
     }

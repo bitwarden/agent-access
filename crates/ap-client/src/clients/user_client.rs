@@ -71,8 +71,8 @@ pub enum UserClientEvent {
     },
     /// Credential request received
     CredentialRequest {
-        /// Domain being requested
-        domain: String,
+        /// The credential query
+        query: crate::types::CredentialQuery,
         /// Request ID
         request_id: String,
         /// Session ID for routing responses (fingerprint)
@@ -80,15 +80,15 @@ pub enum UserClientEvent {
     },
     /// Credential was approved and sent
     CredentialApproved {
-        /// Domain
-        domain: String,
+        /// Domain from the matched credential
+        domain: Option<String>,
         /// Vault item ID
         credential_id: Option<String>,
     },
     /// Credential was denied
     CredentialDenied {
-        /// Domain
-        domain: String,
+        /// Domain from the matched credential
+        domain: Option<String>,
         /// Vault item ID
         credential_id: Option<String>,
     },
@@ -132,8 +132,8 @@ pub enum UserClientResponse {
         request_id: String,
         /// Session ID for routing to correct transport (fingerprint)
         session_id: String,
-        /// The requested domain
-        domain: String,
+        /// The query that triggered this request
+        query: crate::types::CredentialQuery,
         /// Whether approved
         approved: bool,
         /// The credential to send (if approved)
@@ -635,7 +635,7 @@ impl UserClient {
 
         self.audit_log
             .write(AuditEvent::CredentialRequested {
-                domain: &request.domain,
+                query: &request.query,
                 remote_identity: &source,
                 request_id: &request.request_id,
             })
@@ -644,7 +644,7 @@ impl UserClient {
         // Send credential request event
         event_tx
             .send(UserClientEvent::CredentialRequest {
-                domain: request.domain.clone(),
+                query: request.query,
                 request_id: request.request_id.clone(),
                 session_id: format!("{source:?}"),
             })
@@ -668,7 +668,7 @@ impl UserClient {
             UserClientResponse::RespondCredential {
                 request_id,
                 session_id,
-                domain,
+                query,
                 approved,
                 credential,
                 credential_id,
@@ -676,7 +676,7 @@ impl UserClient {
                 self.handle_credential_response(
                     request_id,
                     session_id,
-                    domain,
+                    query,
                     approved,
                     credential,
                     credential_id,
@@ -694,7 +694,7 @@ impl UserClient {
         &mut self,
         request_id: String,
         session_id: String,
-        domain: String,
+        query: crate::types::CredentialQuery,
         approved: bool,
         credential: Option<CredentialData>,
         credential_id: Option<String>,
@@ -713,7 +713,8 @@ impl UserClient {
             .get_mut(&fingerprint)
             .ok_or(RemoteClientError::SecureChannelNotEstablished)?;
 
-        // Compute audit fields before credential is moved into the response payload
+        // Extract domain and audit fields before credential is moved into the response payload
+        let domain = credential.as_ref().and_then(|c| c.domain.clone());
         let fields = credential
             .as_ref()
             .map_or_else(CredentialFieldSet::default, |c| CredentialFieldSet {
@@ -760,7 +761,8 @@ impl UserClient {
         if approved {
             self.audit_log
                 .write(AuditEvent::CredentialApproved {
-                    domain: &domain,
+                    query: &query,
+                    domain: domain.as_deref(),
                     remote_identity: &fingerprint,
                     request_id: &request_id,
                     credential_id: credential_id.as_deref(),
@@ -778,7 +780,8 @@ impl UserClient {
         } else {
             self.audit_log
                 .write(AuditEvent::CredentialDenied {
-                    domain: &domain,
+                    query: &query,
+                    domain: domain.as_deref(),
                     remote_identity: &fingerprint,
                     request_id: &request_id,
                     credential_id: credential_id.as_deref(),
