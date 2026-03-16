@@ -68,7 +68,7 @@ In this short guide we'll walk you through setting up Remote Access on your loca
 
 **Enabling Remote Access for Bitwarden**
 
-The `aac` CLI tool has built-in support for connecting to the Bitwarden CLI. The interactive CLI can be used to unlock your vault (`/bw-unlock`) and create a pairing token that the remote side can use to connect.
+The `aac` CLI tool has built-in support for connecting to the Bitwarden CLI. The interactive CLI can be used to unlock your vault (`/unlock`) and create a pairing token that the remote side can use to connect.
 
 ```shell
 aac listen
