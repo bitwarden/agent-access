@@ -17,6 +17,7 @@ authors = ["Bitwarden Inc"]
 edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
+repository = "https://github.com/bitwarden/agent-access"
 
 [workspace.dependencies]
 # Internal crates
