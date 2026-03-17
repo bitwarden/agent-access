@@ -6,11 +6,12 @@ authors.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [features]
 default = ["experimental-post-quantum-crypto", "native-websocket"]
 experimental-post-quantum-crypto = ["ap-proxy-protocol/experimental-post-quantum-crypto"]
-native-websocket = ["dep:futures-util", "dep:tokio-tungstenite", "dep:tracing", "tokio/time"]
+native-websocket = ["dep:futures-util", "dep:tokio-tungstenite", "dep:tracing", "tokio/time", "tokio/rt", "tokio/macros"]
 
 [dependencies]
 ap-proxy-protocol = { workspace = true }
