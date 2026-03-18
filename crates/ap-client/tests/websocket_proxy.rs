@@ -185,51 +185,54 @@ impl SessionStore for MockSessionStore {
     }
 }
 
-/// Wrapper to share MockSessionStore via Arc<Mutex<>>
-struct SharedSessionStore(std::sync::Arc<Mutex<MockSessionStore>>);
+/// Wrapper to share MockSessionStore via Arc.
+///
+/// This works because MockSessionStore uses interior mutability (Mutex<HashMap>),
+/// so no outer Mutex is needed. The async trait methods can delegate directly.
+struct SharedSessionStore(std::sync::Arc<MockSessionStore>);
 
 #[async_trait::async_trait]
 impl SessionStore for SharedSessionStore {
     async fn has_session(&self, fingerprint: &IdentityFingerprint) -> bool {
-        self.0
-            .lock()
-            .expect("Lock should not be poisoned")
-            .sessions
-            .lock()
-            .expect("Lock should not be poisoned")
-            .contains_key(fingerprint)
+        self.0.has_session(fingerprint).await
     }
 
     async fn cache_session(
         &mut self,
         fingerprint: IdentityFingerprint,
     ) -> Result<(), ap_client::RemoteClientError> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-
-        let inner = self.0.lock().expect("Lock should not be poisoned");
-        let mut sessions = inner.sessions.lock().expect("Lock should not be poisoned");
-        sessions.insert(
-            fingerprint,
-            SessionEntry {
+        // MockSessionStore uses interior mutability, so &self is sufficient
+        let store = std::sync::Arc::get_mut(&mut self.0);
+        // In tests, Arc is never shared at the point of mutation through SessionStore,
+        // so get_mut succeeds. If it doesn't, fall back to direct field access.
+        if let Some(store) = store {
+            store.cache_session(fingerprint).await
+        } else {
+            // Fallback: direct interior-mutability access
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let mut sessions = self.0.sessions.lock().expect("Lock should not be poisoned");
+            sessions.insert(
                 fingerprint,
-                name: None,
-                cached_at: now,
-                last_connected_at: now,
-                transport_state: None,
-            },
-        );
-        Ok(())
+                SessionEntry {
+                    fingerprint,
+                    name: None,
+                    cached_at: now,
+                    last_connected_at: now,
+                    transport_state: None,
+                },
+            );
+            Ok(())
+        }
     }
 
     async fn remove_session(
         &mut self,
         fingerprint: &IdentityFingerprint,
     ) -> Result<(), ap_client::RemoteClientError> {
-        let inner = self.0.lock().expect("Lock should not be poisoned");
-        inner
+        self.0
             .sessions
             .lock()
             .expect("Lock should not be poisoned")
@@ -238,8 +241,7 @@ impl SessionStore for SharedSessionStore {
     }
 
     async fn clear(&mut self) -> Result<(), ap_client::RemoteClientError> {
-        let inner = self.0.lock().expect("Lock should not be poisoned");
-        inner
+        self.0
             .sessions
             .lock()
             .expect("Lock should not be poisoned")
@@ -248,21 +250,7 @@ impl SessionStore for SharedSessionStore {
     }
 
     async fn list_sessions(&self) -> Vec<(IdentityFingerprint, Option<String>, u64, u64)> {
-        let inner = self.0.lock().expect("Lock should not be poisoned");
-        inner
-            .sessions
-            .lock()
-            .expect("Lock should not be poisoned")
-            .values()
-            .map(|e| {
-                (
-                    e.fingerprint,
-                    e.name.clone(),
-                    e.cached_at,
-                    e.last_connected_at,
-                )
-            })
-            .collect()
+        self.0.list_sessions().await
     }
 
     async fn set_session_name(
@@ -270,8 +258,7 @@ impl SessionStore for SharedSessionStore {
         fingerprint: &IdentityFingerprint,
         name: String,
     ) -> Result<(), ap_client::RemoteClientError> {
-        let inner = self.0.lock().expect("Lock should not be poisoned");
-        let mut sessions = inner.sessions.lock().expect("Lock should not be poisoned");
+        let mut sessions = self.0.sessions.lock().expect("Lock should not be poisoned");
         if let Some(entry) = sessions.get_mut(fingerprint) {
             entry.name = Some(name);
         }
@@ -286,9 +273,7 @@ impl SessionStore for SharedSessionStore {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-
-        let inner = self.0.lock().expect("Lock should not be poisoned");
-        let mut sessions = inner.sessions.lock().expect("Lock should not be poisoned");
+        let mut sessions = self.0.sessions.lock().expect("Lock should not be poisoned");
         if let Some(entry) = sessions.get_mut(fingerprint) {
             entry.last_connected_at = now;
         }
@@ -300,8 +285,7 @@ impl SessionStore for SharedSessionStore {
         fingerprint: &IdentityFingerprint,
         transport_state: MultiDeviceTransport,
     ) -> Result<(), ap_client::RemoteClientError> {
-        let inner = self.0.lock().expect("Lock should not be poisoned");
-        let mut sessions = inner.sessions.lock().expect("Lock should not be poisoned");
+        let mut sessions = self.0.sessions.lock().expect("Lock should not be poisoned");
         if let Some(entry) = sessions.get_mut(fingerprint) {
             entry.transport_state = Some(transport_state);
         }
@@ -312,11 +296,7 @@ impl SessionStore for SharedSessionStore {
         &self,
         fingerprint: &IdentityFingerprint,
     ) -> Result<Option<MultiDeviceTransport>, ap_client::RemoteClientError> {
-        let inner = self.0.lock().expect("Lock should not be poisoned");
-        let sessions = inner.sessions.lock().expect("Lock should not be poisoned");
-        Ok(sessions
-            .get(fingerprint)
-            .and_then(|e| e.transport_state.clone()))
+        self.0.load_transport_state(fingerprint).await
     }
 }
 
@@ -1106,149 +1086,12 @@ async fn test_e2e_transport_state_persistence() {
             let (_remote_response_tx, remote_response_rx) =
                 mpsc::channel::<RemoteClientResponse>(32);
 
-            // 8. Create RemoteClient with Arc<Mutex<MockSessionStore>> for later access
+            // 8. Create RemoteClient with Arc<MockSessionStore> for later access
             let remote_proxy = create_proxy_client(addr, None);
-            let remote_session_store = Arc::new(Mutex::new(MockSessionStore::new()));
+            let remote_session_store = Arc::new(MockSessionStore::new());
             let session_store_clone = Arc::clone(&remote_session_store);
 
-            // Wrap the Arc<Mutex<MockSessionStore>> in a newtype to implement SessionStore
-            struct SharedSessionStore(Arc<Mutex<MockSessionStore>>);
-
-            #[async_trait::async_trait]
-            impl SessionStore for SharedSessionStore {
-                async fn has_session(&self, fingerprint: &IdentityFingerprint) -> bool {
-                    self.0
-                        .lock()
-                        .expect("Lock should not be poisoned")
-                        .sessions
-                        .lock()
-                        .expect("Lock should not be poisoned")
-                        .contains_key(fingerprint)
-                }
-
-                async fn cache_session(
-                    &mut self,
-                    fingerprint: IdentityFingerprint,
-                ) -> Result<(), ap_client::RemoteClientError> {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0);
-
-                    let inner = self.0.lock().expect("Lock should not be poisoned");
-                    let mut sessions = inner.sessions.lock().expect("Lock should not be poisoned");
-                    sessions.insert(
-                        fingerprint,
-                        SessionEntry {
-                            fingerprint,
-                            name: None,
-                            cached_at: now,
-                            last_connected_at: now,
-                            transport_state: None,
-                        },
-                    );
-                    Ok(())
-                }
-
-                async fn remove_session(
-                    &mut self,
-                    fingerprint: &IdentityFingerprint,
-                ) -> Result<(), ap_client::RemoteClientError> {
-                    let inner = self.0.lock().expect("Lock should not be poisoned");
-                    inner
-                        .sessions
-                        .lock()
-                        .expect("Lock should not be poisoned")
-                        .remove(fingerprint);
-                    Ok(())
-                }
-
-                async fn clear(&mut self) -> Result<(), ap_client::RemoteClientError> {
-                    let inner = self.0.lock().expect("Lock should not be poisoned");
-                    inner
-                        .sessions
-                        .lock()
-                        .expect("Lock should not be poisoned")
-                        .clear();
-                    Ok(())
-                }
-
-                async fn list_sessions(
-                    &self,
-                ) -> Vec<(IdentityFingerprint, Option<String>, u64, u64)> {
-                    let inner = self.0.lock().expect("Lock should not be poisoned");
-                    inner
-                        .sessions
-                        .lock()
-                        .expect("Lock should not be poisoned")
-                        .values()
-                        .map(|e| {
-                            (
-                                e.fingerprint,
-                                e.name.clone(),
-                                e.cached_at,
-                                e.last_connected_at,
-                            )
-                        })
-                        .collect()
-                }
-
-                async fn set_session_name(
-                    &mut self,
-                    fingerprint: &IdentityFingerprint,
-                    name: String,
-                ) -> Result<(), ap_client::RemoteClientError> {
-                    let inner = self.0.lock().expect("Lock should not be poisoned");
-                    let mut sessions = inner.sessions.lock().expect("Lock should not be poisoned");
-                    if let Some(entry) = sessions.get_mut(fingerprint) {
-                        entry.name = Some(name);
-                    }
-                    Ok(())
-                }
-
-                async fn update_last_connected(
-                    &mut self,
-                    fingerprint: &IdentityFingerprint,
-                ) -> Result<(), ap_client::RemoteClientError> {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_secs())
-                        .unwrap_or(0);
-
-                    let inner = self.0.lock().expect("Lock should not be poisoned");
-                    let mut sessions = inner.sessions.lock().expect("Lock should not be poisoned");
-                    if let Some(entry) = sessions.get_mut(fingerprint) {
-                        entry.last_connected_at = now;
-                    }
-                    Ok(())
-                }
-
-                async fn save_transport_state(
-                    &mut self,
-                    fingerprint: &IdentityFingerprint,
-                    transport_state: MultiDeviceTransport,
-                ) -> Result<(), ap_client::RemoteClientError> {
-                    let inner = self.0.lock().expect("Lock should not be poisoned");
-                    let mut sessions = inner.sessions.lock().expect("Lock should not be poisoned");
-                    if let Some(entry) = sessions.get_mut(fingerprint) {
-                        entry.transport_state = Some(transport_state);
-                    }
-                    Ok(())
-                }
-
-                async fn load_transport_state(
-                    &self,
-                    fingerprint: &IdentityFingerprint,
-                ) -> Result<Option<MultiDeviceTransport>, ap_client::RemoteClientError>
-                {
-                    let inner = self.0.lock().expect("Lock should not be poisoned");
-                    let sessions = inner.sessions.lock().expect("Lock should not be poisoned");
-                    Ok(sessions
-                        .get(fingerprint)
-                        .and_then(|e| e.transport_state.clone()))
-                }
-            }
-
+            // Reuse the module-level SharedSessionStore wrapper
             let mut remote_client = RemoteClient::new(
                 Box::new(remote_identity),
                 Box::new(SharedSessionStore(remote_session_store)),
@@ -1299,17 +1142,10 @@ async fn test_e2e_transport_state_persistence() {
             );
 
             // 11. Load transport state from session store and verify it was saved
-            let transport_state = {
-                let store = session_store_clone
-                    .lock()
-                    .expect("Lock should not be poisoned");
-                store
-                    .sessions
-                    .lock()
-                    .expect("Lock should not be poisoned")
-                    .get(&fingerprint)
-                    .and_then(|e| e.transport_state.clone())
-            };
+            let transport_state = session_store_clone
+                .load_transport_state(&fingerprint)
+                .await
+                .expect("Should load transport state");
 
             // 12. Assert the state is Some (transport object, not bytes)
             assert!(
@@ -1377,8 +1213,8 @@ async fn test_e2e_multi_device_credential_response() {
             // 4. Create UserClient Device 1 with DefaultProxyClient
             let user_proxy1 = create_proxy_client(addr, Some(user_keypair.clone()));
 
-            // Use Arc<Mutex<MockSessionStore>> for later access to transport state
-            let user_session_store1 = Arc::new(Mutex::new(MockSessionStore::new()));
+            // Use Arc<MockSessionStore> for later access to transport state
+            let user_session_store1 = Arc::new(MockSessionStore::new());
             let session_store_clone = Arc::clone(&user_session_store1);
 
             let mut user_client1 = UserClient::listen(
