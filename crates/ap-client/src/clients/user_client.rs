@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use ap_noise::{Ciphersuite, MultiDeviceTransport, Psk, ResponderHandshake};
 use ap_proxy_client::IncomingMessage;
-use ap_proxy_protocol::{IdentityFingerprint, RendevouzCode};
+use ap_proxy_protocol::{IdentityFingerprint, RendezvousCode};
 use base64::{Engine, engine::general_purpose::STANDARD};
 
 use crate::proxy::ProxyClient;
@@ -39,7 +39,7 @@ pub enum UserClientEvent {
     /// Started listening for connections
     Listening {},
     /// Rendezvous code was generated
-    RendevouzCodeGenerated {
+    RendezvousCodeGenerated {
         /// The 8-character rendezvous code to share
         code: String,
     },
@@ -153,7 +153,7 @@ pub struct UserClient {
     /// Map of fingerprint -> transport
     transports: HashMap<IdentityFingerprint, MultiDeviceTransport>,
     /// Current rendezvous code
-    rendezvous_code: Option<RendevouzCode>,
+    rendezvous_code: Option<RendezvousCode>,
     /// Current PSK (if in PSK mode)
     psk: Option<Psk>,
     /// Incoming message receiver from proxy
@@ -270,7 +270,7 @@ impl UserClient {
             .ok_or(RemoteClientError::NotInitialized)?;
 
         let code = loop {
-            if let Some(IncomingMessage::RendevouzInfo(c)) = incoming_rx.recv().await {
+            if let Some(IncomingMessage::RendezvousInfo(c)) = incoming_rx.recv().await {
                 break c;
             }
         };
@@ -278,7 +278,7 @@ impl UserClient {
         self.rendezvous_code = Some(code.clone());
 
         event_tx
-            .send(UserClientEvent::RendevouzCodeGenerated {
+            .send(UserClientEvent::RendezvousCodeGenerated {
                 code: code.as_str().to_string(),
             })
             .await
@@ -431,7 +431,7 @@ impl UserClient {
                     }
                 }
             }
-            IncomingMessage::RendevouzInfo(_) => {
+            IncomingMessage::RendezvousInfo(_) => {
                 // Already handled in listen()
             }
             IncomingMessage::IdentityInfo { .. } => {
@@ -864,7 +864,7 @@ impl UserClient {
     }
 
     /// Get the current rendezvous code
-    pub fn rendezvous_code(&self) -> Option<&RendevouzCode> {
+    pub fn rendezvous_code(&self) -> Option<&RendezvousCode> {
         self.rendezvous_code.as_ref()
     }
 

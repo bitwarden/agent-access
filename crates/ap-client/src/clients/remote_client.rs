@@ -4,7 +4,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ap_noise::{InitiatorHandshake, MultiDeviceTransport, Psk};
 use ap_proxy_client::IncomingMessage;
-use ap_proxy_protocol::{IdentityFingerprint, RendevouzCode};
+use ap_proxy_protocol::{IdentityFingerprint, RendezvousCode};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use rand::RngCore;
 
@@ -132,7 +132,7 @@ impl RemoteClient {
 
         // Resolve rendezvous code to fingerprint
         event_tx
-            .send(RemoteClientEvent::RendevouzResolving {
+            .send(RemoteClientEvent::RendezvousResolving {
                 code: rendezvous_code.to_string(),
             })
             .await
@@ -143,7 +143,7 @@ impl RemoteClient {
                 .await?;
 
         event_tx
-            .send(RemoteClientEvent::RendevouzResolved {
+            .send(RemoteClientEvent::RendezvousResolved {
                 fingerprint: remote_fingerprint,
             })
             .await
@@ -495,9 +495,9 @@ impl RemoteClient {
     ) -> Result<IdentityFingerprint, RemoteClientError> {
         // Send GetIdentity request
         proxy_client
-            .request_identity(RendevouzCode::from_string(rendezvous_code.to_string()))
+            .request_identity(RendezvousCode::from_string(rendezvous_code.to_string()))
             .await
-            .map_err(|e| RemoteClientError::RendevouzResolutionFailed(e.to_string()))?;
+            .map_err(|e| RemoteClientError::RendezvousResolutionFailed(e.to_string()))?;
 
         // Wait for IdentityInfo response with timeout
         let timeout_duration = tokio::time::Duration::from_secs(10);
@@ -512,10 +512,10 @@ impl RemoteClient {
         .await
         {
             Ok(Some(fingerprint)) => Ok(fingerprint),
-            Ok(None) => Err(RemoteClientError::RendevouzResolutionFailed(
+            Ok(None) => Err(RemoteClientError::RendezvousResolutionFailed(
                 "Connection closed while waiting for identity response".to_string(),
             )),
-            Err(_) => Err(RemoteClientError::RendevouzResolutionFailed(
+            Err(_) => Err(RemoteClientError::RendezvousResolutionFailed(
                 "Timeout waiting for identity response. The rendezvous code may be invalid, expired, or the target client may be disconnected.".to_string(),
             )),
         }
@@ -630,7 +630,7 @@ impl RemoteClient {
                         }
                     }
                 }
-                IncomingMessage::RendevouzInfo(_) => {
+                IncomingMessage::RendezvousInfo(_) => {
                     // Ignore - only UserClient needs this
                 }
                 IncomingMessage::IdentityInfo { .. } => {

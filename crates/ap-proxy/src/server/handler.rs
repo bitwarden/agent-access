@@ -1,4 +1,4 @@
-use ap_proxy_protocol::{Challenge, IdentityFingerprint, Messages, ProxyError, RendevouzCode};
+use ap_proxy_protocol::{Challenge, IdentityFingerprint, Messages, ProxyError, RendezvousCode};
 
 use crate::{connection::AuthenticatedConnection, server::proxy_server::ServerState};
 
@@ -192,8 +192,8 @@ impl ConnectionHandler {
                         conn_id
                     );
                 }
-                Messages::GetRendevouz => {
-                    let code = RendevouzCode::new();
+                Messages::GetRendezvous => {
+                    let code = RendezvousCode::new();
                     tracing::info!(
                         "Connection #{}: Generated rendezvous code: {}",
                         conn_id,
@@ -202,8 +202,8 @@ impl ConnectionHandler {
 
                     // Store mapping in rendezvous_map
                     {
-                        use crate::server::proxy_server::RendevouzEntry;
-                        let entry = RendevouzEntry {
+                        use crate::server::proxy_server::RendezvousEntry;
+                        let entry = RendezvousEntry {
                             fingerprint,
                             created_at: SystemTime::now(),
                             used: false,
@@ -215,7 +215,7 @@ impl ConnectionHandler {
                             .insert(code.as_str().to_string(), entry);
                     }
 
-                    let response = serde_json::to_string(&Messages::RendevouzInfo(code))?;
+                    let response = serde_json::to_string(&Messages::RendezvousInfo(code))?;
                     let connections = state.connections.read().await;
                     if let Some(conns) = connections.get(&fingerprint) {
                         for conn in conns.iter() {
@@ -270,9 +270,9 @@ impl ConnectionHandler {
                         }
                     }
                 }
-                Messages::RendevouzInfo(_) => {
+                Messages::RendezvousInfo(_) => {
                     tracing::warn!(
-                        "Connection #{}: Received RendevouzInfo (server-only message)",
+                        "Connection #{}: Received RendezvousInfo (server-only message)",
                         conn_id
                     );
                 }

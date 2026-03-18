@@ -6,7 +6,7 @@
 pub mod auth;
 pub mod error;
 pub mod messages;
-pub mod rendevouz;
+pub mod rendezvous;
 
 pub use auth::{
     Challenge, ChallengeResponse, Identity, IdentityFingerprint, IdentityKeyPair,
@@ -14,4 +14,4 @@ pub use auth::{
 };
 pub use error::ProxyError;
 pub use messages::Messages;
-pub use rendevouz::RendevouzCode;
+pub use rendezvous::RendezvousCode;

@@ -23,7 +23,7 @@
 //!             IncomingMessage::Send { source, payload, .. } => {
 //!                 println!("Message from {:?}", source);
 //!             }
-//!             IncomingMessage::RendevouzInfo(code) => {
+//!             IncomingMessage::RendezvousInfo(code) => {
 //!                 println!("Your code: {}", code.as_str());
 //!             }
 //!             IncomingMessage::IdentityInfo { identity, .. } => {
@@ -49,5 +49,5 @@ pub use protocol_client::ProxyProtocolClient;
 // Re-export key types from ap-proxy-protocol for ergonomics
 pub use ap_proxy_protocol::{
     Challenge, ChallengeResponse, Identity, IdentityFingerprint, IdentityKeyPair, Messages,
-    ProxyError, RendevouzCode, SignatureAlgorithm,
+    ProxyError, RendezvousCode, SignatureAlgorithm,
 };

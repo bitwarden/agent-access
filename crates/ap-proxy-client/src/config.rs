@@ -1,4 +1,4 @@
-use ap_proxy_protocol::{Identity, IdentityFingerprint, IdentityKeyPair, RendevouzCode};
+use ap_proxy_protocol::{Identity, IdentityFingerprint, IdentityKeyPair, RendezvousCode};
 
 /// Configuration for creating a proxy client.
 ///
@@ -69,7 +69,7 @@ pub struct ProxyClientConfig {
 ///         IncomingMessage::Send { source, payload, .. } => {
 ///             println!("Message from {:?}: {} bytes", source, payload.len());
 ///         }
-///         IncomingMessage::RendevouzInfo(code) => {
+///         IncomingMessage::RendezvousInfo(code) => {
 ///             println!("Your rendezvous code: {}", code.as_str());
 ///         }
 ///         IncomingMessage::IdentityInfo { identity, .. } => {
@@ -88,7 +88,7 @@ pub enum IncomingMessage {
     /// The code can be shared with other clients to enable them to discover your identity.
     ///
     /// Codes expire after 5 minutes and are single-use.
-    RendevouzInfo(RendevouzCode),
+    RendezvousInfo(RendezvousCode),
 
     /// Server responded with a peer's identity.
     ///

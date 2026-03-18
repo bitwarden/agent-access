@@ -562,10 +562,10 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
                     .await
             });
 
-            // 6. Wait for RendevouzCodeGenerated event
+            // 6. Wait for RendezvousCodeGenerated event
             let code = timeout(Duration::from_secs(5), async {
                 loop {
-                    if let Some(UserClientEvent::RendevouzCodeGenerated { code }) =
+                    if let Some(UserClientEvent::RendezvousCodeGenerated { code }) =
                         user_event_rx.recv().await
                     {
                         return code;
@@ -573,7 +573,7 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
                 }
             })
             .await
-            .expect("Should receive RendevouzCodeGenerated event");
+            .expect("Should receive RendezvousCodeGenerated event");
 
             // 7. Create event and response channels for RemoteClient
             let (remote_event_tx, mut remote_event_rx) = mpsc::channel::<RemoteClientEvent>(32);

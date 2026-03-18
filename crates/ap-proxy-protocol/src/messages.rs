@@ -9,8 +9,8 @@
 //! 2. Client → Server: [`Messages::AuthResponse`] - Client's identity and signature
 //!
 //! ## Phase 2: Rendezvous (Optional)
-//! 3. Client → Server: [`Messages::GetRendevouz`] - Request a temporary code
-//! 4. Server → Client: [`Messages::RendevouzInfo`] - The generated code (e.g., "ABC-DEF-GHI")
+//! 3. Client → Server: [`Messages::GetRendezvous`] - Request a temporary code
+//! 4. Server → Client: [`Messages::RendezvousInfo`] - The generated code (e.g., "ABC-DEF-GHI")
 //! 5. Client → Server: [`Messages::GetIdentity`] - Look up identity by code
 //! 6. Server → Client: [`Messages::IdentityInfo`] - The identity associated with the code
 //!
@@ -22,7 +22,7 @@
 
 use crate::{
     auth::{Challenge, ChallengeResponse, Identity, IdentityFingerprint},
-    rendevouz::RendevouzCode,
+    rendezvous::RendezvousCode,
 };
 use serde::{Deserialize, Serialize};
 
@@ -47,20 +47,20 @@ pub enum Messages {
     /// Client requests a temporary rendezvous code.
     ///
     /// The server will generate a unique code (format: "ABC-DEF-GHI") and send it back
-    /// via [`Messages::RendevouzInfo`]. The code expires after 5 minutes.
-    GetRendevouz,
+    /// via [`Messages::RendezvousInfo`]. The code expires after 5 minutes.
+    GetRendezvous,
 
     /// Server responds with the generated rendezvous code.
     ///
     /// The code can be shared with other clients to enable them to discover
     /// this client's identity via [`Messages::GetIdentity`].
-    RendevouzInfo(RendevouzCode),
+    RendezvousInfo(RendezvousCode),
 
     /// Client looks up an identity using a rendezvous code.
     ///
     /// If the code is valid and hasn't expired, the server responds with
     /// [`Messages::IdentityInfo`]. Codes are single-use and deleted after lookup.
-    GetIdentity(RendevouzCode),
+    GetIdentity(RendezvousCode),
 
     /// Server responds with the identity associated with a rendezvous code.
     ///
