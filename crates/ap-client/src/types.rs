@@ -6,6 +6,13 @@ use ap_noise::Psk;
 use ap_proxy_protocol::IdentityFingerprint;
 use serde::{Deserialize, Serialize};
 
+/// A stable identifier for a PSK, derived from `hex(SHA256(psk)[0..8])`.
+///
+/// Used as a lookup key to match incoming handshakes to the correct pending
+/// pairing. Today this maps to in-memory pending pairings; in the future it
+/// could index persistent/reusable PSKs from a `PskStore`.
+pub type PskId = String;
+
 /// What kind of credential to look up.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -186,7 +193,14 @@ pub struct CredentialData {
 pub(crate) enum ProtocolMessage {
     /// Noise handshake init (initiator -> responder)
     #[serde(rename = "handshake-init")]
-    HandshakeInit { data: String, ciphersuite: String },
+    HandshakeInit {
+        data: String,
+        ciphersuite: String,
+        /// PSK identifier — `Some(id)` for PSK mode, `None` for rendezvous mode.
+        /// Backward-compatible: old clients omit this field (deserialized as `None`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        psk_id: Option<PskId>,
+    },
     /// Noise handshake response (responder -> initiator)
     #[serde(rename = "handshake-response")]
     HandshakeResponse { data: String, ciphersuite: String },

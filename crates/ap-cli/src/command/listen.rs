@@ -624,24 +624,34 @@ async fn run_user_client_session(
 
                 let client_session_name = pending_session_name.clone();
                 let client_handle = tokio::task::spawn_local(async move {
-                    let mut client = UserClient::listen(
+                    let mut client = UserClient::connect(
                         identity_provider as Box<dyn IdentityProvider>,
                         session_store as Box<dyn SessionStore>,
                         proxy_client,
                     )
                     .await?;
 
-                    if let Some(name) = client_session_name {
-                        client.set_pending_session_name(name);
+                    if !has_cached {
+                        if psk_mode {
+                            let token = client.get_psk_token(client_session_name).await?;
+                            event_tx
+                                .send(UserClientEvent::PskTokenGenerated { token })
+                                .await
+                                .ok();
+                        } else {
+                            let code = client
+                                .get_rendezvous_token(client_session_name)
+                                .await?;
+                            event_tx
+                                .send(UserClientEvent::RendezvousCodeGenerated {
+                                    code: code.as_str().to_string(),
+                                })
+                                .await
+                                .ok();
+                        }
                     }
 
-                    if has_cached {
-                        client.listen_cached_only(event_tx, response_rx).await
-                    } else if psk_mode {
-                        client.enable_psk(event_tx, response_rx).await
-                    } else {
-                        client.enable_rendezvous(event_tx, response_rx).await
-                    }
+                    client.listen(event_tx, response_rx).await
                 });
 
                 match run_event_loop(

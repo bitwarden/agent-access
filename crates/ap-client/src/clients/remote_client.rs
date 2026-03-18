@@ -528,6 +528,9 @@ impl RemoteClient {
         remote_fingerprint: IdentityFingerprint,
         psk: Option<Psk>,
     ) -> Result<(MultiDeviceTransport, String), RemoteClientError> {
+        // Compute PSK ID before moving the PSK into the handshake
+        let psk_id = psk.as_ref().map(|p| p.id());
+
         // Create initiator handshake (with or without PSK)
         let mut handshake = if let Some(psk) = psk {
             InitiatorHandshake::with_psk(psk)
@@ -542,6 +545,7 @@ impl RemoteClient {
         let msg = ProtocolMessage::HandshakeInit {
             data: STANDARD.encode(init_packet.encode()?),
             ciphersuite: format!("{:?}", handshake.ciphersuite()),
+            psk_id,
         };
 
         let msg_json = serde_json::to_string(&msg)?;

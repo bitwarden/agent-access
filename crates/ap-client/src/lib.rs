@@ -59,14 +59,18 @@
 //! let (event_tx, event_rx) = mpsc::channel(32);
 //! let (response_tx, response_rx) = mpsc::channel(32);
 //!
-//! let mut client = UserClient::listen(
+//! let mut client = UserClient::connect(
 //!     identity_provider,
 //!     session_store,
 //!     proxy_client,
 //! ).await?;
 //!
-//! // Enable PSK mode or rendezvous mode
-//! client.enable_psk(event_tx, response_rx).await?;
+//! // Set up pairing (PSK or rendezvous)
+//! let token = client.get_psk_token(None).await?;
+//! // Or: let code = client.get_rendezvous_token(None).await?;
+//!
+//! // Start the event loop
+//! client.listen(event_tx, response_rx).await?;
 //! ```
 
 /// Error types
@@ -91,7 +95,7 @@ pub use traits::{
     SessionStore,
 };
 pub use types::{
-    ConnectionMode, CredentialData, CredentialQuery, RemoteClientEvent, RemoteClientResponse,
+    ConnectionMode, CredentialData, CredentialQuery, PskId, RemoteClientEvent, RemoteClientResponse,
 };
 
 // Re-export ap-proxy-protocol types

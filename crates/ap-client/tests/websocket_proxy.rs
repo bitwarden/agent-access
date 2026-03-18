@@ -364,7 +364,7 @@ async fn test_e2e_psk_pairing_and_credential_request() {
             let user_proxy = create_proxy_client(addr, Some(user_keypair));
             let user_session_store = MockSessionStore::new();
 
-            let mut user_client = UserClient::listen(
+            let mut user_client = UserClient::connect(
                 Box::new(user_identity),
                 Box::new(user_session_store),
                 Box::new(user_proxy),
@@ -372,36 +372,25 @@ async fn test_e2e_psk_pairing_and_credential_request() {
             .await
             .expect("UserClient should connect");
 
-            // 5. Spawn UserClient's enable_psk in a local task
+            // 5. Get PSK token before starting event loop
+            let token = user_client
+                .get_psk_token(None)
+                .await
+                .expect("Should generate PSK token");
+
+            // Parse token: format is <psk_hex>_<fingerprint_hex>
+            let parts: Vec<&str> = token.split('_').collect();
+            assert_eq!(parts.len(), 2, "Token should have format psk_fingerprint");
+            let psk = Psk::from_hex(parts[0]).expect("Should parse PSK");
+            let fp_bytes = hex::decode(parts[1]).expect("Should decode fingerprint hex");
+            let mut fp_array = [0u8; 32];
+            fp_array.copy_from_slice(&fp_bytes);
+            let fingerprint = IdentityFingerprint(fp_array);
+
+            // 6. Spawn UserClient's listen in a local task
             let user_task = tokio::task::spawn_local(async move {
-                user_client
-                    .enable_psk(user_event_tx, user_response_rx)
-                    .await
+                user_client.listen(user_event_tx, user_response_rx).await
             });
-
-            // 6. Wait for PskTokenGenerated event and parse token
-            let (psk, fingerprint) = timeout(Duration::from_secs(5), async {
-                loop {
-                    if let Some(UserClientEvent::PskTokenGenerated { token }) =
-                        user_event_rx.recv().await
-                    {
-                        // Parse token: format is <psk_hex>_<fingerprint_hex>
-                        let parts: Vec<&str> = token.split('_').collect();
-                        assert_eq!(parts.len(), 2, "Token should have format psk_fingerprint");
-
-                        let psk = Psk::from_hex(parts[0]).expect("Should parse PSK");
-                        let fp_bytes =
-                            hex::decode(parts[1]).expect("Should decode fingerprint hex");
-                        let mut fp_array = [0u8; 32];
-                        fp_array.copy_from_slice(&fp_bytes);
-                        let fingerprint = IdentityFingerprint(fp_array);
-
-                        return (psk, fingerprint);
-                    }
-                }
-            })
-            .await
-            .expect("Should receive PskTokenGenerated event");
 
             // 7. Create event and response channels for RemoteClient
             let (remote_event_tx, mut remote_event_rx) = mpsc::channel::<RemoteClientEvent>(32);
@@ -547,7 +536,7 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
             let user_proxy = create_proxy_client(addr, Some(user_keypair));
             let user_session_store = MockSessionStore::new();
 
-            let mut user_client = UserClient::listen(
+            let mut user_client = UserClient::connect(
                 Box::new(user_identity),
                 Box::new(user_session_store),
                 Box::new(user_proxy),
@@ -555,25 +544,17 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
             .await
             .expect("UserClient should connect");
 
-            // 5. Spawn UserClient's enable_rendezvous in a local task
-            let user_task = tokio::task::spawn_local(async move {
-                user_client
-                    .enable_rendezvous(user_event_tx, user_response_rx)
-                    .await
-            });
+            // 5. Get rendezvous token before starting event loop
+            let code = user_client
+                .get_rendezvous_token(None)
+                .await
+                .expect("Should get rendezvous token");
+            let code = code.as_str().to_string();
 
-            // 6. Wait for RendezvousCodeGenerated event
-            let code = timeout(Duration::from_secs(5), async {
-                loop {
-                    if let Some(UserClientEvent::RendezvousCodeGenerated { code }) =
-                        user_event_rx.recv().await
-                    {
-                        return code;
-                    }
-                }
-            })
-            .await
-            .expect("Should receive RendezvousCodeGenerated event");
+            // 6. Spawn UserClient's listen in a local task
+            let user_task = tokio::task::spawn_local(async move {
+                user_client.listen(user_event_tx, user_response_rx).await
+            });
 
             // 7. Create event and response channels for RemoteClient
             let (remote_event_tx, mut remote_event_rx) = mpsc::channel::<RemoteClientEvent>(32);
@@ -731,7 +712,7 @@ async fn test_e2e_credential_request_denied() {
             let user_proxy = create_proxy_client(addr, Some(user_keypair));
             let user_session_store = MockSessionStore::new();
 
-            let mut user_client = UserClient::listen(
+            let mut user_client = UserClient::connect(
                 Box::new(user_identity),
                 Box::new(user_session_store),
                 Box::new(user_proxy),
@@ -739,32 +720,24 @@ async fn test_e2e_credential_request_denied() {
             .await
             .expect("UserClient should connect");
 
-            // 5. Spawn UserClient's enable_psk in a local task
-            let user_task = tokio::task::spawn_local(async move {
-                user_client
-                    .enable_psk(user_event_tx, user_response_rx)
-                    .await
-            });
+            // 5. Get PSK token before starting event loop
+            let token = user_client
+                .get_psk_token(None)
+                .await
+                .expect("Should generate PSK token");
 
-            // 6. Wait for PskTokenGenerated event and parse token
-            let (psk, fingerprint) = timeout(Duration::from_secs(5), async {
-                loop {
-                    if let Some(UserClientEvent::PskTokenGenerated { token }) =
-                        user_event_rx.recv().await
-                    {
-                        let parts: Vec<&str> = token.split('_').collect();
-                        let psk = Psk::from_hex(parts[0]).expect("Should parse PSK");
-                        let fp_bytes =
-                            hex::decode(parts[1]).expect("Should decode fingerprint hex");
-                        let mut fp_array = [0u8; 32];
-                        fp_array.copy_from_slice(&fp_bytes);
-                        let fingerprint = IdentityFingerprint(fp_array);
-                        return (psk, fingerprint);
-                    }
-                }
-            })
-            .await
-            .expect("Should receive PskTokenGenerated event");
+            // Parse token: format is <psk_hex>_<fingerprint_hex>
+            let parts: Vec<&str> = token.split('_').collect();
+            let psk = Psk::from_hex(parts[0]).expect("Should parse PSK");
+            let fp_bytes = hex::decode(parts[1]).expect("Should decode fingerprint hex");
+            let mut fp_array = [0u8; 32];
+            fp_array.copy_from_slice(&fp_bytes);
+            let fingerprint = IdentityFingerprint(fp_array);
+
+            // 6. Spawn UserClient's listen in a local task
+            let user_task = tokio::task::spawn_local(async move {
+                user_client.listen(user_event_tx, user_response_rx).await
+            });
 
             // 7. Create RemoteClient
             let (remote_event_tx, _remote_event_rx) = mpsc::channel::<RemoteClientEvent>(32);
@@ -873,7 +846,7 @@ async fn test_e2e_multiple_credential_requests() {
             let user_proxy = create_proxy_client(addr, Some(user_keypair));
             let user_session_store = MockSessionStore::new();
 
-            let mut user_client = UserClient::listen(
+            let mut user_client = UserClient::connect(
                 Box::new(user_identity),
                 Box::new(user_session_store),
                 Box::new(user_proxy),
@@ -881,32 +854,24 @@ async fn test_e2e_multiple_credential_requests() {
             .await
             .expect("UserClient should connect");
 
-            // 5. Spawn UserClient's enable_psk in a local task
-            let user_task = tokio::task::spawn_local(async move {
-                user_client
-                    .enable_psk(user_event_tx, user_response_rx)
-                    .await
-            });
+            // 5. Get PSK token before starting event loop
+            let token = user_client
+                .get_psk_token(None)
+                .await
+                .expect("Should generate PSK token");
 
-            // 6. Wait for PskTokenGenerated event and parse token
-            let (psk, fingerprint) = timeout(Duration::from_secs(5), async {
-                loop {
-                    if let Some(UserClientEvent::PskTokenGenerated { token }) =
-                        user_event_rx.recv().await
-                    {
-                        let parts: Vec<&str> = token.split('_').collect();
-                        let psk = Psk::from_hex(parts[0]).expect("Should parse PSK");
-                        let fp_bytes =
-                            hex::decode(parts[1]).expect("Should decode fingerprint hex");
-                        let mut fp_array = [0u8; 32];
-                        fp_array.copy_from_slice(&fp_bytes);
-                        let fingerprint = IdentityFingerprint(fp_array);
-                        return (psk, fingerprint);
-                    }
-                }
-            })
-            .await
-            .expect("Should receive PskTokenGenerated event");
+            // Parse token: format is <psk_hex>_<fingerprint_hex>
+            let parts: Vec<&str> = token.split('_').collect();
+            let psk = Psk::from_hex(parts[0]).expect("Should parse PSK");
+            let fp_bytes = hex::decode(parts[1]).expect("Should decode fingerprint hex");
+            let mut fp_array = [0u8; 32];
+            fp_array.copy_from_slice(&fp_bytes);
+            let fingerprint = IdentityFingerprint(fp_array);
+
+            // 6. Spawn UserClient's listen in a local task
+            let user_task = tokio::task::spawn_local(async move {
+                user_client.listen(user_event_tx, user_response_rx).await
+            });
 
             // 7. Create RemoteClient
             let (remote_event_tx, _remote_event_rx) = mpsc::channel::<RemoteClientEvent>(32);
@@ -1043,7 +1008,7 @@ async fn test_e2e_transport_state_persistence() {
             let user_proxy = create_proxy_client(addr, Some(user_keypair));
             let user_session_store = MockSessionStore::new();
 
-            let mut user_client = UserClient::listen(
+            let mut user_client = UserClient::connect(
                 Box::new(user_identity),
                 Box::new(user_session_store),
                 Box::new(user_proxy),
@@ -1051,35 +1016,25 @@ async fn test_e2e_transport_state_persistence() {
             .await
             .expect("UserClient should connect");
 
-            // 5. Spawn UserClient's enable_psk in a local task
+            // 5. Get PSK token before starting event loop
+            let token = user_client
+                .get_psk_token(None)
+                .await
+                .expect("Should generate PSK token");
+
+            // Parse token: format is <psk_hex>_<fingerprint_hex>
+            let parts: Vec<&str> = token.split('_').collect();
+            assert_eq!(parts.len(), 2, "Token should have format psk_fingerprint");
+            let psk = Psk::from_hex(parts[0]).expect("Should parse PSK");
+            let fp_bytes = hex::decode(parts[1]).expect("Should decode fingerprint hex");
+            let mut fp_array = [0u8; 32];
+            fp_array.copy_from_slice(&fp_bytes);
+            let fingerprint = IdentityFingerprint(fp_array);
+
+            // 6. Spawn UserClient's listen in a local task
             let user_task = tokio::task::spawn_local(async move {
-                user_client
-                    .enable_psk(user_event_tx, user_response_rx)
-                    .await
+                user_client.listen(user_event_tx, user_response_rx).await
             });
-
-            // 6. Wait for PskTokenGenerated event and parse token
-            let (psk, fingerprint) = timeout(Duration::from_secs(5), async {
-                loop {
-                    if let Some(UserClientEvent::PskTokenGenerated { token }) =
-                        user_event_rx.recv().await
-                    {
-                        let parts: Vec<&str> = token.split('_').collect();
-                        assert_eq!(parts.len(), 2, "Token should have format psk_fingerprint");
-
-                        let psk = Psk::from_hex(parts[0]).expect("Should parse PSK");
-                        let fp_bytes =
-                            hex::decode(parts[1]).expect("Should decode fingerprint hex");
-                        let mut fp_array = [0u8; 32];
-                        fp_array.copy_from_slice(&fp_bytes);
-                        let fingerprint = IdentityFingerprint(fp_array);
-
-                        return (psk, fingerprint);
-                    }
-                }
-            })
-            .await
-            .expect("Should receive PskTokenGenerated event");
 
             // 7. Create event and response channels for RemoteClient
             let (remote_event_tx, mut remote_event_rx) = mpsc::channel::<RemoteClientEvent>(32);
@@ -1217,7 +1172,7 @@ async fn test_e2e_multi_device_credential_response() {
             let user_session_store1 = Arc::new(MockSessionStore::new());
             let session_store_clone = Arc::clone(&user_session_store1);
 
-            let mut user_client1 = UserClient::listen(
+            let mut user_client1 = UserClient::connect(
                 Box::new(MockIdentityProvider::with_keypair(user_keypair)),
                 Box::new(SharedSessionStore(Arc::clone(&user_session_store1))),
                 Box::new(user_proxy1),
@@ -1225,31 +1180,24 @@ async fn test_e2e_multi_device_credential_response() {
             .await
             .expect("UserClient Device 1 should connect");
 
-            // 5. Spawn UserClient Device 1's enable_psk in a local task
-            let user_task1 = tokio::task::spawn_local(async move {
-                user_client1
-                    .enable_psk(user_event_tx1, user_response_rx1)
-                    .await
-            });
+            // 5. Get PSK token before starting event loop
+            let token = user_client1
+                .get_psk_token(None)
+                .await
+                .expect("Should generate PSK token");
 
-            // 6. Wait for PskTokenGenerated event and parse token
-            let (psk, user_fingerprint) = timeout(Duration::from_secs(5), async {
-                loop {
-                    if let Some(UserClientEvent::PskTokenGenerated { token }) =
-                        user_event_rx1.recv().await
-                    {
-                        let parts: Vec<&str> = token.split('_').collect();
-                        let psk = Psk::from_hex(parts[0]).expect("Should parse PSK");
-                        let fp_bytes =
-                            hex::decode(parts[1]).expect("Should decode fingerprint hex");
-                        let mut fp_array = [0u8; 32];
-                        fp_array.copy_from_slice(&fp_bytes);
-                        return (psk, IdentityFingerprint(fp_array));
-                    }
-                }
-            })
-            .await
-            .expect("Should receive PskTokenGenerated event");
+            // Parse token: format is <psk_hex>_<fingerprint_hex>
+            let parts: Vec<&str> = token.split('_').collect();
+            let psk = Psk::from_hex(parts[0]).expect("Should parse PSK");
+            let fp_bytes = hex::decode(parts[1]).expect("Should decode fingerprint hex");
+            let mut fp_array = [0u8; 32];
+            fp_array.copy_from_slice(&fp_bytes);
+            let user_fingerprint = IdentityFingerprint(fp_array);
+
+            // 6. Spawn UserClient Device 1's listen in a local task
+            let user_task1 = tokio::task::spawn_local(async move {
+                user_client1.listen(user_event_tx1, user_response_rx1).await
+            });
 
             // 7. Create RemoteClient
             let (remote_event_tx, mut remote_event_rx) = mpsc::channel::<RemoteClientEvent>(256);
@@ -1297,7 +1245,7 @@ async fn test_e2e_multi_device_credential_response() {
             let (user_response_tx2, user_response_rx2) = mpsc::channel::<UserClientResponse>(256);
 
             let user_proxy2 = create_proxy_client(addr, Some(user_keypair_device2.clone()));
-            let mut user_client2 = UserClient::listen(
+            let mut user_client2 = UserClient::connect(
                 Box::new(MockIdentityProvider::with_keypair(user_keypair_device2)),
                 Box::new(SharedSessionStore(Arc::clone(&session_store_clone))),
                 Box::new(user_proxy2),
@@ -1307,9 +1255,7 @@ async fn test_e2e_multi_device_credential_response() {
 
             // 11. Spawn Device 2's event loop (transports are loaded lazily when handling requests)
             let user_task2 = tokio::task::spawn_local(async move {
-                user_client2
-                    .enable_psk(user_event_tx2, user_response_rx2)
-                    .await
+                user_client2.listen(user_event_tx2, user_response_rx2).await
             });
 
             // Wait for Device 2 to be listening

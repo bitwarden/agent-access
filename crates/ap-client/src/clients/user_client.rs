@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use ap_noise::{Ciphersuite, MultiDeviceTransport, Psk, ResponderHandshake};
 use ap_proxy_client::IncomingMessage;
@@ -7,14 +8,16 @@ use ap_proxy_protocol::{IdentityFingerprint, RendezvousCode};
 use base64::{Engine, engine::general_purpose::STANDARD};
 
 use crate::proxy::ProxyClient;
-use crate::types::CredentialData;
-use tokio::sync::mpsc;
+use crate::types::{CredentialData, PskId};
+use tokio::sync::{Mutex, mpsc};
 use tracing::{debug, warn};
 
 /// Base delay for reconnection backoff.
 const RECONNECT_BASE_DELAY: Duration = Duration::from_secs(2);
 /// Maximum delay between reconnection attempts (15 minutes).
 const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(15 * 60);
+/// Maximum age for pending pairings before they are pruned.
+const PENDING_PAIRING_MAX_AGE: Duration = Duration::from_secs(10 * 60);
 
 /// Holds the state of a handshake pending fingerprint verification
 struct PendingHandshakeVerification {
@@ -22,6 +25,26 @@ struct PendingHandshakeVerification {
     source: IdentityFingerprint,
     /// The established transport (not yet cached)
     transport: MultiDeviceTransport,
+    /// Friendly name from the consumed pairing (carried through verification)
+    connection_name: Option<String>,
+}
+
+/// The kind of pairing: rendezvous (null PSK) or PSK (real key).
+pub(crate) enum PairingKind {
+    /// Rendezvous pairing — uses a null PSK, requires fingerprint verification.
+    Rendezvous,
+    /// PSK pairing — uses a real pre-shared key, no fingerprint verification needed.
+    Psk { psk: Psk, psk_id: PskId },
+}
+
+/// A pending pairing waiting for an incoming handshake.
+pub(crate) struct PendingPairing {
+    /// Friendly name to assign to the session once paired.
+    connection_name: Option<String>,
+    /// When this pairing was created (for pruning stale entries).
+    created_at: Instant,
+    /// The kind of pairing.
+    kind: PairingKind,
 }
 
 use crate::{
@@ -152,28 +175,24 @@ pub struct UserClient {
     proxy_client: Option<Box<dyn ProxyClient>>,
     /// Map of fingerprint -> transport
     transports: HashMap<IdentityFingerprint, MultiDeviceTransport>,
-    /// Current rendezvous code
-    rendezvous_code: Option<RendezvousCode>,
-    /// Current PSK (if in PSK mode)
-    psk: Option<Psk>,
     /// Incoming message receiver from proxy
     incoming_rx: Option<mpsc::UnboundedReceiver<IncomingMessage>>,
     /// Pending handshake awaiting fingerprint verification
     pending_verification: Option<PendingHandshakeVerification>,
-    /// Name to assign to the next newly-paired session
-    pending_session_name: Option<String>,
+    /// Pending pairings awaiting incoming handshakes.
+    /// Shared with `Arc<Mutex<>>` so `get_*` methods can add pairings while `listen()` runs.
+    pending_pairings: Arc<Mutex<Vec<PendingPairing>>>,
     /// Audit logger for security-relevant events
     audit_log: Box<dyn AuditLog>,
 }
 
 impl UserClient {
-    /// Connect to proxy server and return a connected client
+    /// Connect to proxy server and return a connected client.
     ///
-    /// This is an associated function (constructor) that:
-    /// - Creates the client with provided identity provider and session store
-    /// - Connects to the proxy server
-    /// - Returns a connected client ready for `enable_psk` or `enable_rendezvous`
-    pub async fn listen(
+    /// After construction, use `get_psk_token()` and/or `get_rendezvous_token()`
+    /// to set up pairings, then call `listen()` to start the event loop.
+    /// Pairings can also be added dynamically while `listen()` is running.
+    pub async fn connect(
         identity_provider: Box<dyn IdentityProvider>,
         session_store: Box<dyn SessionStore>,
         mut proxy_client: Box<dyn ProxyClient>,
@@ -185,11 +204,9 @@ impl UserClient {
             session_store,
             proxy_client: Some(proxy_client),
             transports: HashMap::new(),
-            rendezvous_code: None,
-            psk: None,
             incoming_rx: Some(incoming_rx),
             pending_verification: None,
-            pending_session_name: None,
+            pending_pairings: Arc::new(Mutex::new(Vec::new())),
             audit_log: Box::new(NoOpAuditLog),
         })
     }
@@ -200,70 +217,54 @@ impl UserClient {
         self
     }
 
-    /// Listen for cached sessions only (no new pairing code generated)
+    /// Generate a PSK token for a new pairing.
     ///
-    /// Emits a Listening event and runs the event loop. Cached sessions can
-    /// still reconnect via the normal handshake/credential request flow.
-    pub async fn listen_cached_only(
-        &mut self,
-        event_tx: mpsc::Sender<UserClientEvent>,
-        response_rx: mpsc::Receiver<UserClientResponse>,
-    ) -> Result<(), RemoteClientError> {
-        debug!("User client listening for cached sessions only (no new pairing code)");
-
-        // Emit Listening event
-        event_tx.send(UserClientEvent::Listening {}).await.ok();
-
-        // Run event loop
-        self.run_event_loop(event_tx, response_rx).await
-    }
-
-    /// Enable PSK mode and run the event loop
+    /// Creates a `PendingPairing` with a random PSK and adds it to the pending
+    /// pairings list. Returns the formatted token string (`<psk_hex>_<fingerprint_hex>`).
     ///
-    /// Generates a PSK and token, emits events, and runs the main event loop.
-    pub async fn enable_psk(
-        &mut self,
-        event_tx: mpsc::Sender<UserClientEvent>,
-        response_rx: mpsc::Receiver<UserClientResponse>,
-    ) -> Result<(), RemoteClientError> {
-        // Generate PSK and token
+    /// Can be called before or during `listen()`. Multiple PSK pairings are
+    /// supported concurrently (each matched by `psk_id`).
+    pub async fn get_psk_token(&self, name: Option<String>) -> Result<String, RemoteClientError> {
         let psk = Psk::generate();
+        let psk_id = psk.id();
         let fingerprint = self.identity_provider.fingerprint().await;
         let token = format!("{}_{}", psk.to_hex(), hex::encode(fingerprint.0));
 
-        self.psk = Some(psk);
+        let pairing = PendingPairing {
+            connection_name: name,
+            created_at: Instant::now(),
+            kind: PairingKind::Psk { psk, psk_id },
+        };
 
-        event_tx
-            .send(UserClientEvent::PskTokenGenerated { token })
-            .await
-            .ok();
+        let mut pairings = self.pending_pairings.lock().await;
+        Self::prune_stale_pairings(&mut pairings);
+        pairings.push(pairing);
+        debug!("Created PSK pairing, token generated");
 
-        debug!("User client listening in PSK mode");
-
-        // Emit Listening event
-        event_tx.send(UserClientEvent::Listening {}).await.ok();
-
-        // Run event loop
-        self.run_event_loop(event_tx, response_rx).await
+        Ok(token)
     }
 
-    /// Enable rendezvous mode and run the event loop
+    /// Request a rendezvous code from the proxy for a new pairing.
     ///
-    /// Requests a rendezvous code from the proxy, emits events, and runs the main event loop.
-    pub async fn enable_rendezvous(
+    /// Creates a `PendingPairing` with `PairingKind::Rendezvous` and adds it to
+    /// the pending pairings list, replacing any existing rendezvous entry (only
+    /// one rendezvous pairing at a time — there's no way to distinguish incoming
+    /// rendezvous handshakes).
+    ///
+    /// Can be called before or during `listen()`.
+    pub async fn get_rendezvous_token(
         &mut self,
-        event_tx: mpsc::Sender<UserClientEvent>,
-        response_rx: mpsc::Receiver<UserClientResponse>,
-    ) -> Result<(), RemoteClientError> {
+        name: Option<String>,
+    ) -> Result<RendezvousCode, RemoteClientError> {
         let proxy_client = self
             .proxy_client
             .as_ref()
             .ok_or(RemoteClientError::NotInitialized)?;
 
-        // Request rendezvous code
+        // Request rendezvous code from proxy
         proxy_client.request_rendezvous().await?;
 
-        // Wait for rendezvous code
+        // Wait for rendezvous code from the incoming channel
         let incoming_rx = self
             .incoming_rx
             .as_mut()
@@ -275,16 +276,33 @@ impl UserClient {
             }
         };
 
-        self.rendezvous_code = Some(code.clone());
+        // Replace any existing rendezvous pairing
+        let pairing = PendingPairing {
+            connection_name: name,
+            created_at: Instant::now(),
+            kind: PairingKind::Rendezvous,
+        };
 
-        event_tx
-            .send(UserClientEvent::RendezvousCodeGenerated {
-                code: code.as_str().to_string(),
-            })
-            .await
-            .ok();
+        let mut pairings = self.pending_pairings.lock().await;
+        pairings.retain(|p| !matches!(p.kind, PairingKind::Rendezvous));
+        pairings.push(pairing);
 
-        debug!("User client listening with rendezvous code: {}", code);
+        debug!("Created rendezvous pairing, code: {}", code);
+        Ok(code)
+    }
+
+    /// Start the event loop, listening for incoming connections.
+    ///
+    /// Handles cached session reconnections, PSK handshakes, and rendezvous
+    /// handshakes based on what's in `pending_pairings`. Pairings can be added
+    /// dynamically via `get_psk_token()` / `get_rendezvous_token()` while this
+    /// method is running.
+    pub async fn listen(
+        &mut self,
+        event_tx: mpsc::Sender<UserClientEvent>,
+        response_rx: mpsc::Receiver<UserClientResponse>,
+    ) -> Result<(), RemoteClientError> {
+        debug!("User client listening");
 
         // Emit Listening event
         event_tx.send(UserClientEvent::Listening {}).await.ok();
@@ -418,8 +436,12 @@ impl UserClient {
                 let protocol_msg: ProtocolMessage = serde_json::from_str(&text)?;
 
                 match protocol_msg {
-                    ProtocolMessage::HandshakeInit { data, ciphersuite } => {
-                        self.handle_handshake_init(source, data, ciphersuite, event_tx)
+                    ProtocolMessage::HandshakeInit {
+                        data,
+                        ciphersuite,
+                        psk_id,
+                    } => {
+                        self.handle_handshake_init(source, data, ciphersuite, psk_id, event_tx)
                             .await?;
                     }
                     ProtocolMessage::CredentialRequest { encrypted } => {
@@ -448,27 +470,75 @@ impl UserClient {
         source: IdentityFingerprint,
         data: String,
         ciphersuite: String,
+        psk_id: Option<PskId>,
         event_tx: &mpsc::Sender<UserClientEvent>,
     ) -> Result<(), RemoteClientError> {
         debug!("Received handshake init from source: {:?}", source);
         event_tx.send(UserClientEvent::HandshakeStart {}).await.ok();
 
-        let (transport, fingerprint_str) =
-            self.complete_handshake(source, &data, &ciphersuite).await?;
+        // Check if this is an existing/cached session (bypass pairing lookup)
+        let is_new_connection = !self.session_store.has_session(&source).await;
+
+        // Determine which PSK to use and find the matching pairing.
+        // Existing sessions don't need a pending pairing — they already have trust
+        // established. Only new connections consume pairings.
+        let (psk_for_handshake, matched_pairing_name, is_psk_connection) = if !is_new_connection {
+            // Existing/cached session — no pairing lookup needed
+            (None, None, false)
+        } else {
+            // New connection — look up and consume a pending pairing
+            let mut pairings = self.pending_pairings.lock().await;
+            Self::prune_stale_pairings(&mut pairings);
+
+            match &psk_id {
+                Some(id) => {
+                    // PSK mode — find matching pairing by psk_id
+                    let idx = pairings.iter().position(
+                        |p| matches!(&p.kind, PairingKind::Psk { psk_id: pid, .. } if pid == id),
+                    );
+                    if let Some(idx) = idx {
+                        let pairing = pairings.remove(idx);
+                        let psk = match pairing.kind {
+                            PairingKind::Psk { psk, .. } => psk,
+                            PairingKind::Rendezvous => unreachable!(),
+                        };
+                        (Some(psk), pairing.connection_name, true)
+                    } else {
+                        warn!("No matching PSK pairing for psk_id: {}", id);
+                        return Err(RemoteClientError::InvalidState {
+                            expected: "matching PSK pairing".to_string(),
+                            current: format!("no pairing for psk_id {id}"),
+                        });
+                    }
+                }
+                None => {
+                    // Rendezvous mode — find the rendezvous pairing
+                    let idx = pairings
+                        .iter()
+                        .position(|p| matches!(p.kind, PairingKind::Rendezvous));
+                    let connection_name = idx.and_then(|i| pairings.remove(i).connection_name);
+                    (None, connection_name, false)
+                }
+            }
+        };
+
+        let (transport, fingerprint_str) = self
+            .complete_handshake(source, &data, &ciphersuite, psk_for_handshake.as_ref())
+            .await?;
 
         event_tx
             .send(UserClientEvent::HandshakeComplete {})
             .await
             .ok();
 
-        // Check if this is a new connection (not in cache)
-        let is_new_connection = !self.session_store.has_session(&source).await;
-        // PSK connections are already trusted — no fingerprint verification needed
-        let is_psk_connection = self.psk.is_some();
-
         if is_new_connection && !is_psk_connection {
-            // New rendezvous connection: require fingerprint verification before caching
-            self.pending_verification = Some(PendingHandshakeVerification { source, transport });
+            // New rendezvous connection: require fingerprint verification before caching.
+            // The connection_name travels with the pending verification, not through the pairing list.
+            self.pending_verification = Some(PendingHandshakeVerification {
+                source,
+                transport,
+                connection_name: matched_pairing_name,
+            });
 
             event_tx
                 .send(UserClientEvent::HandshakeFingerprint {
@@ -479,15 +549,9 @@ impl UserClient {
                 .ok();
         } else if !is_new_connection {
             // Existing/cached session: already verified on first connection.
-            // Re-cache to update timestamps (cached_at / last_connected_at),
-            // and save the new transport state from the fresh handshake.
+            // Re-cache to update timestamps and save the new transport state.
             self.transports.insert(source, transport.clone());
             self.session_store.cache_session(source).await?;
-            // Apply pending name if user explicitly re-paired (e.g. `/pair MyName`).
-            // During passive reconnections, pending_session_name is None so this is a no-op.
-            if let Some(name) = self.pending_session_name.take() {
-                self.session_store.set_session_name(&source, name).await?;
-            }
             self.session_store
                 .save_transport_state(&source, transport)
                 .await?;
@@ -506,11 +570,10 @@ impl UserClient {
                 .ok();
         } else if is_psk_connection {
             // PSK connection: trust established via pre-shared key, no verification needed
-            let session_name = self.pending_session_name.take();
             self.accept_new_connection(
                 source,
                 transport,
-                session_name.as_deref(),
+                matched_pairing_name.as_deref(),
                 AuditConnectionType::Psk,
             )
             .await?;
@@ -525,6 +588,11 @@ impl UserClient {
         }
 
         Ok(())
+    }
+
+    /// Remove pending pairings older than `PENDING_PAIRING_MAX_AGE`.
+    fn prune_stale_pairings(pairings: &mut Vec<PendingPairing>) {
+        pairings.retain(|p| p.created_at.elapsed() < PENDING_PAIRING_MAX_AGE);
     }
 
     /// Accept a new connection: cache session, store transport, set name, and audit
@@ -573,7 +641,9 @@ impl UserClient {
             })?;
 
         if approved {
-            let session_name = name.or(self.pending_session_name.take());
+            // Use the connection name from the verification response, falling back
+            // to the name from the consumed pairing that's stored on the pending struct.
+            let session_name = name.or(pending.connection_name);
             self.accept_new_connection(
                 pending.source,
                 pending.transport,
@@ -814,6 +884,7 @@ impl UserClient {
         remote_fingerprint: IdentityFingerprint,
         handshake_data: &str,
         ciphersuite_str: &str,
+        psk: Option<&Psk>,
     ) -> Result<(MultiDeviceTransport, String), RemoteClientError> {
         // Parse ciphersuite
         let ciphersuite = match ciphersuite_str {
@@ -829,8 +900,8 @@ impl UserClient {
         let init_packet = ap_noise::HandshakePacket::decode(&init_bytes)
             .map_err(|e| RemoteClientError::NoiseProtocol(format!("Invalid packet: {e}")))?;
 
-        // Create responder handshake (with PSK if available)
-        let mut handshake = if let Some(ref psk) = self.psk {
+        // Create responder handshake — with PSK if provided, otherwise null PSK (rendezvous)
+        let mut handshake = if let Some(psk) = psk {
             ResponderHandshake::with_psk(psk.clone())
         } else {
             ResponderHandshake::new()
@@ -861,15 +932,5 @@ impl UserClient {
         debug!("Sent handshake response to {:?}", remote_fingerprint);
 
         Ok((transport, fingerprint.to_string()))
-    }
-
-    /// Get the current rendezvous code
-    pub fn rendezvous_code(&self) -> Option<&RendezvousCode> {
-        self.rendezvous_code.as_ref()
-    }
-
-    /// Set a friendly name to assign to the next newly-paired session
-    pub fn set_pending_session_name(&mut self, name: String) {
-        self.pending_session_name = Some(name);
     }
 }
