@@ -241,11 +241,14 @@ impl UserClient {
         // Create command channel
         let (command_tx, command_rx) = mpsc::channel(32);
 
+        // Cache fingerprint before spawning (avoids repeated async calls)
+        let own_fingerprint = identity_provider.fingerprint().await;
+
         // Build the inner state
         let inner = UserClientInner {
-            identity_provider,
             session_store,
-            proxy_client: Some(proxy_client),
+            proxy_client,
+            own_fingerprint,
             transports: HashMap::new(),
             pending_pairings: Vec::new(),
             audit_log: audit_log.unwrap_or_else(|| Box::new(NoOpAuditLog)),
@@ -294,9 +297,10 @@ impl UserClient {
 
 /// All mutable state for the user client, owned by the spawned event loop task.
 struct UserClientInner {
-    identity_provider: Box<dyn IdentityProvider>,
     session_store: Box<dyn SessionStore>,
-    proxy_client: Option<Box<dyn ProxyClient>>,
+    proxy_client: Box<dyn ProxyClient>,
+    /// Our own identity fingerprint (cached at construction time).
+    own_fingerprint: IdentityFingerprint,
     /// Map of fingerprint -> transport
     transports: HashMap<IdentityFingerprint, MultiDeviceTransport>,
     /// Pending pairings awaiting incoming handshakes.
@@ -397,15 +401,10 @@ impl UserClientInner {
         loop {
             attempt = attempt.saturating_add(1);
 
-            let proxy_client = self
-                .proxy_client
-                .as_mut()
-                .ok_or(RemoteClientError::NotInitialized)?;
-
             // Disconnect (ignore errors — connection may already be dead)
-            let _ = proxy_client.disconnect().await;
+            let _ = self.proxy_client.disconnect().await;
 
-            match proxy_client.connect().await {
+            match self.proxy_client.connect().await {
                 Ok(new_rx) => {
                     debug!("Reconnected to proxy on attempt {}", attempt);
                     return Ok(new_rx);
@@ -697,7 +696,11 @@ impl UserClientInner {
                 .session_store
                 .load_transport_state(&source)
                 .await?
-                .expect("Transport state should exist for cached session");
+                .ok_or_else(|| {
+                    RemoteClientError::SessionCache(format!(
+                        "Missing transport state for cached session {source:?}"
+                    ))
+                })?;
             self.transports.insert(source, session);
         }
 
@@ -816,15 +819,7 @@ impl UserClientInner {
                 let _ = reply.send(result);
             }
             UserClientCommand::GetRendezvousToken { name, reply } => {
-                let proxy_client = match self.proxy_client.as_ref() {
-                    Some(pc) => pc,
-                    None => {
-                        let _ = reply.send(Err(RemoteClientError::NotInitialized));
-                        return;
-                    }
-                };
-
-                if let Err(e) = proxy_client.request_rendezvous().await {
+                if let Err(e) = self.proxy_client.request_rendezvous().await {
                     let _ = reply.send(Err(e));
                     return;
                 }
@@ -850,8 +845,7 @@ impl UserClientInner {
     ) -> Result<String, RemoteClientError> {
         let psk = Psk::generate();
         let psk_id = psk.id();
-        let fingerprint = self.identity_provider.fingerprint().await;
-        let token = format!("{}_{}", psk.to_hex(), hex::encode(fingerprint.0));
+        let token = format!("{}_{}", psk.to_hex(), hex::encode(self.own_fingerprint.0));
 
         let pairing = PendingPairing {
             connection_name: name,
@@ -1000,12 +994,9 @@ impl UserClientInner {
 
         let msg_json = serde_json::to_string(&msg)?;
 
-        let proxy_client = self
-            .proxy_client
-            .as_ref()
-            .ok_or(RemoteClientError::NotInitialized)?;
-
-        proxy_client.send_to(source, msg_json.into_bytes()).await?;
+        self.proxy_client
+            .send_to(source, msg_json.into_bytes())
+            .await?;
 
         // Send notification and audit
         if reply.approved {
@@ -1092,12 +1083,7 @@ impl UserClientInner {
 
         let msg_json = serde_json::to_string(&msg)?;
 
-        let proxy_client = self
-            .proxy_client
-            .as_ref()
-            .ok_or(RemoteClientError::NotInitialized)?;
-
-        proxy_client
+        self.proxy_client
             .send_to(remote_fingerprint, msg_json.into_bytes())
             .await?;
 

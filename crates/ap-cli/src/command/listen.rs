@@ -20,7 +20,7 @@ use tokio::sync::{mpsc, oneshot};
 use super::tui::{
     App, AppAction, Message, MessageKind, Mode, init_terminal, restore_terminal, wait_for_keypress,
 };
-use super::util::{format_listen_notification, format_relative_time};
+use super::util::{format_listen_notification, format_relative_time, val_style};
 use crate::providers::{CredentialProvider, LookupResult, ProviderStatus};
 use crate::storage::{FileIdentityStorage, FileSessionCache};
 
@@ -217,13 +217,6 @@ fn idle_footer() -> Line<'static> {
     ])
 }
 
-/// Styled value for fingerprints, codes, domains in the TUI.
-fn val_style() -> Style {
-    Style::default()
-        .fg(Color::Cyan)
-        .add_modifier(Modifier::BOLD)
-}
-
 /// Run the interactive event+prompt loop using the ratatui TUI.
 ///
 /// Handles notifications and requests from the `UserClient`, credential lookups,
@@ -363,8 +356,8 @@ async fn run_event_loop(
                                     let old_phase = std::mem::replace(&mut phase, Phase::Idle);
                                     if let Phase::CredentialApproval { query, credential, reply } = old_phase {
                                         let label = credential.domain.clone().unwrap_or_else(|| query.to_string());
+                                        let cred_id = credential.credential_id.clone();
                                         if approved {
-                                            let cred_id = credential.credential_id.clone();
                                             let _ = reply.send(CredentialRequestReply {
                                                 approved: true,
                                                 credential: Some(credential),
@@ -375,7 +368,7 @@ async fn run_event_loop(
                                             let _ = reply.send(CredentialRequestReply {
                                                 approved: false,
                                                 credential: None,
-                                                credential_id: credential.credential_id,
+                                                credential_id: cred_id,
                                             });
                                             app.push_msg(MessageKind::Error, format!("Credential denied for {label}"));
                                         }
@@ -501,12 +494,15 @@ async fn run_event_loop(
                                     );
                                     app.push_msg(MessageKind::Info, found_msg);
                                     app.commands = &[];
-                                    let identity_hex = hex::encode(identity.0);
-                                    let device_label = sessions.iter()
-                                        .find(|(fp, _, _, _)| identity_hex.contains(&hex::encode(fp.0)))
+                                    let device_label = sessions
+                                        .iter()
+                                        .find(|(fp, _, _, _)| *fp == identity)
                                         .map(|(fp, name, _, _)| {
                                             name.clone().unwrap_or_else(|| {
-                                                hex::encode(fp.0).chars().take(12).collect::<String>()
+                                                hex::encode(fp.0)
+                                                    .chars()
+                                                    .take(12)
+                                                    .collect::<String>()
                                             })
                                         })
                                         .unwrap_or_else(|| "unknown device".to_string());
@@ -623,8 +619,6 @@ async fn run_user_client_session(
             identity_keypair: Some(identity_provider.identity().await),
         }));
 
-        let sessions = session_store.list_sessions().await;
-
         let client = UserClient::connect(
             identity_provider as Box<dyn IdentityProvider>,
             session_store as Box<dyn SessionStore>,
@@ -675,7 +669,7 @@ async fn run_user_client_session(
                 ));
             }
             app.set_session_panel(session_info_messages(
-                &sessions,
+                &cached_sessions,
                 Some("New session  (awaiting connection)"),
             ));
         }
@@ -686,7 +680,7 @@ async fn run_user_client_session(
             &mut reader,
             notification_rx,
             request_rx,
-            &sessions,
+            &cached_sessions,
             &pending_session_name,
             provider,
             &mut log_rx,

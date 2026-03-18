@@ -11,7 +11,7 @@ use ratatui::text::Span;
 use super::tui::{Message, MessageKind};
 
 /// Highlighted value style (bright cyan, bold) for fingerprints, codes, domains.
-fn val_style() -> Style {
+pub fn val_style() -> Style {
     Style::default()
         .fg(Color::Cyan)
         .add_modifier(Modifier::BOLD)
