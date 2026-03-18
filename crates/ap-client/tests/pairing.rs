@@ -13,7 +13,7 @@ use ap_client::{
 };
 use ap_noise::{MultiDeviceTransport, PersistentTransportState};
 use ap_proxy_client::IncomingMessage;
-use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair, RendevouzCode};
+use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair, RendezvousCode};
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
@@ -205,7 +205,7 @@ struct MockProxyClient {
     /// The paired proxy's fingerprint (for routing)
     peer_fingerprint: Option<IdentityFingerprint>,
     /// Rendezvous code (for user client)
-    rendezvous_code: Option<RendevouzCode>,
+    rendezvous_code: Option<RendezvousCode>,
 }
 
 impl MockProxyClient {
@@ -229,7 +229,7 @@ impl MockProxyClient {
         self.peer_fingerprint = Some(fingerprint);
     }
 
-    fn set_rendezvous_code(&mut self, code: RendevouzCode) {
+    fn set_rendezvous_code(&mut self, code: RendezvousCode) {
         self.rendezvous_code = Some(code);
     }
 }
@@ -249,16 +249,16 @@ impl ProxyClient for MockProxyClient {
         let code = self
             .rendezvous_code
             .clone()
-            .unwrap_or_else(|| RendevouzCode::from_string("TEST12345".to_string()));
+            .unwrap_or_else(|| RendezvousCode::from_string("TEST12345".to_string()));
         self.incoming_tx
-            .send(IncomingMessage::RendevouzInfo(code))
+            .send(IncomingMessage::RendezvousInfo(code))
             .map_err(|_| ap_client::RemoteClientError::ChannelClosed)?;
         Ok(())
     }
 
     async fn request_identity(
         &self,
-        _code: RendevouzCode,
+        _code: RendezvousCode,
     ) -> Result<(), ap_client::RemoteClientError> {
         // Return the peer's identity
         if let Some(peer_fp) = self.peer_fingerprint {
@@ -516,7 +516,7 @@ async fn test_fingerprint_pairing() {
                 create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
 
             // Set up rendezvous code
-            let rendezvous_code = RendevouzCode::from_string("ABCDEF123".to_string());
+            let rendezvous_code = RendezvousCode::from_string("ABCDEF123".to_string());
             user_proxy.set_rendezvous_code(rendezvous_code.clone());
             remote_proxy.set_peer_fingerprint(user_fingerprint);
 
@@ -549,10 +549,10 @@ async fn test_fingerprint_pairing() {
                     .await
             });
 
-            // Wait for RendevouzCodeGenerated event
+            // Wait for RendezvousCodeGenerated event
             let code = timeout(Duration::from_secs(5), async {
                 loop {
-                    if let Some(UserClientEvent::RendevouzCodeGenerated { code }) =
+                    if let Some(UserClientEvent::RendezvousCodeGenerated { code }) =
                         user_event_rx.recv().await
                     {
                         return code;
@@ -560,7 +560,7 @@ async fn test_fingerprint_pairing() {
                 }
             })
             .await
-            .expect("Should receive RendevouzCodeGenerated event");
+            .expect("Should receive RendezvousCodeGenerated event");
 
             // Create and connect RemoteClient
             let mut remote_client = RemoteClient::new(
@@ -717,7 +717,7 @@ impl ProxyClient for ReconnectingMockProxyClient {
         Ok(())
     }
 
-    async fn request_identity(&self, _code: RendevouzCode) -> Result<(), RemoteClientError> {
+    async fn request_identity(&self, _code: RendezvousCode) -> Result<(), RemoteClientError> {
         Ok(())
     }
 
@@ -883,7 +883,7 @@ async fn test_fingerprint_pairing_both_sides_verify() {
                 create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
 
             // Set up rendezvous code
-            let rendezvous_code = RendevouzCode::from_string("XYZW56789".to_string());
+            let rendezvous_code = RendezvousCode::from_string("XYZW56789".to_string());
             user_proxy.set_rendezvous_code(rendezvous_code.clone());
             remote_proxy.set_peer_fingerprint(user_fingerprint);
 
@@ -916,10 +916,10 @@ async fn test_fingerprint_pairing_both_sides_verify() {
                     .await
             });
 
-            // Wait for RendevouzCodeGenerated event
+            // Wait for RendezvousCodeGenerated event
             let code = timeout(Duration::from_secs(5), async {
                 loop {
-                    if let Some(UserClientEvent::RendevouzCodeGenerated { code }) =
+                    if let Some(UserClientEvent::RendezvousCodeGenerated { code }) =
                         user_event_rx.recv().await
                     {
                         return code;
@@ -927,7 +927,7 @@ async fn test_fingerprint_pairing_both_sides_verify() {
                 }
             })
             .await
-            .expect("Should receive RendevouzCodeGenerated event");
+            .expect("Should receive RendezvousCodeGenerated event");
 
             // Create and connect RemoteClient
             let mut remote_client = RemoteClient::new(

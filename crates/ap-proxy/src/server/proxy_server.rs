@@ -11,7 +11,7 @@ use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tokio_tungstenite::accept_async;
 
-pub struct RendevouzEntry {
+pub struct RendezvousEntry {
     pub fingerprint: IdentityFingerprint,
     pub created_at: SystemTime,
     pub used: bool,
@@ -19,7 +19,7 @@ pub struct RendevouzEntry {
 
 pub struct ServerState {
     pub connections: Arc<RwLock<HashMap<IdentityFingerprint, Vec<Arc<AuthenticatedConnection>>>>>,
-    pub rendezvous_map: Arc<RwLock<HashMap<String, RendevouzEntry>>>,
+    pub rendezvous_map: Arc<RwLock<HashMap<String, RendezvousEntry>>>,
 }
 
 impl Default for ServerState {

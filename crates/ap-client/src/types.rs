@@ -88,12 +88,12 @@ pub enum RemoteClientEvent {
         fingerprint: IdentityFingerprint,
     },
     /// Rendezvous code resolution starting
-    RendevouzResolving {
+    RendezvousResolving {
         /// The rendezvous code being resolved
         code: String,
     },
     /// Rendezvous code resolved to fingerprint
-    RendevouzResolved {
+    RendezvousResolved {
         /// The resolved identity fingerprint
         fingerprint: IdentityFingerprint,
     },

@@ -69,11 +69,11 @@ pub enum RemoteClientError {
 
     /// Rendezvous code resolution failed
     #[error("Rendezvous resolution failed: {0}")]
-    RendevouzResolutionFailed(String),
+    RendezvousResolutionFailed(String),
 
     /// Invalid rendezvous code format
     #[error("Invalid rendezvous code: {0}")]
-    InvalidRendevouzCode(String),
+    InvalidRendezvousCode(String),
 
     /// User rejected fingerprint verification
     #[error("Fingerprint verification rejected by user")]

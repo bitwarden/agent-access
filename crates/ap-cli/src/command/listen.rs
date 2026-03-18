@@ -505,7 +505,7 @@ async fn run_event_loop(
                                     }
                                 }
                             }
-                            UserClientEvent::RendevouzCodeGenerated { .. }
+                            UserClientEvent::RendezvousCodeGenerated { .. }
                             | UserClientEvent::PskTokenGenerated { .. } => {
                                 // Update session panel with pending label
                                 app.set_session_panel(session_info_messages(sessions, Some("New session  (awaiting connection)")));

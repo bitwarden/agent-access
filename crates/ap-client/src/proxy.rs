@@ -6,7 +6,7 @@
 use ap_proxy_client::IncomingMessage;
 #[cfg(feature = "native-websocket")]
 use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient};
-use ap_proxy_protocol::{IdentityFingerprint, RendevouzCode};
+use ap_proxy_protocol::{IdentityFingerprint, RendezvousCode};
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 
@@ -24,7 +24,7 @@ pub trait ProxyClient: Send + Sync {
     async fn request_rendezvous(&self) -> Result<(), RemoteClientError>;
 
     /// Request the identity associated with a rendezvous code
-    async fn request_identity(&self, code: RendevouzCode) -> Result<(), RemoteClientError>;
+    async fn request_identity(&self, code: RendezvousCode) -> Result<(), RemoteClientError>;
 
     /// Send a message to a peer by their fingerprint
     async fn send_to(
@@ -68,7 +68,7 @@ impl ProxyClient for DefaultProxyClient {
             .map_err(RemoteClientError::from)
     }
 
-    async fn request_identity(&self, code: RendevouzCode) -> Result<(), RemoteClientError> {
+    async fn request_identity(&self, code: RendezvousCode) -> Result<(), RemoteClientError> {
         self.inner
             .request_identity(code)
             .await

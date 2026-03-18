@@ -144,19 +144,19 @@ async fn test_rendezvous_request() {
     let mut incoming = client.connect().await.expect("should connect");
 
     // Request rendezvous code
-    client.request_rendezvous().await.ok(); // Sends GetRendevouz
+    client.request_rendezvous().await.ok(); // Sends GetRendezvous
 
-    // Receive RendevouzInfo through incoming channel
+    // Receive RendezvousInfo through incoming channel
     tokio::time::timeout(tokio::time::Duration::from_secs(5), async {
         let msg = incoming
             .recv()
             .await
             .expect("should receive rendezvous info");
         match msg {
-            IncomingMessage::RendevouzInfo(code) => {
+            IncomingMessage::RendezvousInfo(code) => {
                 assert_eq!(code.as_str().len(), 11); // Format is "ABC-DEF-GHI" (11 chars)
             }
-            _ => panic!("Expected RendevouzInfo"),
+            _ => panic!("Expected RendezvousInfo"),
         }
     })
     .await

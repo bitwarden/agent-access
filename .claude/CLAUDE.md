@@ -73,7 +73,7 @@ ap-cli (CLI binary)
 ## Three-Phase Proxy Protocol
 
 1. **Authentication**: Server sends `AuthChallenge` (32-byte nonce) → client replies with `AuthResponse` (COSE_Sign1 signature + COSE public key identity) → server verifies and registers connection by `IdentityFingerprint`. 5-second timeout.
-2. **Rendezvous** (optional, new connections only): Client sends `GetRendevouz` → server generates 9-char code (5-minute TTL, single-use) → discovering client sends `GetIdentity(code)` → server returns target's `IdentityInfo`.
+2. **Rendezvous** (optional, new connections only): Client sends `GetRendezvous` → server generates 9-char code (5-minute TTL, single-use) → discovering client sends `GetIdentity(code)` → server returns target's `IdentityInfo`.
 3. **Messaging**: `Send { source, destination, payload }` — server replaces source with authenticated fingerprint, delivers to all connections matching destination fingerprint (supports multiple concurrent connections per identity).
 
 Noise handshake and encrypted credential payloads are layered on top as `ProtocolMessage` variants sent through the messaging phase.

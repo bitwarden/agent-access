@@ -37,8 +37,8 @@ pub fn exit_code_for_error(err: &RemoteClientError) -> i32 {
         | RemoteClientError::NoiseProtocol(_)
         | RemoteClientError::Timeout(_)
         | RemoteClientError::InvalidPairingCode(_)
-        | RemoteClientError::RendevouzResolutionFailed(_)
-        | RemoteClientError::InvalidRendevouzCode(_) => exit_code::AUTH_HANDSHAKE_FAILED,
+        | RemoteClientError::RendezvousResolutionFailed(_)
+        | RemoteClientError::InvalidRendezvousCode(_) => exit_code::AUTH_HANDSHAKE_FAILED,
         RemoteClientError::CredentialRequestFailed(_)
         | RemoteClientError::SecureChannelNotEstablished => exit_code::CREDENTIAL_NOT_FOUND,
         RemoteClientError::FingerprintRejected => exit_code::FINGERPRINT_MISMATCH,

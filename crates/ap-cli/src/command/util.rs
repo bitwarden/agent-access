@@ -96,14 +96,14 @@ pub fn format_connect_event(event: &RemoteClientEvent) -> Option<Message> {
                 ],
             ))
         }
-        RemoteClientEvent::RendevouzResolving { code } => Some(Message::rich(
+        RemoteClientEvent::RendezvousResolving { code } => Some(Message::rich(
             MessageKind::Status,
             vec![
                 Span::styled("Resolving rendezvous code: ", text()),
                 Span::styled(code.clone(), val_style()),
             ],
         )),
-        RemoteClientEvent::RendevouzResolved { fingerprint } => {
+        RemoteClientEvent::RendezvousResolved { fingerprint } => {
             let fp_hex = hex::encode(fingerprint.0);
             Some(Message::rich(
                 MessageKind::Success,
@@ -233,7 +233,7 @@ pub fn format_listen_event(event: &UserClientEvent) -> Option<Message> {
     match event {
         UserClientEvent::Listening {} => None,
 
-        UserClientEvent::RendevouzCodeGenerated { code } => Some(Message::rich(
+        UserClientEvent::RendezvousCodeGenerated { code } => Some(Message::rich(
             MessageKind::Prompt,
             vec![
                 Span::styled(

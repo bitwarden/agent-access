@@ -1,5 +1,5 @@
 use ap_proxy_protocol::{
-    IdentityFingerprint, IdentityKeyPair, Messages, ProxyError, RendevouzCode,
+    IdentityFingerprint, IdentityKeyPair, Messages, ProxyError, RendezvousCode,
 };
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
@@ -343,7 +343,7 @@ impl ProxyProtocolClient {
     /// Request a rendezvous code from the server.
     ///
     /// The server will generate a temporary code (format: "ABC-DEF-GHI") that maps to your
-    /// identity. The code will be delivered via [`IncomingMessage::RendevouzInfo`] on the
+    /// identity. The code will be delivered via [`IncomingMessage::RendezvousInfo`] on the
     /// channel returned by [`connect()`](ProxyProtocolClient::connect).
     ///
     /// # Rendezvous Code Properties
@@ -356,7 +356,7 @@ impl ProxyProtocolClient {
     /// # Usage Pattern
     ///
     /// 1. Call this method to request a code
-    /// 2. Receive the code via [`IncomingMessage::RendevouzInfo`]
+    /// 2. Receive the code via [`IncomingMessage::RendezvousInfo`]
     /// 3. Share the code with a peer (e.g., display as QR code)
     /// 4. Peer uses [`request_identity()`](ProxyProtocolClient::request_identity) to look up your identity
     ///
@@ -385,7 +385,7 @@ impl ProxyProtocolClient {
     /// client.request_rendezvous().await?;
     ///
     /// // Wait for response
-    /// if let Some(IncomingMessage::RendevouzInfo(code)) = incoming.recv().await {
+    /// if let Some(IncomingMessage::RendezvousInfo(code)) = incoming.recv().await {
     ///     println!("Share this code: {}", code.as_str());
     ///     // Display as QR code, send via messaging, etc.
     /// }
@@ -401,8 +401,8 @@ impl ProxyProtocolClient {
             }
         }
 
-        // Send GetRendevouz message
-        let msg = Messages::GetRendevouz;
+        // Send GetRendezvous message
+        let msg = Messages::GetRendezvous;
         let json = serde_json::to_string(&msg)?;
 
         // Send via outgoing_tx channel
@@ -440,7 +440,7 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```no_run
-    /// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage, RendevouzCode};
+    /// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage, RendezvousCode};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = ProxyClientConfig {
@@ -451,7 +451,7 @@ impl ProxyProtocolClient {
     /// let mut incoming = client.connect().await?;
     ///
     /// // Get code from user (e.g., QR scan, text input)
-    /// let code = RendevouzCode::from_string("ABC-DEF-GHI".to_string());
+    /// let code = RendezvousCode::from_string("ABC-DEF-GHI".to_string());
     ///
     /// // Look up the identity
     /// client.request_identity(code).await?;
@@ -473,7 +473,10 @@ impl ProxyProtocolClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn request_identity(&self, rendezvous_code: RendevouzCode) -> Result<(), ProxyError> {
+    pub async fn request_identity(
+        &self,
+        rendezvous_code: RendezvousCode,
+    ) -> Result<(), ProxyError> {
         // Check authenticated
         {
             let state = self.state.lock().await;
@@ -734,8 +737,8 @@ impl ProxyProtocolClient {
                                 tracing::warn!("Received Send message without source");
                             }
                         }
-                        Messages::RendevouzInfo(code) => {
-                            incoming_tx.send(IncomingMessage::RendevouzInfo(code)).ok();
+                        Messages::RendezvousInfo(code) => {
+                            incoming_tx.send(IncomingMessage::RendezvousInfo(code)).ok();
                         }
                         Messages::IdentityInfo {
                             fingerprint,

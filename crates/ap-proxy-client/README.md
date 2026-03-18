@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 IncomingMessage::Send { source, payload, .. } => {
                     println!("Message from {:?}: {:?}", source, payload);
                 }
-                IncomingMessage::RendevouzInfo(code) => {
+                IncomingMessage::RendezvousInfo(code) => {
                     println!("Your pairing token: {}", code.as_str());
                 }
                 IncomingMessage::IdentityInfo { identity, .. } => {

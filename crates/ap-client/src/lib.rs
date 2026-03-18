@@ -95,6 +95,6 @@ pub use types::{
 };
 
 // Re-export ap-proxy-protocol types
-pub use ap_proxy_protocol::{IdentityFingerprint, RendevouzCode};
+pub use ap_proxy_protocol::{IdentityFingerprint, RendezvousCode};
 // Re-export PSK type from noise protocol
 pub use ap_noise::Psk;

@@ -17,17 +17,17 @@ use serde::{Deserialize, Serialize};
 /// Rendezvous codes are short, human-readable identifiers (format: "ABC-DEF-GHI") that
 /// temporarily map to a client's identity on the proxy server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RendevouzCode {
+pub struct RendezvousCode {
     code: String,
 }
 
-impl Default for RendevouzCode {
+impl Default for RendezvousCode {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl RendevouzCode {
+impl RendezvousCode {
     /// Generate a new random rendezvous code.
     ///
     /// Creates a 9-character code from the alphanumeric alphabet (A-Z, 0-9),
@@ -42,10 +42,10 @@ impl RendevouzCode {
     /// # Examples
     ///
     /// ```
-    /// use ap_proxy_protocol::RendevouzCode;
+    /// use ap_proxy_protocol::RendezvousCode;
     ///
-    /// let code1 = RendevouzCode::new();
-    /// let code2 = RendevouzCode::new();
+    /// let code1 = RendezvousCode::new();
+    /// let code2 = RendezvousCode::new();
     ///
     /// // Each call generates a different random code
     /// assert_ne!(code1.as_str(), code2.as_str());
@@ -68,7 +68,7 @@ impl RendevouzCode {
         #[allow(clippy::string_slice)]
         let code = format!("{}-{}-{}", &code[..3], &code[3..6], &code[6..]);
 
-        RendevouzCode { code }
+        RendezvousCode { code }
     }
 
     /// Create a rendezvous code from an existing string.
@@ -84,13 +84,13 @@ impl RendevouzCode {
     /// # Examples
     ///
     /// ```
-    /// use ap_proxy_protocol::RendevouzCode;
+    /// use ap_proxy_protocol::RendezvousCode;
     ///
-    /// let code = RendevouzCode::from_string("ABC-DEF-GHI".to_string());
+    /// let code = RendezvousCode::from_string("ABC-DEF-GHI".to_string());
     /// assert_eq!(code.as_str(), "ABC-DEF-GHI");
     /// ```
     pub fn from_string(code: String) -> Self {
-        RendevouzCode { code }
+        RendezvousCode { code }
     }
 
     /// Get the code string.
@@ -101,9 +101,9 @@ impl RendevouzCode {
     /// # Examples
     ///
     /// ```
-    /// use ap_proxy_protocol::RendevouzCode;
+    /// use ap_proxy_protocol::RendezvousCode;
     ///
-    /// let code = RendevouzCode::new();
+    /// let code = RendezvousCode::new();
     /// println!("Your code: {}", code.as_str());
     /// ```
     pub fn as_str(&self) -> &str {
@@ -111,7 +111,7 @@ impl RendevouzCode {
     }
 }
 
-impl std::fmt::Display for RendevouzCode {
+impl std::fmt::Display for RendezvousCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.code)
     }
