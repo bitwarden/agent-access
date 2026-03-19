@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use ap_proxy_client::ProxyClientConfig;
 use ap_client::{
     DefaultProxyClient, IdentityFingerprint, IdentityProvider, Psk, RemoteClient,
-    RemoteClientNotification, RemoteClientRequest, SessionStore,
+    RemoteClientNotification, SessionStore,
 };
 
 use crate::storage::{FileIdentityStorage, FileSessionCache};
@@ -83,29 +83,23 @@ impl PyRemoteClient {
         let session_store = FileSessionCache::load_or_create(&self.identity_name)
             .map_err(|e| RemoteAccessError::new_err(e.to_string()))?;
 
-        let (notification_tx, notification_rx) = mpsc::channel(32);
-        let (request_tx, _request_rx) = mpsc::channel::<RemoteClientRequest>(32);
-
         let proxy_client = Box::new(DefaultProxyClient::new(ProxyClientConfig {
             proxy_url: self.proxy_url.clone(),
             identity_keypair: Some(self.runtime.block_on(identity.identity())),
         }));
 
         // Create the client (connects to proxy, spawns event loop)
-        let client = py
+        let handle = py
             .allow_threads(|| {
                 self.runtime.block_on(async {
-                    RemoteClient::connect(
-                        Box::new(identity),
-                        Box::new(session_store),
-                        proxy_client,
-                        notification_tx,
-                        request_tx,
-                    )
-                    .await
+                    RemoteClient::connect(Box::new(identity), Box::new(session_store), proxy_client)
+                        .await
                 })
             })
             .map_err(|e| RemoteAccessError::new_err(e.to_string()))?;
+
+        let client = handle.client;
+        let notification_rx = handle.notifications;
 
         // Determine connection mode and connect
         let handshake_fingerprint = py
