@@ -1,4 +1,4 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use ap_noise::{InitiatorHandshake, MultiDeviceTransport, Psk};
 use ap_proxy_client::IncomingMessage;
@@ -6,9 +6,9 @@ use ap_proxy_protocol::{IdentityFingerprint, RendezvousCode};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use rand::RngCore;
 
+use crate::compat::{now_millis, timeout};
 use crate::proxy::ProxyClient;
 use tokio::sync::{mpsc, oneshot};
-use tokio::time::timeout;
 use tracing::{debug, warn};
 
 use crate::traits::{IdentityProvider, SessionStore};
@@ -898,8 +898,8 @@ impl RemoteClientInner {
             .map_err(|e| RemoteClientError::RendezvousResolutionFailed(e.to_string()))?;
 
         // Wait for IdentityInfo response with timeout
-        let timeout_duration = tokio::time::Duration::from_secs(10);
-        match tokio::time::timeout(timeout_duration, async {
+        let timeout_duration = Duration::from_secs(10);
+        match timeout(timeout_duration, async {
             while let Some(msg) = incoming_rx.recv().await {
                 if let IncomingMessage::IdentityInfo { fingerprint, .. } = msg {
                     return Some(fingerprint);
@@ -991,13 +991,6 @@ impl RemoteClientInner {
         debug!("Handshake complete");
         Ok((transport, fingerprint.to_string()))
     }
-}
-
-fn now_millis() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
 }
 
 fn uuid_v4() -> String {
