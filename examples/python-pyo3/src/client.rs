@@ -26,6 +26,7 @@ pub struct PyRemoteClient {
     notification_rx: Option<mpsc::Receiver<RemoteClientNotification>>,
     proxy_url: String,
     identity_name: String,
+    ready: bool,
 }
 
 #[pymethods]
@@ -56,6 +57,7 @@ impl PyRemoteClient {
             notification_rx: None,
             proxy_url: proxy_url.to_string(),
             identity_name: identity_name.to_string(),
+            ready: false,
         })
     }
 
@@ -173,6 +175,7 @@ impl PyRemoteClient {
 
         self.inner = Some(client);
         self.notification_rx = Some(notification_rx);
+        self.ready = true;
 
         Ok(handshake_fingerprint)
     }
@@ -210,13 +213,14 @@ impl PyRemoteClient {
     pub fn close(&mut self, _py: Python<'_>) -> PyResult<()> {
         self.inner.take(); // Drop the handle — shuts down event loop
         self.notification_rx = None;
+        self.ready = false;
         Ok(())
     }
 
     /// Whether the secure channel is established and ready.
     #[getter]
     fn is_ready(&self) -> bool {
-        self.inner.is_some()
+        self.ready
     }
 
     /// Clear all cached sessions for this identity.
