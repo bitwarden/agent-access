@@ -1157,6 +1157,7 @@ async fn test_notification_channel_not_blocking_event_loop() {
     }
 
     handler.abort();
+    let _ = handler.await;
     drop(remote_client);
     drop(user_client);
 }
