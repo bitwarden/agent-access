@@ -51,6 +51,7 @@ pub(crate) struct PendingPairing {
     kind: PairingKind,
 }
 
+use super::notify;
 use crate::{
     error::ClientError,
     traits::{
@@ -220,6 +221,14 @@ enum UserClientCommand {
 /// communicate with the event loop through an internal command channel.
 ///
 /// `Clone` and `Send` — share freely across tasks and threads.
+/// Handle returned by [`UserClient::connect()`] containing the client and its
+/// notification/request channels.
+pub struct UserClientHandle {
+    pub client: UserClient,
+    pub notifications: mpsc::Receiver<UserClientNotification>,
+    pub requests: mpsc::Receiver<UserClientRequest>,
+}
+
 #[derive(Clone)]
 pub struct UserClient {
     command_tx: mpsc::Sender<UserClientCommand>,
@@ -231,19 +240,21 @@ impl UserClient {
     /// This is the single entry point. After `connect()` returns, the client is
     /// already listening for incoming connections. Use `get_psk_token()` or
     /// `get_rendezvous_token()` to set up pairings, and receive events through
-    /// the provided notification/request channels.
+    /// the returned handle's notification/request channels.
     ///
     /// Pass `None` for `audit_log` to use a no-op logger.
     pub async fn connect(
         identity_provider: Box<dyn IdentityProvider>,
         session_store: Box<dyn SessionStore>,
         mut proxy_client: Box<dyn ProxyClient>,
-        notification_tx: mpsc::Sender<UserClientNotification>,
-        request_tx: mpsc::Sender<UserClientRequest>,
         audit_log: Option<Box<dyn AuditLog>>,
-    ) -> Result<Self, ClientError> {
+    ) -> Result<UserClientHandle, ClientError> {
         // Authenticate with the proxy (the async part — before spawn)
         let incoming_rx = proxy_client.connect().await?;
+
+        // Create channels
+        let (notification_tx, notification_rx) = mpsc::channel(32);
+        let (request_tx, request_rx) = mpsc::channel(32);
 
         // Create command channel
         let (command_tx, command_rx) = mpsc::channel(32);
@@ -272,7 +283,11 @@ impl UserClient {
         #[cfg(not(target_arch = "wasm32"))]
         tokio::spawn(inner.run_event_loop(incoming_rx, command_rx, notification_tx, request_tx));
 
-        Ok(Self { command_tx })
+        Ok(UserClientHandle {
+            client: Self { command_tx },
+            notifications: notification_rx,
+            requests: request_rx,
+        })
     }
 
     /// Generate a PSK token for a new pairing.
@@ -333,10 +348,7 @@ impl UserClientInner {
         request_tx: mpsc::Sender<UserClientRequest>,
     ) {
         // Emit Listening notification
-        notification_tx
-            .send(UserClientNotification::Listening {})
-            .await
-            .ok();
+        notify!(notification_tx, UserClientNotification::Listening {});
 
         let mut pending_replies: FuturesUnordered<PendingReplyFuture> = FuturesUnordered::new();
 
@@ -350,27 +362,27 @@ impl UserClientInner {
                                 Ok(None) => {}
                                 Err(e) => {
                                     warn!("Error handling incoming message: {}", e);
-                                    notification_tx.send(UserClientNotification::Error {
+                                    notify!(notification_tx, UserClientNotification::Error {
                                         message: e.to_string(),
                                         context: Some("handle_incoming".to_string()),
-                                    }).await.ok();
+                                    });
                                 }
                             }
                         }
                         None => {
                             // Incoming channel closed — proxy connection lost
-                            notification_tx.send(UserClientNotification::ClientDisconnected {}).await.ok();
+                            notify!(notification_tx, UserClientNotification::ClientDisconnected {});
                             match self.attempt_reconnection(&notification_tx).await {
                                 Ok(new_rx) => {
                                     incoming_rx = new_rx;
-                                    notification_tx.send(UserClientNotification::Reconnected {}).await.ok();
+                                    notify!(notification_tx, UserClientNotification::Reconnected {});
                                 }
                                 Err(e) => {
                                     warn!("Reconnection failed permanently: {}", e);
-                                    notification_tx.send(UserClientNotification::Error {
+                                    notify!(notification_tx, UserClientNotification::Error {
                                         message: e.to_string(),
                                         context: Some("reconnection".to_string()),
-                                    }).await.ok();
+                                    });
                                     return;
                                 }
                             }
@@ -380,10 +392,10 @@ impl UserClientInner {
                 Some(reply) = pending_replies.next() => {
                     if let Err(e) = self.process_pending_reply(reply, &notification_tx).await {
                         warn!("Error processing pending reply: {}", e);
-                        notification_tx.send(UserClientNotification::Error {
+                        notify!(notification_tx, UserClientNotification::Error {
                             message: e.to_string(),
                             context: Some("process_pending_reply".to_string()),
-                        }).await.ok();
+                        });
                     }
                 }
                 cmd = command_rx.recv() => {
@@ -423,10 +435,10 @@ impl UserClientInner {
                 }
                 Err(e) => {
                     debug!("Reconnection attempt {} failed: {}", attempt, e);
-                    notification_tx
-                        .send(UserClientNotification::Reconnecting { attempt })
-                        .await
-                        .ok();
+                    notify!(
+                        notification_tx,
+                        UserClientNotification::Reconnecting { attempt }
+                    );
 
                     // Exponential backoff with jitter
                     let exp_delay = RECONNECT_BASE_DELAY
@@ -534,10 +546,7 @@ impl UserClientInner {
         request_tx: &mpsc::Sender<UserClientRequest>,
     ) -> Result<Option<PendingReplyFuture>, ClientError> {
         debug!("Received handshake init from source: {:?}", source);
-        notification_tx
-            .send(UserClientNotification::HandshakeStart {})
-            .await
-            .ok();
+        notify!(notification_tx, UserClientNotification::HandshakeStart {});
 
         // Check if this is an existing/cached session (bypass pairing lookup)
         let is_new_connection = !self.session_store.has_session(&source).await;
@@ -589,15 +598,18 @@ impl UserClientInner {
             .complete_handshake(source, &data, &ciphersuite, psk_for_handshake.as_ref())
             .await?;
 
-        notification_tx
-            .send(UserClientNotification::HandshakeComplete {})
-            .await
-            .ok();
+        notify!(
+            notification_tx,
+            UserClientNotification::HandshakeComplete {}
+        );
 
         if is_new_connection && !is_psk_connection {
             // New rendezvous connection: require fingerprint verification.
             let (tx, rx) = oneshot::channel();
 
+            if request_tx.capacity() == 0 {
+                warn!("Request channel full, waiting for consumer to drain");
+            }
             request_tx
                 .send(UserClientRequest::VerifyFingerprint {
                     fingerprint: fingerprint_str,
@@ -632,12 +644,12 @@ impl UserClientInner {
                 })
                 .await;
 
-            notification_tx
-                .send(UserClientNotification::SessionRefreshed {
+            notify!(
+                notification_tx,
+                UserClientNotification::SessionRefreshed {
                     fingerprint: source,
-                })
-                .await
-                .ok();
+                }
+            );
 
             Ok(None)
         } else {
@@ -651,13 +663,13 @@ impl UserClientInner {
             .await?;
 
             // Emit fingerprint as informational notification (no reply needed)
-            notification_tx
-                .send(UserClientNotification::HandshakeFingerprint {
+            notify!(
+                notification_tx,
+                UserClientNotification::HandshakeFingerprint {
                     fingerprint: fingerprint_str,
                     identity: source,
-                })
-                .await
-                .ok();
+                }
+            );
 
             Ok(None)
         }
@@ -752,6 +764,9 @@ impl UserClientInner {
         let (tx, rx) = oneshot::channel();
 
         // Send request to caller
+        if request_tx.capacity() == 0 {
+            warn!("Request channel full, waiting for consumer to drain");
+        }
         if request_tx
             .send(UserClientRequest::CredentialRequest {
                 query: request.query.clone(),
@@ -763,13 +778,13 @@ impl UserClientInner {
         {
             // Request channel closed — caller is gone
             warn!("Request channel closed, cannot send credential request");
-            notification_tx
-                .send(UserClientNotification::Error {
+            notify!(
+                notification_tx,
+                UserClientNotification::Error {
                     message: "Request channel closed".to_string(),
                     context: Some("handle_credential_request".to_string()),
-                })
-                .await
-                .ok();
+                }
+            );
             return Ok(None);
         }
 
@@ -872,12 +887,12 @@ impl UserClientInner {
                 });
 
                 // Emit notification so the caller knows a code is being requested
-                notification_tx
-                    .send(UserClientNotification::HandshakeProgress {
+                notify!(
+                    notification_tx,
+                    UserClientNotification::HandshakeProgress {
                         message: "Requesting rendezvous code from proxy...".to_string(),
-                    })
-                    .await
-                    .ok();
+                    }
+                );
             }
         }
     }
@@ -925,10 +940,10 @@ impl UserClientInner {
                 )
                 .await?;
 
-                notification_tx
-                    .send(UserClientNotification::FingerprintVerified {})
-                    .await
-                    .ok();
+                notify!(
+                    notification_tx,
+                    UserClientNotification::FingerprintVerified {}
+                );
             }
             Ok(FingerprintVerificationReply {
                 approved: false, ..
@@ -939,12 +954,12 @@ impl UserClientInner {
                     })
                     .await;
 
-                notification_tx
-                    .send(UserClientNotification::FingerprintRejected {
+                notify!(
+                    notification_tx,
+                    UserClientNotification::FingerprintRejected {
                         reason: "User rejected fingerprint verification".to_string(),
-                    })
-                    .await
-                    .ok();
+                    }
+                );
             }
             Err(_) => {
                 // Oneshot sender was dropped without replying — treat as rejection
@@ -955,12 +970,12 @@ impl UserClientInner {
                     })
                     .await;
 
-                notification_tx
-                    .send(UserClientNotification::FingerprintRejected {
+                notify!(
+                    notification_tx,
+                    UserClientNotification::FingerprintRejected {
                         reason: "Verification cancelled (reply dropped)".to_string(),
-                    })
-                    .await
-                    .ok();
+                    }
+                );
             }
         }
 
@@ -1052,13 +1067,13 @@ impl UserClientInner {
                 })
                 .await;
 
-            notification_tx
-                .send(UserClientNotification::CredentialApproved {
+            notify!(
+                notification_tx,
+                UserClientNotification::CredentialApproved {
                     domain,
                     credential_id: reply.credential_id,
-                })
-                .await
-                .ok();
+                }
+            );
         } else {
             self.audit_log
                 .write(AuditEvent::CredentialDenied {
@@ -1070,13 +1085,13 @@ impl UserClientInner {
                 })
                 .await;
 
-            notification_tx
-                .send(UserClientNotification::CredentialDenied {
+            notify!(
+                notification_tx,
+                UserClientNotification::CredentialDenied {
                     domain,
                     credential_id: reply.credential_id,
-                })
-                .await
-                .ok();
+                }
+            );
         }
 
         Ok(())

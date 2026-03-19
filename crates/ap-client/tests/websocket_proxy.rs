@@ -9,14 +9,13 @@ use std::sync::Mutex;
 
 use ap_client::{
     CredentialData, CredentialRequestReply, DefaultProxyClient, FingerprintVerificationReply,
-    IdentityProvider, Psk, RemoteClient, RemoteClientNotification, RemoteClientRequest,
-    SessionStore, UserClient, UserClientNotification, UserClientRequest,
+    IdentityProvider, Psk, RemoteClient, RemoteClientHandle, RemoteClientNotification,
+    SessionStore, UserClient, UserClientHandle, UserClientNotification, UserClientRequest,
 };
 use ap_noise::MultiDeviceTransport;
 use ap_proxy::server::ProxyServer;
 use ap_proxy_client::ProxyClientConfig;
 use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair};
-use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
 
 // ============================================================================
@@ -353,26 +352,24 @@ async fn test_e2e_psk_pairing_and_credential_request() {
 
     let user_keypair = user_identity.identity().await;
 
-    // 3. Create notification and request channels for UserClient
-    let (notification_tx, mut notification_rx) = mpsc::channel::<UserClientNotification>(32);
-    let (request_tx, mut request_rx) = mpsc::channel::<UserClientRequest>(32);
-
-    // 4. Create UserClient with DefaultProxyClient
+    // 3. Create UserClient with DefaultProxyClient
     let user_proxy = create_proxy_client(addr, Some(user_keypair));
     let user_session_store = MockSessionStore::new();
 
-    let user_client = UserClient::connect(
+    let UserClientHandle {
+        client: user_client,
+        notifications: mut notification_rx,
+        requests: mut request_rx,
+    } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_session_store),
         Box::new(user_proxy),
-        notification_tx,
-        request_tx,
         None,
     )
     .await
     .expect("UserClient should connect");
 
-    // 5. Get PSK token
+    // 4. Get PSK token
     let token = user_client
         .get_psk_token(None)
         .await
@@ -387,21 +384,18 @@ async fn test_e2e_psk_pairing_and_credential_request() {
     fp_array.copy_from_slice(&fp_bytes);
     let fingerprint = IdentityFingerprint(fp_array);
 
-    // 6. Create notification and request channels for RemoteClient
-    let (remote_notification_tx, mut remote_notification_rx) =
-        mpsc::channel::<RemoteClientNotification>(32);
-    let (remote_request_tx, mut _remote_request_rx) = mpsc::channel::<RemoteClientRequest>(32);
-
-    // 7. Create RemoteClient with DefaultProxyClient
+    // 5. Create RemoteClient with DefaultProxyClient
     let remote_proxy = create_proxy_client(addr, None);
     let remote_session_store = MockSessionStore::new();
 
-    let remote_client = RemoteClient::connect(
+    let RemoteClientHandle {
+        client: remote_client,
+        notifications: mut remote_notification_rx,
+        requests: mut _remote_request_rx,
+    } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_session_store),
         Box::new(remote_proxy),
-        remote_notification_tx,
-        remote_request_tx,
     )
     .await
     .expect("RemoteClient should connect");
@@ -501,47 +495,42 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
 
     let user_keypair = user_identity.identity().await;
 
-    // 3. Create notification and request channels for UserClient
-    let (notification_tx, _notification_rx) = mpsc::channel::<UserClientNotification>(32);
-    let (request_tx, mut request_rx) = mpsc::channel::<UserClientRequest>(32);
-
-    // 4. Create UserClient with DefaultProxyClient
+    // 3. Create UserClient with DefaultProxyClient
     let user_proxy = create_proxy_client(addr, Some(user_keypair));
     let user_session_store = MockSessionStore::new();
 
-    let user_client = UserClient::connect(
+    let UserClientHandle {
+        client: user_client,
+        notifications: _notification_rx,
+        requests: mut request_rx,
+    } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_session_store),
         Box::new(user_proxy),
-        notification_tx,
-        request_tx,
         None,
     )
     .await
     .expect("UserClient should connect");
 
-    // 5. Get rendezvous token
+    // 4. Get rendezvous token
     let code = user_client
         .get_rendezvous_token(None)
         .await
         .expect("Should get rendezvous token");
     let code = code.as_str().to_string();
 
-    // 6. Create notification and request channels for RemoteClient
-    let (remote_notification_tx, mut remote_notification_rx) =
-        mpsc::channel::<RemoteClientNotification>(32);
-    let (remote_request_tx, mut _remote_request_rx) = mpsc::channel::<RemoteClientRequest>(32);
-
-    // 7. Create RemoteClient with DefaultProxyClient
+    // 5. Create RemoteClient with DefaultProxyClient
     let remote_proxy = create_proxy_client(addr, None);
     let remote_session_store = MockSessionStore::new();
 
-    let remote_client = RemoteClient::connect(
+    let RemoteClientHandle {
+        client: remote_client,
+        notifications: mut remote_notification_rx,
+        requests: mut _remote_request_rx,
+    } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_session_store),
         Box::new(remote_proxy),
-        remote_notification_tx,
-        remote_request_tx,
     )
     .await
     .expect("RemoteClient should connect");
@@ -652,26 +641,24 @@ async fn test_e2e_credential_request_denied() {
 
     let user_keypair = user_identity.identity().await;
 
-    // 3. Create notification and request channels for UserClient
-    let (notification_tx, mut notification_rx) = mpsc::channel::<UserClientNotification>(32);
-    let (request_tx, mut request_rx) = mpsc::channel::<UserClientRequest>(32);
-
-    // 4. Create UserClient with DefaultProxyClient
+    // 3. Create UserClient with DefaultProxyClient
     let user_proxy = create_proxy_client(addr, Some(user_keypair));
     let user_session_store = MockSessionStore::new();
 
-    let user_client = UserClient::connect(
+    let UserClientHandle {
+        client: user_client,
+        notifications: mut notification_rx,
+        requests: mut request_rx,
+    } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_session_store),
         Box::new(user_proxy),
-        notification_tx,
-        request_tx,
         None,
     )
     .await
     .expect("UserClient should connect");
 
-    // 5. Get PSK token
+    // 4. Get PSK token
     let token = user_client
         .get_psk_token(None)
         .await
@@ -685,20 +672,18 @@ async fn test_e2e_credential_request_denied() {
     fp_array.copy_from_slice(&fp_bytes);
     let fingerprint = IdentityFingerprint(fp_array);
 
-    // 6. Create RemoteClient
-    let (remote_notification_tx, _remote_notification_rx) =
-        mpsc::channel::<RemoteClientNotification>(32);
-    let (remote_request_tx, mut _remote_request_rx) = mpsc::channel::<RemoteClientRequest>(32);
-
+    // 5. Create RemoteClient
     let remote_proxy = create_proxy_client(addr, None);
     let remote_session_store = MockSessionStore::new();
 
-    let remote_client = RemoteClient::connect(
+    let RemoteClientHandle {
+        client: remote_client,
+        notifications: _remote_notification_rx,
+        requests: mut _remote_request_rx,
+    } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_session_store),
         Box::new(remote_proxy),
-        remote_notification_tx,
-        remote_request_tx,
     )
     .await
     .expect("RemoteClient should connect");
@@ -767,26 +752,24 @@ async fn test_e2e_multiple_credential_requests() {
 
     let user_keypair = user_identity.identity().await;
 
-    // 3. Create notification and request channels for UserClient
-    let (notification_tx, mut notification_rx) = mpsc::channel::<UserClientNotification>(32);
-    let (request_tx, mut request_rx) = mpsc::channel::<UserClientRequest>(32);
-
-    // 4. Create UserClient with DefaultProxyClient
+    // 3. Create UserClient with DefaultProxyClient
     let user_proxy = create_proxy_client(addr, Some(user_keypair));
     let user_session_store = MockSessionStore::new();
 
-    let user_client = UserClient::connect(
+    let UserClientHandle {
+        client: user_client,
+        notifications: mut notification_rx,
+        requests: mut request_rx,
+    } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_session_store),
         Box::new(user_proxy),
-        notification_tx,
-        request_tx,
         None,
     )
     .await
     .expect("UserClient should connect");
 
-    // 5. Get PSK token
+    // 4. Get PSK token
     let token = user_client
         .get_psk_token(None)
         .await
@@ -800,20 +783,18 @@ async fn test_e2e_multiple_credential_requests() {
     fp_array.copy_from_slice(&fp_bytes);
     let fingerprint = IdentityFingerprint(fp_array);
 
-    // 6. Create RemoteClient
-    let (remote_notification_tx, _remote_notification_rx) =
-        mpsc::channel::<RemoteClientNotification>(32);
-    let (remote_request_tx, mut _remote_request_rx) = mpsc::channel::<RemoteClientRequest>(32);
-
+    // 5. Create RemoteClient
     let remote_proxy = create_proxy_client(addr, None);
     let remote_session_store = MockSessionStore::new();
 
-    let remote_client = RemoteClient::connect(
+    let RemoteClientHandle {
+        client: remote_client,
+        notifications: _remote_notification_rx,
+        requests: mut _remote_request_rx,
+    } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_session_store),
         Box::new(remote_proxy),
-        remote_notification_tx,
-        remote_request_tx,
     )
     .await
     .expect("RemoteClient should connect");
@@ -907,26 +888,24 @@ async fn test_e2e_transport_state_persistence() {
 
     let user_keypair = user_identity.identity().await;
 
-    // 3. Create notification and request channels for UserClient
-    let (notification_tx, mut notification_rx) = mpsc::channel::<UserClientNotification>(32);
-    let (request_tx, _request_rx) = mpsc::channel::<UserClientRequest>(32);
-
-    // 4. Create UserClient with DefaultProxyClient
+    // 3. Create UserClient with DefaultProxyClient
     let user_proxy = create_proxy_client(addr, Some(user_keypair));
     let user_session_store = MockSessionStore::new();
 
-    let user_client = UserClient::connect(
+    let UserClientHandle {
+        client: user_client,
+        notifications: mut notification_rx,
+        requests: _request_rx,
+    } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_session_store),
         Box::new(user_proxy),
-        notification_tx,
-        request_tx,
         None,
     )
     .await
     .expect("UserClient should connect");
 
-    // 5. Get PSK token
+    // 4. Get PSK token
     let token = user_client
         .get_psk_token(None)
         .await
@@ -941,23 +920,20 @@ async fn test_e2e_transport_state_persistence() {
     fp_array.copy_from_slice(&fp_bytes);
     let fingerprint = IdentityFingerprint(fp_array);
 
-    // 6. Create notification and request channels for RemoteClient
-    let (remote_notification_tx, mut remote_notification_rx) =
-        mpsc::channel::<RemoteClientNotification>(32);
-    let (remote_request_tx, mut _remote_request_rx) = mpsc::channel::<RemoteClientRequest>(32);
-
-    // 7. Create RemoteClient with Arc<MockSessionStore> for later access
+    // 5. Create RemoteClient with Arc<MockSessionStore> for later access
     let remote_proxy = create_proxy_client(addr, None);
     let remote_session_store = Arc::new(MockSessionStore::new());
     let session_store_clone = Arc::clone(&remote_session_store);
 
     // Reuse the module-level SharedSessionStore wrapper
-    let remote_client = RemoteClient::connect(
+    let RemoteClientHandle {
+        client: remote_client,
+        notifications: mut remote_notification_rx,
+        requests: mut _remote_request_rx,
+    } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(SharedSessionStore(remote_session_store)),
         Box::new(remote_proxy),
-        remote_notification_tx,
-        remote_request_tx,
     )
     .await
     .expect("RemoteClient should connect");
@@ -1047,23 +1023,21 @@ async fn test_e2e_multi_device_credential_response() {
     // Clone keypair for device 2
     let user_keypair_device2 = user_keypair.clone();
 
-    // 3. Create notification and request channels for UserClient Device 1
-    let (notification_tx1, mut notification_rx1) = mpsc::channel::<UserClientNotification>(256);
-    let (request_tx1, mut request_rx1) = mpsc::channel::<UserClientRequest>(256);
-
-    // 4. Create UserClient Device 1 with DefaultProxyClient
+    // 3. Create UserClient Device 1 with DefaultProxyClient
     let user_proxy1 = create_proxy_client(addr, Some(user_keypair.clone()));
 
     // Use Arc<MockSessionStore> for later access to transport state
     let user_session_store1 = Arc::new(MockSessionStore::new());
     let session_store_clone = Arc::clone(&user_session_store1);
 
-    let user_client1 = UserClient::connect(
+    let UserClientHandle {
+        client: user_client1,
+        notifications: mut notification_rx1,
+        requests: mut request_rx1,
+    } = UserClient::connect(
         Box::new(MockIdentityProvider::with_keypair(user_keypair)),
         Box::new(SharedSessionStore(Arc::clone(&user_session_store1))),
         Box::new(user_proxy1),
-        notification_tx1,
-        request_tx1,
         None,
     )
     .await
@@ -1084,17 +1058,15 @@ async fn test_e2e_multi_device_credential_response() {
     let user_fingerprint = IdentityFingerprint(fp_array);
 
     // 6. Create RemoteClient
-    let (remote_notification_tx, mut remote_notification_rx) =
-        mpsc::channel::<RemoteClientNotification>(256);
-    let (remote_request_tx, mut _remote_request_rx) = mpsc::channel::<RemoteClientRequest>(256);
-
     let remote_proxy = create_proxy_client(addr, Some(remote_keypair));
-    let remote_client = RemoteClient::connect(
+    let RemoteClientHandle {
+        client: remote_client,
+        notifications: mut remote_notification_rx,
+        requests: mut _remote_request_rx,
+    } = RemoteClient::connect(
         Box::new(MockIdentityProvider::new()),
         Box::new(MockSessionStore::new()),
         Box::new(remote_proxy),
-        remote_notification_tx,
-        remote_request_tx,
     )
     .await
     .expect("RemoteClient should connect");
@@ -1123,16 +1095,15 @@ async fn test_e2e_multi_device_credential_response() {
     }
 
     // 9. Create UserClient Device 2 with SHARED session store
-    let (notification_tx2, mut notification_rx2) = mpsc::channel::<UserClientNotification>(256);
-    let (request_tx2, mut request_rx2) = mpsc::channel::<UserClientRequest>(256);
-
     let user_proxy2 = create_proxy_client(addr, Some(user_keypair_device2.clone()));
-    let user_client2 = UserClient::connect(
+    let UserClientHandle {
+        client: user_client2,
+        notifications: mut notification_rx2,
+        requests: mut request_rx2,
+    } = UserClient::connect(
         Box::new(MockIdentityProvider::with_keypair(user_keypair_device2)),
         Box::new(SharedSessionStore(Arc::clone(&session_store_clone))),
         Box::new(user_proxy2),
-        notification_tx2,
-        request_tx2,
         None,
     )
     .await
