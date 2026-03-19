@@ -109,4 +109,4 @@ pub use types::{ConnectionMode, CredentialData, CredentialQuery, PskId};
 // Re-export ap-proxy-protocol types
 pub use ap_proxy_protocol::{IdentityFingerprint, RendezvousCode};
 // Re-export PSK type from noise protocol
-pub use ap_noise::Psk;
+pub use ap_noise::{MultiDeviceTransport, Psk};
