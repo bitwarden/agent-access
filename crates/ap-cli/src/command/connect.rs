@@ -832,25 +832,16 @@ async fn start_connection(
     mpsc::Receiver<RemoteClientRequest>,
     RemoteClient,
 )> {
-    let (notification_tx, notification_rx) = mpsc::channel(32);
-    let (request_tx, request_rx) = mpsc::channel(32);
-
     let proxy_client = Box::new(DefaultProxyClient::new(ProxyClientConfig {
         proxy_url: proxy_url.to_string(),
         identity_keypair: Some(identity_provider.identity().await),
     }));
 
-    let client = RemoteClient::connect(
-        identity_provider,
-        session_store,
-        proxy_client,
-        notification_tx,
-        request_tx,
-    )
-    .await
-    .map_err(|e| color_eyre::eyre::eyre!("Connection to proxy failed: {}", e))?;
+    let handle = RemoteClient::connect(identity_provider, session_store, proxy_client)
+        .await
+        .map_err(|e| color_eyre::eyre::eyre!("Connection to proxy failed: {}", e))?;
 
-    Ok((notification_rx, request_rx, client))
+    Ok((handle.notifications, handle.requests, handle.client))
 }
 
 /// Validate that a rendezvous code has the correct format

@@ -11,6 +11,7 @@ use crate::proxy::ProxyClient;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, warn};
 
+use super::notify;
 use crate::traits::{IdentityProvider, SessionStore};
 use crate::{
     error::ClientError,
@@ -173,6 +174,14 @@ enum RemoteClientCommand {
 ///
 /// `Clone` and `Send` — share freely across tasks and threads.
 /// Dropping all handles shuts down the event loop and disconnects from the proxy.
+/// Handle returned by [`RemoteClient::connect()`] containing the client and its
+/// notification/request channels.
+pub struct RemoteClientHandle {
+    pub client: RemoteClient,
+    pub notifications: mpsc::Receiver<RemoteClientNotification>,
+    pub requests: mpsc::Receiver<RemoteClientRequest>,
+}
+
 #[derive(Clone)]
 pub struct RemoteClient {
     command_tx: mpsc::Sender<RemoteClientCommand>,
@@ -191,26 +200,24 @@ impl RemoteClient {
         identity_provider: Box<dyn IdentityProvider>,
         session_store: Box<dyn SessionStore>,
         mut proxy_client: Box<dyn ProxyClient>,
-        notification_tx: mpsc::Sender<RemoteClientNotification>,
-        request_tx: mpsc::Sender<RemoteClientRequest>,
-    ) -> Result<Self, ClientError> {
+    ) -> Result<RemoteClientHandle, ClientError> {
         let own_fingerprint = identity_provider.fingerprint().await;
 
         debug!("Connecting to proxy with identity {:?}", own_fingerprint);
 
-        notification_tx
-            .send(RemoteClientNotification::Connecting)
-            .await
-            .ok();
+        let (notification_tx, notification_rx) = mpsc::channel(32);
+        let (request_tx, request_rx) = mpsc::channel(32);
+
+        notify!(notification_tx, RemoteClientNotification::Connecting);
 
         let incoming_rx = proxy_client.connect().await?;
 
-        notification_tx
-            .send(RemoteClientNotification::Connected {
+        notify!(
+            notification_tx,
+            RemoteClientNotification::Connected {
                 fingerprint: own_fingerprint,
-            })
-            .await
-            .ok();
+            }
+        );
 
         debug!("Connected to proxy successfully");
 
@@ -236,7 +243,11 @@ impl RemoteClient {
         #[cfg(not(target_arch = "wasm32"))]
         tokio::spawn(inner.run_event_loop(incoming_rx, command_rx, notification_tx, request_tx));
 
-        Ok(Self { command_tx })
+        Ok(RemoteClientHandle {
+            client: Self { command_tx },
+            notifications: notification_rx,
+            requests: request_rx,
+        })
     }
 
     /// Pair with a remote device using a rendezvous code.
@@ -375,9 +386,9 @@ impl RemoteClientInner {
                         }
                         None => {
                             // Proxy disconnected
-                            notification_tx.send(RemoteClientNotification::Disconnected {
+                            notify!(notification_tx, RemoteClientNotification::Disconnected {
                                 reason: Some("Proxy connection closed".to_string()),
-                            }).await.ok();
+                            });
                             return;
                         }
                     }
@@ -476,29 +487,26 @@ impl RemoteClientInner {
         request_tx: &mpsc::Sender<RemoteClientRequest>,
     ) -> Result<IdentityFingerprint, ClientError> {
         // Resolve rendezvous code to fingerprint
-        notification_tx
-            .send(RemoteClientNotification::RendezvousResolving {
+        notify!(
+            notification_tx,
+            RemoteClientNotification::RendezvousResolving {
                 code: rendezvous_code.clone(),
-            })
-            .await
-            .ok();
+            }
+        );
 
         let remote_fingerprint =
             Self::resolve_rendezvous(self.proxy_client.as_ref(), incoming_rx, &rendezvous_code)
                 .await?;
 
-        notification_tx
-            .send(RemoteClientNotification::RendezvousResolved {
+        notify!(
+            notification_tx,
+            RemoteClientNotification::RendezvousResolved {
                 fingerprint: remote_fingerprint,
-            })
-            .await
-            .ok();
+            }
+        );
 
         // Perform Noise handshake (no PSK)
-        notification_tx
-            .send(RemoteClientNotification::HandshakeStart)
-            .await
-            .ok();
+        notify!(notification_tx, RemoteClientNotification::HandshakeStart);
 
         let (transport, fingerprint_str) = Self::perform_handshake(
             self.proxy_client.as_ref(),
@@ -508,22 +516,22 @@ impl RemoteClientInner {
         )
         .await?;
 
-        notification_tx
-            .send(RemoteClientNotification::HandshakeComplete)
-            .await
-            .ok();
+        notify!(notification_tx, RemoteClientNotification::HandshakeComplete);
 
         // Always emit fingerprint (informational or for verification)
-        notification_tx
-            .send(RemoteClientNotification::HandshakeFingerprint {
+        notify!(
+            notification_tx,
+            RemoteClientNotification::HandshakeFingerprint {
                 fingerprint: fingerprint_str.clone(),
-            })
-            .await
-            .ok();
+            }
+        );
 
         if verify_fingerprint {
             // Send verification request via request channel
             let (fp_tx, fp_rx) = oneshot::channel();
+            if request_tx.capacity() == 0 {
+                warn!("Request channel full, waiting for consumer to drain");
+            }
             request_tx
                 .send(RemoteClientRequest::VerifyFingerprint {
                     fingerprint: fingerprint_str,
@@ -535,19 +543,19 @@ impl RemoteClientInner {
             // Wait for user verification (60s timeout)
             match timeout(Duration::from_secs(60), fp_rx).await {
                 Ok(Ok(RemoteClientFingerprintReply { approved: true })) => {
-                    notification_tx
-                        .send(RemoteClientNotification::FingerprintVerified)
-                        .await
-                        .ok();
+                    notify!(
+                        notification_tx,
+                        RemoteClientNotification::FingerprintVerified
+                    );
                 }
                 Ok(Ok(RemoteClientFingerprintReply { approved: false })) => {
                     self.proxy_client.disconnect().await.ok();
-                    notification_tx
-                        .send(RemoteClientNotification::FingerprintRejected {
+                    notify!(
+                        notification_tx,
+                        RemoteClientNotification::FingerprintRejected {
                             reason: "User rejected fingerprint verification".to_string(),
-                        })
-                        .await
-                        .ok();
+                        }
+                    );
                     return Err(ClientError::FingerprintRejected);
                 }
                 Ok(Err(_)) => {
@@ -578,18 +586,15 @@ impl RemoteClientInner {
         incoming_rx: &mut mpsc::UnboundedReceiver<IncomingMessage>,
         notification_tx: &mpsc::Sender<RemoteClientNotification>,
     ) -> Result<(), ClientError> {
-        notification_tx
-            .send(RemoteClientNotification::PskMode {
+        notify!(
+            notification_tx,
+            RemoteClientNotification::PskMode {
                 fingerprint: remote_fingerprint,
-            })
-            .await
-            .ok();
+            }
+        );
 
         // Perform Noise handshake with PSK
-        notification_tx
-            .send(RemoteClientNotification::HandshakeStart)
-            .await
-            .ok();
+        notify!(notification_tx, RemoteClientNotification::HandshakeStart);
 
         let (transport, _fingerprint_str) = Self::perform_handshake(
             self.proxy_client.as_ref(),
@@ -599,16 +604,13 @@ impl RemoteClientInner {
         )
         .await?;
 
-        notification_tx
-            .send(RemoteClientNotification::HandshakeComplete)
-            .await
-            .ok();
+        notify!(notification_tx, RemoteClientNotification::HandshakeComplete);
 
         // Skip fingerprint verification (trust via PSK)
-        notification_tx
-            .send(RemoteClientNotification::FingerprintVerified)
-            .await
-            .ok();
+        notify!(
+            notification_tx,
+            RemoteClientNotification::FingerprintVerified
+        );
 
         // Finalize connection
         self.finalize_pairing(transport, remote_fingerprint, notification_tx)
@@ -628,12 +630,12 @@ impl RemoteClientInner {
             return Err(ClientError::SessionNotFound);
         }
 
-        notification_tx
-            .send(RemoteClientNotification::ReconnectingToSession {
+        notify!(
+            notification_tx,
+            RemoteClientNotification::ReconnectingToSession {
                 fingerprint: remote_fingerprint,
-            })
-            .await
-            .ok();
+            }
+        );
 
         let transport = self
             .session_store
@@ -641,16 +643,13 @@ impl RemoteClientInner {
             .await?
             .ok_or(ClientError::SessionNotFound)?;
 
-        notification_tx
-            .send(RemoteClientNotification::HandshakeComplete)
-            .await
-            .ok();
+        notify!(notification_tx, RemoteClientNotification::HandshakeComplete);
 
         // Skip fingerprint verification (already trusted)
-        notification_tx
-            .send(RemoteClientNotification::FingerprintVerified)
-            .await
-            .ok();
+        notify!(
+            notification_tx,
+            RemoteClientNotification::FingerprintVerified
+        );
 
         // Update last_connected_at
         self.session_store
@@ -665,12 +664,12 @@ impl RemoteClientInner {
         self.transport = Some(transport);
         self.remote_fingerprint = Some(remote_fingerprint);
 
-        notification_tx
-            .send(RemoteClientNotification::Ready {
+        notify!(
+            notification_tx,
+            RemoteClientNotification::Ready {
                 can_request_credentials: true,
-            })
-            .await
-            .ok();
+            }
+        );
 
         debug!("Reconnected to cached session");
         Ok(())
@@ -697,12 +696,12 @@ impl RemoteClientInner {
         self.remote_fingerprint = Some(remote_fingerprint);
 
         // Emit Ready event
-        notification_tx
-            .send(RemoteClientNotification::Ready {
+        notify!(
+            notification_tx,
+            RemoteClientNotification::Ready {
                 can_request_credentials: true,
-            })
-            .await
-            .ok();
+            }
+        );
 
         debug!("Connection established successfully");
         Ok(())
@@ -756,12 +755,12 @@ impl RemoteClientInner {
             .await?;
 
         // Emit event
-        notification_tx
-            .send(RemoteClientNotification::CredentialRequestSent {
+        notify!(
+            notification_tx,
+            RemoteClientNotification::CredentialRequestSent {
                 query: query.clone(),
-            })
-            .await
-            .ok();
+            }
+        );
 
         // Wait for matching response inline
         match timeout(
@@ -861,12 +860,12 @@ impl RemoteClientInner {
         }
 
         if let Some(credential) = response.credential {
-            notification_tx
-                .send(RemoteClientNotification::CredentialReceived {
+            notify!(
+                notification_tx,
+                RemoteClientNotification::CredentialReceived {
                     credential: credential.clone(),
-                })
-                .await
-                .ok();
+                }
+            );
             Ok(credential)
         } else {
             Err(ClientError::CredentialRequestFailed(

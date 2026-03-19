@@ -8,9 +8,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use ap_client::{
-    ClientError, FingerprintVerificationReply, IdentityProvider, ProxyClient, Psk, RemoteClient,
-    RemoteClientFingerprintReply, RemoteClientNotification, RemoteClientRequest, SessionStore,
-    UserClient, UserClientNotification, UserClientRequest,
+    ClientError, CredentialRequestReply, FingerprintVerificationReply, IdentityProvider,
+    ProxyClient, Psk, RemoteClient, RemoteClientFingerprintReply, RemoteClientHandle,
+    RemoteClientNotification, RemoteClientRequest, SessionStore, UserClient, UserClientHandle,
+    UserClientNotification, UserClientRequest,
 };
 use ap_noise::{MultiDeviceTransport, PersistentTransportState};
 use ap_proxy_client::IncomingMessage;
@@ -369,22 +370,15 @@ async fn test_psk_pairing() {
     let user_session_store = MockSessionStore::new();
     let remote_session_store = MockSessionStore::new();
 
-    // Create notification and request channels for UserClient
-    let (notification_tx, mut notification_rx) = mpsc::channel::<UserClientNotification>(32);
-    let (request_tx, _request_rx) = mpsc::channel::<UserClientRequest>(32);
-
-    // Create notification and request channels for RemoteClient
-    let (remote_notification_tx, mut remote_notification_rx) =
-        mpsc::channel::<RemoteClientNotification>(32);
-    let (remote_request_tx, _remote_request_rx) = mpsc::channel::<RemoteClientRequest>(32);
-
     // Create and connect UserClient (already listening)
-    let user_client = UserClient::connect(
+    let UserClientHandle {
+        client: user_client,
+        notifications: mut notification_rx,
+        requests: _request_rx,
+    } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_session_store),
         Box::new(user_proxy),
-        notification_tx,
-        request_tx,
         None,
     )
     .await
@@ -406,12 +400,14 @@ async fn test_psk_pairing() {
     let fingerprint = IdentityFingerprint(fp_array);
 
     // Create and connect RemoteClient
-    let remote_client = RemoteClient::connect(
+    let RemoteClientHandle {
+        client: remote_client,
+        notifications: mut remote_notification_rx,
+        requests: _remote_request_rx,
+    } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_session_store),
         Box::new(remote_proxy),
-        remote_notification_tx,
-        remote_request_tx,
     )
     .await
     .expect("RemoteClient should connect");
@@ -491,22 +487,15 @@ async fn test_fingerprint_pairing() {
     let user_session_store = MockSessionStore::new();
     let remote_session_store = MockSessionStore::new();
 
-    // Create notification and request channels for UserClient
-    let (notification_tx, notification_rx) = mpsc::channel::<UserClientNotification>(32);
-    let (request_tx, mut request_rx) = mpsc::channel::<UserClientRequest>(32);
-
-    // Create notification and request channels for RemoteClient
-    let (remote_notification_tx, mut remote_notification_rx) =
-        mpsc::channel::<RemoteClientNotification>(32);
-    let (remote_request_tx, _remote_request_rx) = mpsc::channel::<RemoteClientRequest>(32);
-
     // Create and connect UserClient (already listening)
-    let user_client = UserClient::connect(
+    let UserClientHandle {
+        client: user_client,
+        notifications: notification_rx,
+        requests: mut request_rx,
+    } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_session_store),
         Box::new(user_proxy),
-        notification_tx,
-        request_tx,
         None,
     )
     .await
@@ -520,12 +509,14 @@ async fn test_fingerprint_pairing() {
     let code = code.as_str().to_string();
 
     // Create and connect RemoteClient
-    let remote_client = RemoteClient::connect(
+    let RemoteClientHandle {
+        client: remote_client,
+        notifications: mut remote_notification_rx,
+        requests: _remote_request_rx,
+    } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_session_store),
         Box::new(remote_proxy),
-        remote_notification_tx,
-        remote_request_tx,
     )
     .await
     .expect("RemoteClient should connect");
@@ -699,15 +690,14 @@ async fn run_reconnection_test(fail_count: u32) -> (Vec<UserClientNotification>,
     let proxy = ReconnectingMockProxyClient::new(fail_count, Duration::from_millis(10));
     let connect_calls = Arc::clone(&proxy.connect_calls);
 
-    let (notification_tx, mut event_rx) = mpsc::channel::<UserClientNotification>(32);
-    let (request_tx, _request_rx) = mpsc::channel::<UserClientRequest>(32);
-
-    let client = UserClient::connect(
+    let UserClientHandle {
+        client,
+        notifications: mut event_rx,
+        requests: _request_rx,
+    } = UserClient::connect(
         Box::new(identity),
         Box::new(session_store),
         Box::new(proxy),
-        notification_tx,
-        request_tx,
         None,
     )
     .await
@@ -832,22 +822,15 @@ async fn test_fingerprint_pairing_both_sides_verify() {
     let user_session_store = MockSessionStore::new();
     let remote_session_store = MockSessionStore::new();
 
-    // Create notification and request channels for UserClient
-    let (notification_tx, notification_rx) = mpsc::channel::<UserClientNotification>(32);
-    let (request_tx, mut request_rx) = mpsc::channel::<UserClientRequest>(32);
-
-    // Create notification and request channels for RemoteClient
-    let (remote_notification_tx, remote_notification_rx) =
-        mpsc::channel::<RemoteClientNotification>(32);
-    let (remote_request_tx, mut remote_request_rx) = mpsc::channel::<RemoteClientRequest>(32);
-
     // Create and connect UserClient (already listening)
-    let user_client = UserClient::connect(
+    let UserClientHandle {
+        client: user_client,
+        notifications: notification_rx,
+        requests: mut request_rx,
+    } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_session_store),
         Box::new(user_proxy),
-        notification_tx,
-        request_tx,
         None,
     )
     .await
@@ -861,12 +844,14 @@ async fn test_fingerprint_pairing_both_sides_verify() {
     let code = code.as_str().to_string();
 
     // Create and connect RemoteClient
-    let remote_client = RemoteClient::connect(
+    let RemoteClientHandle {
+        client: remote_client,
+        notifications: remote_notification_rx,
+        requests: mut remote_request_rx,
+    } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_session_store),
         Box::new(remote_proxy),
-        remote_notification_tx,
-        remote_request_tx,
     )
     .await
     .expect("RemoteClient should connect");
@@ -977,20 +962,15 @@ async fn test_dual_mode_psk_pairing_with_both_modes_pending() {
     let user_session_store = MockSessionStore::new();
     let remote_session_store = MockSessionStore::new();
 
-    let (notification_tx, mut notification_rx) = mpsc::channel::<UserClientNotification>(32);
-    let (request_tx, _request_rx) = mpsc::channel::<UserClientRequest>(32);
-
-    let (remote_notification_tx, mut remote_notification_rx) =
-        mpsc::channel::<RemoteClientNotification>(32);
-    let (remote_request_tx, _remote_request_rx) = mpsc::channel::<RemoteClientRequest>(32);
-
     // Create UserClient (already listening)
-    let user_client = UserClient::connect(
+    let UserClientHandle {
+        client: user_client,
+        notifications: mut notification_rx,
+        requests: _request_rx,
+    } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_session_store),
         Box::new(user_proxy),
-        notification_tx,
-        request_tx,
         None,
     )
     .await
@@ -1017,12 +997,14 @@ async fn test_dual_mode_psk_pairing_with_both_modes_pending() {
     let user_fp_from_token = IdentityFingerprint(fp_array);
 
     // Connect RemoteClient via PSK
-    let remote_client = RemoteClient::connect(
+    let RemoteClientHandle {
+        client: remote_client,
+        notifications: mut remote_notification_rx,
+        requests: _remote_request_rx,
+    } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_session_store),
         Box::new(remote_proxy),
-        remote_notification_tx,
-        remote_request_tx,
     )
     .await
     .expect("RemoteClient should connect");
@@ -1062,6 +1044,210 @@ async fn test_dual_mode_psk_pairing_with_both_modes_pending() {
     );
 
     // Cleanup
+    drop(remote_client);
+    drop(user_client);
+}
+
+// ============================================================================
+// Test: Notification channel does not block event loop
+// ============================================================================
+
+/// Verifies that a full notification channel does not stall the event loop.
+///
+/// The `RemoteClient` never drains notifications, yet credential requests
+/// still succeed — proving `try_send` drops notifications instead of blocking.
+#[tokio::test]
+async fn test_notification_channel_not_blocking_event_loop() {
+    let user_identity = MockIdentityProvider::new();
+    let remote_identity = MockIdentityProvider::new();
+
+    let user_fingerprint = user_identity.fingerprint().await;
+    let remote_fingerprint = remote_identity.fingerprint().await;
+
+    let (user_proxy, remote_proxy) = create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
+
+    let user_session_store = MockSessionStore::new();
+    let remote_session_store = MockSessionStore::new();
+
+    // Connect UserClient
+    let UserClientHandle {
+        client: user_client,
+        notifications: _user_notifications, // not drained
+        requests: mut request_rx,
+    } = UserClient::connect(
+        Box::new(user_identity),
+        Box::new(user_session_store),
+        Box::new(user_proxy),
+        None,
+    )
+    .await
+    .expect("UserClient should connect");
+
+    // Get PSK token
+    let token = user_client
+        .get_psk_token(None)
+        .await
+        .expect("Should generate PSK token");
+
+    let parts: Vec<&str> = token.split('_').collect();
+    let psk = Psk::from_hex(parts[0]).expect("Should parse PSK");
+    let fp_bytes = hex::decode(parts[1]).expect("Should decode fingerprint hex");
+    let mut fp_array = [0u8; 32];
+    fp_array.copy_from_slice(&fp_bytes);
+    let fingerprint = IdentityFingerprint(fp_array);
+
+    // Connect RemoteClient — intentionally never drain notifications
+    let RemoteClientHandle {
+        client: remote_client,
+        notifications: _remote_notifications, // deliberately NOT drained
+        requests: _remote_request_rx,
+    } = RemoteClient::connect(
+        Box::new(remote_identity),
+        Box::new(remote_session_store),
+        Box::new(remote_proxy),
+    )
+    .await
+    .expect("RemoteClient should connect");
+
+    // Pair via PSK (emits several notifications)
+    timeout(
+        Duration::from_secs(10),
+        remote_client.pair_with_psk(psk, fingerprint),
+    )
+    .await
+    .expect("Pairing should not timeout")
+    .expect("Pairing should succeed");
+
+    // Spawn a handler that auto-approves credential requests on the user side
+    let handler = tokio::spawn(async move {
+        while let Some(request) = request_rx.recv().await {
+            if let UserClientRequest::CredentialRequest { reply, .. } = request {
+                let _ = reply.send(CredentialRequestReply {
+                    approved: true,
+                    credential: Some(ap_client::CredentialData {
+                        username: Some("test_user".into()),
+                        password: Some("test_pass".into()),
+                        totp: None,
+                        uri: None,
+                        notes: None,
+                        credential_id: None,
+                        domain: Some("example.com".into()),
+                    }),
+                    credential_id: None,
+                });
+            }
+        }
+    });
+
+    // Request enough credentials to overflow the notification channel (capacity 32).
+    // Each request emits CredentialRequestSent + CredentialReceived = 2 notifications,
+    // plus the pairing emitted ~7, so 32 requests should exceed capacity.
+    for i in 0..40 {
+        let result = timeout(
+            Duration::from_secs(10),
+            remote_client.request_credential(&ap_client::CredentialQuery::Domain(
+                "example.com".to_string(),
+            )),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("Request {i} should not timeout — event loop is blocked"))
+        .unwrap_or_else(|e| panic!("Request {i} should succeed: {e}"));
+
+        assert_eq!(result.username, Some("test_user".into()));
+    }
+
+    handler.abort();
+    let _ = handler.await;
+    drop(remote_client);
+    drop(user_client);
+}
+
+// ============================================================================
+// Test: Request channel backpressure blocks event loop (by design)
+// ============================================================================
+
+/// Verifies that a full request channel blocks the event loop, providing
+/// backpressure. When nobody drains `request_rx`, the `UserClient` event loop
+/// blocks on `request_tx.send().await`, causing the `RemoteClient`'s
+/// `request_credential` to time out.
+#[tokio::test]
+async fn test_request_channel_backpressure() {
+    let user_identity = MockIdentityProvider::new();
+    let remote_identity = MockIdentityProvider::new();
+
+    let user_fingerprint = user_identity.fingerprint().await;
+    let remote_fingerprint = remote_identity.fingerprint().await;
+
+    let (user_proxy, remote_proxy) = create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
+
+    let user_session_store = MockSessionStore::new();
+    let remote_session_store = MockSessionStore::new();
+
+    // Connect UserClient — intentionally never drain requests
+    let UserClientHandle {
+        client: user_client,
+        notifications: _user_notifications,
+        requests: _request_rx, // deliberately NOT drained
+    } = UserClient::connect(
+        Box::new(user_identity),
+        Box::new(user_session_store),
+        Box::new(user_proxy),
+        None,
+    )
+    .await
+    .expect("UserClient should connect");
+
+    // Get PSK token
+    let token = user_client
+        .get_psk_token(None)
+        .await
+        .expect("Should generate PSK token");
+
+    let parts: Vec<&str> = token.split('_').collect();
+    let psk = Psk::from_hex(parts[0]).expect("Should parse PSK");
+    let fp_bytes = hex::decode(parts[1]).expect("Should decode fingerprint hex");
+    let mut fp_array = [0u8; 32];
+    fp_array.copy_from_slice(&fp_bytes);
+    let fingerprint = IdentityFingerprint(fp_array);
+
+    // Connect RemoteClient
+    let RemoteClientHandle {
+        client: remote_client,
+        notifications: _remote_notifications,
+        requests: _remote_request_rx,
+    } = RemoteClient::connect(
+        Box::new(remote_identity),
+        Box::new(remote_session_store),
+        Box::new(remote_proxy),
+    )
+    .await
+    .expect("RemoteClient should connect");
+
+    // Pair via PSK
+    timeout(
+        Duration::from_secs(10),
+        remote_client.pair_with_psk(psk, fingerprint),
+    )
+    .await
+    .expect("Pairing should not timeout")
+    .expect("Pairing should succeed");
+
+    // Request a credential — since nobody drains request_rx, the UserClient
+    // event loop will eventually block on request_tx.send().await, and the
+    // RemoteClient's request_credential will time out waiting for a response.
+    let result = timeout(
+        Duration::from_secs(3),
+        remote_client.request_credential(&ap_client::CredentialQuery::Domain(
+            "example.com".to_string(),
+        )),
+    )
+    .await;
+
+    assert!(
+        result.is_err(),
+        "request_credential should time out when request channel is not drained (backpressure)"
+    );
+
     drop(remote_client);
     drop(user_client);
 }

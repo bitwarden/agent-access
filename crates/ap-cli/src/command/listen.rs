@@ -611,23 +611,22 @@ async fn run_user_client_session(
 
         let has_cached = !cached_sessions.is_empty() && !force_new_session;
 
-        let (notification_tx, notification_rx) = mpsc::channel(32);
-        let (request_tx, request_rx) = mpsc::channel(32);
-
         let proxy_client = Box::new(DefaultProxyClient::new(ProxyClientConfig {
             proxy_url: proxy_url.clone(),
             identity_keypair: Some(identity_provider.identity().await),
         }));
 
-        let client = UserClient::connect(
+        let handle = UserClient::connect(
             identity_provider as Box<dyn IdentityProvider>,
             session_store as Box<dyn SessionStore>,
             proxy_client,
-            notification_tx,
-            request_tx,
             None,
         )
         .await?;
+
+        let client = handle.client;
+        let notification_rx = handle.notifications;
+        let request_rx = handle.requests;
 
         if !has_cached {
             let client_session_name = pending_session_name.clone();

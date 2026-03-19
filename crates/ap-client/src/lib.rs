@@ -13,10 +13,8 @@
 //! ## Remote Client Usage (untrusted device)
 //!
 //! ```ignore
-//! use ap_client::{RemoteClient, RemoteClientNotification, RemoteClientRequest,
-//!     DefaultProxyClient, IdentityProvider, SessionStore};
+//! use ap_client::{RemoteClient, RemoteClientHandle, DefaultProxyClient, IdentityProvider, SessionStore};
 //! use ap_proxy_client::ProxyClientConfig;
-//! use tokio::sync::mpsc;
 //!
 //! // Create proxy client
 //! let proxy_client = Box::new(DefaultProxyClient::new(ProxyClientConfig {
@@ -24,17 +22,9 @@
 //!     identity_keypair: Some(identity_provider.identity().to_owned()),
 //! }));
 //!
-//! let (notification_tx, mut notification_rx) = mpsc::channel(32);
-//! let (request_tx, mut request_rx) = mpsc::channel(32);
-//!
-//! // Connect — spawns event loop internally, returns handle
-//! let client = RemoteClient::connect(
-//!     identity_provider,
-//!     session_store,
-//!     proxy_client,
-//!     notification_tx,
-//!     request_tx,
-//! ).await?;
+//! // Connect — spawns event loop internally, returns handle with channels
+//! let RemoteClientHandle { client, mut notifications, mut requests } =
+//!     RemoteClient::connect(identity_provider, session_store, proxy_client).await?;
 //!
 //! // Pair with rendezvous code
 //! client.pair_with_handshake("ABCDEF123".to_string(), false).await?;
@@ -46,12 +36,8 @@
 //! ## User Client Usage (trusted device)
 //!
 //! ```ignore
-//! use ap_client::{
-//!     DefaultProxyClient, IdentityProvider, UserClient, UserClientNotification,
-//!     UserClientRequest,
-//! };
+//! use ap_client::{DefaultProxyClient, IdentityProvider, UserClient, UserClientHandle};
 //! use ap_proxy_client::ProxyClientConfig;
-//! use tokio::sync::mpsc;
 //!
 //! // Create proxy client
 //! let proxy_client = Box::new(DefaultProxyClient::new(ProxyClientConfig {
@@ -59,18 +45,9 @@
 //!     identity_keypair: Some(identity_provider.identity().to_owned()),
 //! }));
 //!
-//! let (notification_tx, mut notification_rx) = mpsc::channel(32);
-//! let (request_tx, mut request_rx) = mpsc::channel(32);
-//!
-//! // Connect — spawns event loop internally, returns handle
-//! let client = UserClient::connect(
-//!     identity_provider,
-//!     session_store,
-//!     proxy_client,
-//!     notification_tx,
-//!     request_tx,
-//!     None, // audit_log
-//! ).await?;
+//! // Connect — spawns event loop internally, returns handle with channels
+//! let UserClientHandle { client, mut notifications, mut requests } =
+//!     UserClient::connect(identity_provider, session_store, proxy_client, None).await?;
 //!
 //! // Already listening. Just use it.
 //! let token = client.get_psk_token(None).await?;
@@ -90,11 +67,12 @@ mod clients;
 pub(crate) mod compat;
 
 pub use clients::remote_client::{
-    RemoteClient, RemoteClientFingerprintReply, RemoteClientNotification, RemoteClientRequest,
+    RemoteClient, RemoteClientFingerprintReply, RemoteClientHandle, RemoteClientNotification,
+    RemoteClientRequest,
 };
 pub use clients::user_client::{
-    CredentialRequestReply, FingerprintVerificationReply, UserClient, UserClientNotification,
-    UserClientRequest,
+    CredentialRequestReply, FingerprintVerificationReply, UserClient, UserClientHandle,
+    UserClientNotification, UserClientRequest,
 };
 pub use error::ClientError;
 #[cfg(feature = "native-websocket")]
