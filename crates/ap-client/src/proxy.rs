@@ -10,31 +10,29 @@ use ap_proxy_protocol::{IdentityFingerprint, RendezvousCode};
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 
-use crate::error::RemoteClientError;
+use crate::error::ClientError;
 
 /// Trait abstracting the proxy client for communication between devices
 #[async_trait]
 pub trait ProxyClient: Send + Sync {
     /// Connect to the proxy server, returning a receiver for incoming messages
-    async fn connect(
-        &mut self,
-    ) -> Result<mpsc::UnboundedReceiver<IncomingMessage>, RemoteClientError>;
+    async fn connect(&mut self) -> Result<mpsc::UnboundedReceiver<IncomingMessage>, ClientError>;
 
     /// Request a rendezvous code from the proxy server
-    async fn request_rendezvous(&self) -> Result<(), RemoteClientError>;
+    async fn request_rendezvous(&self) -> Result<(), ClientError>;
 
     /// Request the identity associated with a rendezvous code
-    async fn request_identity(&self, code: RendezvousCode) -> Result<(), RemoteClientError>;
+    async fn request_identity(&self, code: RendezvousCode) -> Result<(), ClientError>;
 
     /// Send a message to a peer by their fingerprint
     async fn send_to(
         &self,
         fingerprint: IdentityFingerprint,
         data: Vec<u8>,
-    ) -> Result<(), RemoteClientError>;
+    ) -> Result<(), ClientError>;
 
     /// Disconnect from the proxy server
-    async fn disconnect(&mut self) -> Result<(), RemoteClientError>;
+    async fn disconnect(&mut self) -> Result<(), ClientError>;
 }
 
 /// Default implementation using ProxyProtocolClient from ap-proxy
@@ -55,41 +53,36 @@ impl DefaultProxyClient {
 #[cfg(feature = "native-websocket")]
 #[async_trait]
 impl ProxyClient for DefaultProxyClient {
-    async fn connect(
-        &mut self,
-    ) -> Result<mpsc::UnboundedReceiver<IncomingMessage>, RemoteClientError> {
-        self.inner.connect().await.map_err(RemoteClientError::from)
+    async fn connect(&mut self) -> Result<mpsc::UnboundedReceiver<IncomingMessage>, ClientError> {
+        self.inner.connect().await.map_err(ClientError::from)
     }
 
-    async fn request_rendezvous(&self) -> Result<(), RemoteClientError> {
+    async fn request_rendezvous(&self) -> Result<(), ClientError> {
         self.inner
             .request_rendezvous()
             .await
-            .map_err(RemoteClientError::from)
+            .map_err(ClientError::from)
     }
 
-    async fn request_identity(&self, code: RendezvousCode) -> Result<(), RemoteClientError> {
+    async fn request_identity(&self, code: RendezvousCode) -> Result<(), ClientError> {
         self.inner
             .request_identity(code)
             .await
-            .map_err(RemoteClientError::from)
+            .map_err(ClientError::from)
     }
 
     async fn send_to(
         &self,
         fingerprint: IdentityFingerprint,
         data: Vec<u8>,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         self.inner
             .send_to(fingerprint, data)
             .await
-            .map_err(RemoteClientError::from)
+            .map_err(ClientError::from)
     }
 
-    async fn disconnect(&mut self) -> Result<(), RemoteClientError> {
-        self.inner
-            .disconnect()
-            .await
-            .map_err(RemoteClientError::from)
+    async fn disconnect(&mut self) -> Result<(), ClientError> {
+        self.inner.disconnect().await.map_err(ClientError::from)
     }
 }

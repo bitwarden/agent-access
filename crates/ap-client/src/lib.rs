@@ -96,7 +96,7 @@ pub use clients::user_client::{
     CredentialRequestReply, FingerprintVerificationReply, UserClient, UserClientNotification,
     UserClientRequest,
 };
-pub use error::RemoteClientError;
+pub use error::ClientError;
 #[cfg(feature = "native-websocket")]
 pub use proxy::DefaultProxyClient;
 pub use proxy::ProxyClient;

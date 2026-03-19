@@ -6,7 +6,7 @@ use thiserror::Error;
 /// Errors that can occur in the remote client
 #[ap_error(flat)]
 #[derive(Debug, Error)]
-pub enum RemoteClientError {
+pub enum ClientError {
     /// Failed to connect to the proxy server
     #[error("Failed to connect to proxy: {0}")]
     ConnectionFailed(String),
@@ -88,20 +88,20 @@ pub enum RemoteClientError {
     SessionNotFound,
 }
 
-impl From<ap_noise::error::NoiseProtocolError> for RemoteClientError {
+impl From<ap_noise::error::NoiseProtocolError> for ClientError {
     fn from(err: ap_noise::error::NoiseProtocolError) -> Self {
-        RemoteClientError::NoiseProtocol(err.to_string())
+        ClientError::NoiseProtocol(err.to_string())
     }
 }
 
-impl From<serde_json::Error> for RemoteClientError {
+impl From<serde_json::Error> for ClientError {
     fn from(err: serde_json::Error) -> Self {
-        RemoteClientError::Serialization(err.to_string())
+        ClientError::Serialization(err.to_string())
     }
 }
 
-impl From<ap_proxy_protocol::ProxyError> for RemoteClientError {
+impl From<ap_proxy_protocol::ProxyError> for ClientError {
     fn from(err: ap_proxy_protocol::ProxyError) -> Self {
-        RemoteClientError::ConnectionFailed(err.to_string())
+        ClientError::ConnectionFailed(err.to_string())
     }
 }

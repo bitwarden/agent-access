@@ -35,7 +35,7 @@ pub(crate) enum PairingKind {
     /// The `reply` sender is `Some(...)` while waiting for the proxy's `RendezvousInfo`
     /// response, and becomes `None` once the rendezvous code has been delivered.
     Rendezvous {
-        reply: Option<oneshot::Sender<Result<RendezvousCode, RemoteClientError>>>,
+        reply: Option<oneshot::Sender<Result<RendezvousCode, ClientError>>>,
     },
     /// PSK pairing — uses a real pre-shared key, no fingerprint verification needed.
     Psk { psk: Psk, psk_id: PskId },
@@ -52,7 +52,7 @@ pub(crate) struct PendingPairing {
 }
 
 use crate::{
-    error::RemoteClientError,
+    error::ClientError,
     traits::{
         AuditConnectionType, AuditEvent, AuditLog, CredentialFieldSet, IdentityProvider,
         NoOpAuditLog, SessionStore,
@@ -204,12 +204,12 @@ enum UserClientCommand {
     /// Generate a PSK token and register a pending pairing.
     GetPskToken {
         name: Option<String>,
-        reply: oneshot::Sender<Result<String, RemoteClientError>>,
+        reply: oneshot::Sender<Result<String, ClientError>>,
     },
     /// Request a rendezvous code from the proxy and register a pending pairing.
     GetRendezvousToken {
         name: Option<String>,
-        reply: oneshot::Sender<Result<RendezvousCode, RemoteClientError>>,
+        reply: oneshot::Sender<Result<RendezvousCode, ClientError>>,
     },
 }
 
@@ -241,7 +241,7 @@ impl UserClient {
         notification_tx: mpsc::Sender<UserClientNotification>,
         request_tx: mpsc::Sender<UserClientRequest>,
         audit_log: Option<Box<dyn AuditLog>>,
-    ) -> Result<Self, RemoteClientError> {
+    ) -> Result<Self, ClientError> {
         // Authenticate with the proxy (the async part — before spawn)
         let incoming_rx = proxy_client.connect().await?;
 
@@ -279,13 +279,13 @@ impl UserClient {
     ///
     /// Returns the formatted token string (`<psk_hex>_<fingerprint_hex>`).
     /// Multiple PSK pairings are supported concurrently (each matched by `psk_id`).
-    pub async fn get_psk_token(&self, name: Option<String>) -> Result<String, RemoteClientError> {
+    pub async fn get_psk_token(&self, name: Option<String>) -> Result<String, ClientError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx
             .send(UserClientCommand::GetPskToken { name, reply: tx })
             .await
-            .map_err(|_| RemoteClientError::ChannelClosed)?;
-        rx.await.map_err(|_| RemoteClientError::ChannelClosed)?
+            .map_err(|_| ClientError::ChannelClosed)?;
+        rx.await.map_err(|_| ClientError::ChannelClosed)?
     }
 
     /// Request a rendezvous code from the proxy for a new pairing.
@@ -295,13 +295,13 @@ impl UserClient {
     pub async fn get_rendezvous_token(
         &self,
         name: Option<String>,
-    ) -> Result<RendezvousCode, RemoteClientError> {
+    ) -> Result<RendezvousCode, ClientError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx
             .send(UserClientCommand::GetRendezvousToken { name, reply: tx })
             .await
-            .map_err(|_| RemoteClientError::ChannelClosed)?;
-        rx.await.map_err(|_| RemoteClientError::ChannelClosed)?
+            .map_err(|_| ClientError::ChannelClosed)?;
+        rx.await.map_err(|_| ClientError::ChannelClosed)?
     }
 }
 
@@ -404,7 +404,7 @@ impl UserClientInner {
     async fn attempt_reconnection(
         &mut self,
         notification_tx: &mpsc::Sender<UserClientNotification>,
-    ) -> Result<mpsc::UnboundedReceiver<IncomingMessage>, RemoteClientError> {
+    ) -> Result<mpsc::UnboundedReceiver<IncomingMessage>, ClientError> {
         use rand::{Rng, SeedableRng};
 
         let mut rng = rand::rngs::StdRng::from_entropy();
@@ -452,14 +452,14 @@ impl UserClientInner {
         msg: IncomingMessage,
         notification_tx: &mpsc::Sender<UserClientNotification>,
         request_tx: &mpsc::Sender<UserClientRequest>,
-    ) -> Result<Option<PendingReplyFuture>, RemoteClientError> {
+    ) -> Result<Option<PendingReplyFuture>, ClientError> {
         match msg {
             IncomingMessage::Send {
                 source, payload, ..
             } => {
                 // Parse payload as ProtocolMessage
                 let text = String::from_utf8(payload)
-                    .map_err(|e| RemoteClientError::Serialization(format!("Invalid UTF-8: {e}")))?;
+                    .map_err(|e| ClientError::Serialization(format!("Invalid UTF-8: {e}")))?;
 
                 let protocol_msg: ProtocolMessage = serde_json::from_str(&text)?;
 
@@ -532,7 +532,7 @@ impl UserClientInner {
         psk_id: Option<PskId>,
         notification_tx: &mpsc::Sender<UserClientNotification>,
         request_tx: &mpsc::Sender<UserClientRequest>,
-    ) -> Result<Option<PendingReplyFuture>, RemoteClientError> {
+    ) -> Result<Option<PendingReplyFuture>, ClientError> {
         debug!("Received handshake init from source: {:?}", source);
         notification_tx
             .send(UserClientNotification::HandshakeStart {})
@@ -565,7 +565,7 @@ impl UserClientInner {
                         (Some(psk), pairing.connection_name, true)
                     } else {
                         warn!("No matching PSK pairing for psk_id: {}", id);
-                        return Err(RemoteClientError::InvalidState {
+                        return Err(ClientError::InvalidState {
                             expected: "matching PSK pairing".to_string(),
                             current: format!("no pairing for psk_id {id}"),
                         });
@@ -675,7 +675,7 @@ impl UserClientInner {
         transport: MultiDeviceTransport,
         session_name: Option<&str>,
         connection_type: AuditConnectionType,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         self.transports.insert(fingerprint, transport.clone());
         self.session_store.cache_session(fingerprint).await?;
         if let Some(name) = session_name {
@@ -705,7 +705,7 @@ impl UserClientInner {
         encrypted: String,
         notification_tx: &mpsc::Sender<UserClientNotification>,
         request_tx: &mpsc::Sender<UserClientRequest>,
-    ) -> Result<Option<PendingReplyFuture>, RemoteClientError> {
+    ) -> Result<Option<PendingReplyFuture>, ClientError> {
         if !self.transports.contains_key(&source) {
             debug!("Loading transport state for source: {:?}", source);
             let session = self
@@ -713,7 +713,7 @@ impl UserClientInner {
                 .load_transport_state(&source)
                 .await?
                 .ok_or_else(|| {
-                    RemoteClientError::SessionCache(format!(
+                    ClientError::SessionCache(format!(
                         "Missing transport state for cached session {source:?}"
                     ))
                 })?;
@@ -724,19 +724,19 @@ impl UserClientInner {
         let transport = self
             .transports
             .get_mut(&source)
-            .ok_or(RemoteClientError::SecureChannelNotEstablished)?;
+            .ok_or(ClientError::SecureChannelNotEstablished)?;
 
         // Decrypt request
         let encrypted_bytes = STANDARD
             .decode(&encrypted)
-            .map_err(|e| RemoteClientError::Serialization(format!("Invalid base64: {e}")))?;
+            .map_err(|e| ClientError::Serialization(format!("Invalid base64: {e}")))?;
 
         let packet = ap_noise::TransportPacket::decode(&encrypted_bytes)
-            .map_err(|e| RemoteClientError::NoiseProtocol(format!("Invalid packet: {e}")))?;
+            .map_err(|e| ClientError::NoiseProtocol(format!("Invalid packet: {e}")))?;
 
         let decrypted = transport
             .decrypt(&packet)
-            .map_err(|e| RemoteClientError::NoiseProtocol(e.to_string()))?;
+            .map_err(|e| ClientError::NoiseProtocol(e.to_string()))?;
 
         let request: CredentialRequestPayload = serde_json::from_slice(&decrypted)?;
 
@@ -794,7 +794,7 @@ impl UserClientInner {
         &mut self,
         reply: PendingReply,
         notification_tx: &mpsc::Sender<UserClientNotification>,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         match reply {
             PendingReply::FingerprintVerification {
                 source,
@@ -856,7 +856,7 @@ impl UserClientInner {
                     } = old.kind
                     {
                         warn!("Replacing existing pending rendezvous pairing");
-                        let _ = old_reply.send(Err(RemoteClientError::InvalidState {
+                        let _ = old_reply.send(Err(ClientError::InvalidState {
                             expected: "single pending rendezvous".to_string(),
                             current: "replaced by new rendezvous request".to_string(),
                         }));
@@ -883,10 +883,7 @@ impl UserClientInner {
     }
 
     /// Generate a PSK token internally.
-    async fn generate_psk_token(
-        &mut self,
-        name: Option<String>,
-    ) -> Result<String, RemoteClientError> {
+    async fn generate_psk_token(&mut self, name: Option<String>) -> Result<String, ClientError> {
         let psk = Psk::generate();
         let psk_id = psk.id();
         let token = format!("{}_{}", psk.to_hex(), hex::encode(self.own_fingerprint.0));
@@ -912,7 +909,7 @@ impl UserClientInner {
         connection_name: Option<String>,
         reply: Result<FingerprintVerificationReply, oneshot::error::RecvError>,
         notification_tx: &mpsc::Sender<UserClientNotification>,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         match reply {
             Ok(FingerprintVerificationReply {
                 approved: true,
@@ -979,7 +976,7 @@ impl UserClientInner {
         query: crate::types::CredentialQuery,
         reply: Result<CredentialRequestReply, oneshot::error::RecvError>,
         notification_tx: &mpsc::Sender<UserClientNotification>,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         let reply = match reply {
             Ok(r) => r,
             Err(_) => {
@@ -996,7 +993,7 @@ impl UserClientInner {
         let transport = self
             .transports
             .get_mut(&source)
-            .ok_or(RemoteClientError::SecureChannelNotEstablished)?;
+            .ok_or(ClientError::SecureChannelNotEstablished)?;
 
         // Extract domain and audit fields before credential is moved into the response payload
         let domain = reply.credential.as_ref().and_then(|c| c.domain.clone());
@@ -1030,7 +1027,7 @@ impl UserClientInner {
         let response_json = serde_json::to_string(&response_payload)?;
         let encrypted = transport
             .encrypt(response_json.as_bytes())
-            .map_err(|e| RemoteClientError::NoiseProtocol(e.to_string()))?;
+            .map_err(|e| ClientError::NoiseProtocol(e.to_string()))?;
 
         let msg = ProtocolMessage::CredentialResponse {
             encrypted: STANDARD.encode(encrypted.encode()),
@@ -1092,7 +1089,7 @@ impl UserClientInner {
         handshake_data: &str,
         ciphersuite_str: &str,
         psk: Option<&Psk>,
-    ) -> Result<(MultiDeviceTransport, String), RemoteClientError> {
+    ) -> Result<(MultiDeviceTransport, String), ClientError> {
         // Parse ciphersuite
         let ciphersuite = match ciphersuite_str {
             s if s.contains("Kyber768") => Ciphersuite::PQNNpsk2_Kyber768_XChaCha20Poly1305,
@@ -1102,10 +1099,10 @@ impl UserClientInner {
         // Decode handshake data
         let init_bytes = STANDARD
             .decode(handshake_data)
-            .map_err(|e| RemoteClientError::Serialization(format!("Invalid base64: {e}")))?;
+            .map_err(|e| ClientError::Serialization(format!("Invalid base64: {e}")))?;
 
         let init_packet = ap_noise::HandshakePacket::decode(&init_bytes)
-            .map_err(|e| RemoteClientError::NoiseProtocol(format!("Invalid packet: {e}")))?;
+            .map_err(|e| ClientError::NoiseProtocol(format!("Invalid packet: {e}")))?;
 
         // Create responder handshake — with PSK if provided, otherwise null PSK (rendezvous)
         let mut handshake = if let Some(psk) = psk {

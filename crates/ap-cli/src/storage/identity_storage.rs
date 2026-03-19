@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use ap_client::{IdentityProvider, RemoteClientError};
+use ap_client::{ClientError, IdentityProvider};
 use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair};
 use async_trait::async_trait;
 use tracing::debug;
@@ -21,7 +21,7 @@ impl FileIdentityStorage {
     /// Load existing identity or generate new one
     ///
     /// Stores the 32-byte seed in ~/.access-protocol/identity.key
-    pub fn load_or_generate(storage_name: &str) -> Result<Self, RemoteClientError> {
+    pub fn load_or_generate(storage_name: &str) -> Result<Self, ClientError> {
         let storage_path = Self::default_storage_path(storage_name)?;
 
         let keypair = if storage_path.exists() {
@@ -42,7 +42,7 @@ impl FileIdentityStorage {
     /// Returns `None` if no key file exists, `Some(fingerprint)` if it does.
     pub fn load_fingerprint(
         storage_name: &str,
-    ) -> Result<Option<IdentityFingerprint>, RemoteClientError> {
+    ) -> Result<Option<IdentityFingerprint>, ClientError> {
         let storage_path = Self::default_storage_path(storage_name)?;
         if !storage_path.exists() {
             return Ok(None);
@@ -54,7 +54,7 @@ impl FileIdentityStorage {
     /// Delete the identity key file for the given storage name.
     ///
     /// Does nothing if the file does not exist.
-    pub fn delete(storage_name: &str) -> Result<(), RemoteClientError> {
+    pub fn delete(storage_name: &str) -> Result<(), ClientError> {
         let storage_path = Self::default_storage_path(storage_name)?;
         match fs::remove_file(&storage_path) {
             Ok(()) => {
@@ -62,22 +62,22 @@ impl FileIdentityStorage {
                 Ok(())
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(RemoteClientError::IdentityStorageFailed(format!(
+            Err(e) => Err(ClientError::IdentityStorageFailed(format!(
                 "Failed to delete identity file: {e}"
             ))),
         }
     }
 
     /// Get the default storage path (~/.access-protocol/identity.key)
-    fn default_storage_path(storage_name: &str) -> Result<PathBuf, RemoteClientError> {
+    fn default_storage_path(storage_name: &str) -> Result<PathBuf, ClientError> {
         let home_dir = dirs::home_dir().ok_or_else(|| {
-            RemoteClientError::IdentityStorageFailed("Could not find home directory".to_string())
+            ClientError::IdentityStorageFailed("Could not find home directory".to_string())
         })?;
 
         let ap_dir = home_dir.join(".access-protocol");
         if !ap_dir.exists() {
             fs::create_dir_all(&ap_dir).map_err(|e| {
-                RemoteClientError::IdentityStorageFailed(format!(
+                ClientError::IdentityStorageFailed(format!(
                     "Failed to create .access-protocol directory: {e}"
                 ))
             })?;
@@ -87,24 +87,22 @@ impl FileIdentityStorage {
     }
 
     /// Load keypair from file
-    fn load_from_file(path: &Path) -> Result<IdentityKeyPair, RemoteClientError> {
+    fn load_from_file(path: &Path) -> Result<IdentityKeyPair, ClientError> {
         let cose_bytes = fs::read(path).map_err(|e| {
-            RemoteClientError::IdentityStorageFailed(format!("Failed to read identity file: {e}"))
+            ClientError::IdentityStorageFailed(format!("Failed to read identity file: {e}"))
         })?;
         debug!("Loaded identity seed from file");
         IdentityKeyPair::from_cose(&cose_bytes).map_err(|_| {
-            RemoteClientError::IdentityStorageFailed(
-                "Failed to parse identity from seed".to_string(),
-            )
+            ClientError::IdentityStorageFailed("Failed to parse identity from seed".to_string())
         })
     }
 
     /// Save keypair to file
-    fn save_to_file(path: &Path, keypair: &IdentityKeyPair) -> Result<(), RemoteClientError> {
+    fn save_to_file(path: &Path, keypair: &IdentityKeyPair) -> Result<(), ClientError> {
         let cose_bytes = keypair.to_cose();
 
         fs::write(path, cose_bytes).map_err(|e| {
-            RemoteClientError::IdentityStorageFailed(format!("Failed to write identity file: {e}"))
+            ClientError::IdentityStorageFailed(format!("Failed to write identity file: {e}"))
         })?;
 
         debug!("Saved identity seed to file");

@@ -4,8 +4,8 @@
 //! and requesting credentials over a secure Noise Protocol channel.
 
 use ap_client::{
-    ConnectionMode, DefaultProxyClient, IdentityFingerprint, IdentityProvider, RemoteClient,
-    RemoteClientError, RemoteClientFingerprintReply, RemoteClientNotification, RemoteClientRequest,
+    ClientError, ConnectionMode, DefaultProxyClient, IdentityFingerprint, IdentityProvider,
+    RemoteClient, RemoteClientFingerprintReply, RemoteClientNotification, RemoteClientRequest,
     SessionStore,
 };
 use ap_noise::Psk;
@@ -221,7 +221,7 @@ fn spawn_pairing(
     client: &RemoteClient,
     mode: &ConnectionMode,
     verify_fingerprint: bool,
-) -> tokio::task::JoinHandle<Result<(), RemoteClientError>> {
+) -> tokio::task::JoinHandle<Result<(), ClientError>> {
     let c = client.clone();
     match mode.clone() {
         ConnectionMode::New { rendezvous_code } => tokio::spawn(async move {
@@ -287,7 +287,7 @@ async fn run_interactive_session(
     let mut notification_rx: Option<mpsc::Receiver<RemoteClientNotification>> = None;
     let mut request_rx: Option<mpsc::Receiver<RemoteClientRequest>> = None;
     let mut client: Option<RemoteClient> = None;
-    let mut pairing_task: Option<tokio::task::JoinHandle<Result<(), RemoteClientError>>> = None;
+    let mut pairing_task: Option<tokio::task::JoinHandle<Result<(), ClientError>>> = None;
     let mut pending_fp_reply: Option<oneshot::Sender<RemoteClientFingerprintReply>> = None;
 
     // Determine starting phase (and connect immediately for CLI-flag paths)
@@ -804,9 +804,9 @@ async fn run_single_shot(
             std::process::exit(exit_code::SUCCESS);
         }
         Err(e) => {
-            // Try to extract a RemoteClientError for specific exit codes
+            // Try to extract a ClientError for specific exit codes
             let code = e
-                .downcast_ref::<ap_client::RemoteClientError>()
+                .downcast_ref::<ap_client::ClientError>()
                 .map(exit_code_for_error)
                 .unwrap_or(exit_code::GENERAL_ERROR);
             let msg = format!("{e}");

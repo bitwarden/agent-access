@@ -13,7 +13,7 @@ use tracing::{debug, warn};
 
 use crate::traits::{IdentityProvider, SessionStore};
 use crate::{
-    error::RemoteClientError,
+    error::ClientError,
     types::{
         CredentialData, CredentialQuery, CredentialRequestPayload, CredentialResponsePayload,
         ProtocolMessage,
@@ -137,20 +137,20 @@ enum RemoteClientCommand {
     PairWithHandshake {
         rendezvous_code: String,
         verify_fingerprint: bool,
-        reply: oneshot::Sender<Result<IdentityFingerprint, RemoteClientError>>,
+        reply: oneshot::Sender<Result<IdentityFingerprint, ClientError>>,
     },
     PairWithPsk {
         psk: Psk,
         remote_fingerprint: IdentityFingerprint,
-        reply: oneshot::Sender<Result<(), RemoteClientError>>,
+        reply: oneshot::Sender<Result<(), ClientError>>,
     },
     LoadCachedSession {
         remote_fingerprint: IdentityFingerprint,
-        reply: oneshot::Sender<Result<(), RemoteClientError>>,
+        reply: oneshot::Sender<Result<(), ClientError>>,
     },
     RequestCredential {
         query: CredentialQuery,
-        reply: oneshot::Sender<Result<CredentialData, RemoteClientError>>,
+        reply: oneshot::Sender<Result<CredentialData, ClientError>>,
     },
     ListSessions {
         reply: oneshot::Sender<SessionList>,
@@ -193,7 +193,7 @@ impl RemoteClient {
         mut proxy_client: Box<dyn ProxyClient>,
         notification_tx: mpsc::Sender<RemoteClientNotification>,
         request_tx: mpsc::Sender<RemoteClientRequest>,
-    ) -> Result<Self, RemoteClientError> {
+    ) -> Result<Self, ClientError> {
         let own_fingerprint = identity_provider.fingerprint().await;
 
         debug!("Connecting to proxy with identity {:?}", own_fingerprint);
@@ -249,7 +249,7 @@ impl RemoteClient {
         &self,
         rendezvous_code: String,
         verify_fingerprint: bool,
-    ) -> Result<IdentityFingerprint, RemoteClientError> {
+    ) -> Result<IdentityFingerprint, ClientError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx
             .send(RemoteClientCommand::PairWithHandshake {
@@ -258,8 +258,8 @@ impl RemoteClient {
                 reply: tx,
             })
             .await
-            .map_err(|_| RemoteClientError::ChannelClosed)?;
-        rx.await.map_err(|_| RemoteClientError::ChannelClosed)?
+            .map_err(|_| ClientError::ChannelClosed)?;
+        rx.await.map_err(|_| ClientError::ChannelClosed)?
     }
 
     /// Pair with a remote device using a pre-shared key.
@@ -270,7 +270,7 @@ impl RemoteClient {
         &self,
         psk: Psk,
         remote_fingerprint: IdentityFingerprint,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx
             .send(RemoteClientCommand::PairWithPsk {
@@ -279,8 +279,8 @@ impl RemoteClient {
                 reply: tx,
             })
             .await
-            .map_err(|_| RemoteClientError::ChannelClosed)?;
-        rx.await.map_err(|_| RemoteClientError::ChannelClosed)?
+            .map_err(|_| ClientError::ChannelClosed)?;
+        rx.await.map_err(|_| ClientError::ChannelClosed)?
     }
 
     /// Reconnect to a remote device using a cached session.
@@ -290,7 +290,7 @@ impl RemoteClient {
     pub async fn load_cached_session(
         &self,
         remote_fingerprint: IdentityFingerprint,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx
             .send(RemoteClientCommand::LoadCachedSession {
@@ -298,15 +298,15 @@ impl RemoteClient {
                 reply: tx,
             })
             .await
-            .map_err(|_| RemoteClientError::ChannelClosed)?;
-        rx.await.map_err(|_| RemoteClientError::ChannelClosed)?
+            .map_err(|_| ClientError::ChannelClosed)?;
+        rx.await.map_err(|_| ClientError::ChannelClosed)?
     }
 
     /// Request a credential over the secure channel.
     pub async fn request_credential(
         &self,
         query: &CredentialQuery,
-    ) -> Result<CredentialData, RemoteClientError> {
+    ) -> Result<CredentialData, ClientError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx
             .send(RemoteClientCommand::RequestCredential {
@@ -314,27 +314,24 @@ impl RemoteClient {
                 reply: tx,
             })
             .await
-            .map_err(|_| RemoteClientError::ChannelClosed)?;
-        rx.await.map_err(|_| RemoteClientError::ChannelClosed)?
+            .map_err(|_| ClientError::ChannelClosed)?;
+        rx.await.map_err(|_| ClientError::ChannelClosed)?
     }
 
     /// List all cached sessions.
     pub async fn list_sessions(
         &self,
-    ) -> Result<Vec<(IdentityFingerprint, Option<String>, u64, u64)>, RemoteClientError> {
+    ) -> Result<Vec<(IdentityFingerprint, Option<String>, u64, u64)>, ClientError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx
             .send(RemoteClientCommand::ListSessions { reply: tx })
             .await
-            .map_err(|_| RemoteClientError::ChannelClosed)?;
-        rx.await.map_err(|_| RemoteClientError::ChannelClosed)
+            .map_err(|_| ClientError::ChannelClosed)?;
+        rx.await.map_err(|_| ClientError::ChannelClosed)
     }
 
     /// Check if a session exists for a fingerprint.
-    pub async fn has_session(
-        &self,
-        fingerprint: IdentityFingerprint,
-    ) -> Result<bool, RemoteClientError> {
+    pub async fn has_session(&self, fingerprint: IdentityFingerprint) -> Result<bool, ClientError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx
             .send(RemoteClientCommand::HasSession {
@@ -342,8 +339,8 @@ impl RemoteClient {
                 reply: tx,
             })
             .await
-            .map_err(|_| RemoteClientError::ChannelClosed)?;
-        rx.await.map_err(|_| RemoteClientError::ChannelClosed)
+            .map_err(|_| ClientError::ChannelClosed)?;
+        rx.await.map_err(|_| ClientError::ChannelClosed)
     }
 }
 
@@ -477,7 +474,7 @@ impl RemoteClientInner {
         incoming_rx: &mut mpsc::UnboundedReceiver<IncomingMessage>,
         notification_tx: &mpsc::Sender<RemoteClientNotification>,
         request_tx: &mpsc::Sender<RemoteClientRequest>,
-    ) -> Result<IdentityFingerprint, RemoteClientError> {
+    ) -> Result<IdentityFingerprint, ClientError> {
         // Resolve rendezvous code to fingerprint
         notification_tx
             .send(RemoteClientNotification::RendezvousResolving {
@@ -533,7 +530,7 @@ impl RemoteClientInner {
                     reply: fp_tx,
                 })
                 .await
-                .map_err(|_| RemoteClientError::ChannelClosed)?;
+                .map_err(|_| ClientError::ChannelClosed)?;
 
             // Wait for user verification (60s timeout)
             match timeout(Duration::from_secs(60), fp_rx).await {
@@ -551,14 +548,14 @@ impl RemoteClientInner {
                         })
                         .await
                         .ok();
-                    return Err(RemoteClientError::FingerprintRejected);
+                    return Err(ClientError::FingerprintRejected);
                 }
                 Ok(Err(_)) => {
-                    return Err(RemoteClientError::ChannelClosed);
+                    return Err(ClientError::ChannelClosed);
                 }
                 Err(_) => {
                     self.proxy_client.disconnect().await.ok();
-                    return Err(RemoteClientError::Timeout(
+                    return Err(ClientError::Timeout(
                         "Fingerprint verification timeout".to_string(),
                     ));
                 }
@@ -580,7 +577,7 @@ impl RemoteClientInner {
         remote_fingerprint: IdentityFingerprint,
         incoming_rx: &mut mpsc::UnboundedReceiver<IncomingMessage>,
         notification_tx: &mpsc::Sender<RemoteClientNotification>,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         notification_tx
             .send(RemoteClientNotification::PskMode {
                 fingerprint: remote_fingerprint,
@@ -626,9 +623,9 @@ impl RemoteClientInner {
         &mut self,
         remote_fingerprint: IdentityFingerprint,
         notification_tx: &mpsc::Sender<RemoteClientNotification>,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         if !self.session_store.has_session(&remote_fingerprint).await {
-            return Err(RemoteClientError::SessionNotFound);
+            return Err(ClientError::SessionNotFound);
         }
 
         notification_tx
@@ -642,7 +639,7 @@ impl RemoteClientInner {
             .session_store
             .load_transport_state(&remote_fingerprint)
             .await?
-            .ok_or(RemoteClientError::SessionNotFound)?;
+            .ok_or(ClientError::SessionNotFound)?;
 
         notification_tx
             .send(RemoteClientNotification::HandshakeComplete)
@@ -686,7 +683,7 @@ impl RemoteClientInner {
         transport: MultiDeviceTransport,
         remote_fingerprint: IdentityFingerprint,
         notification_tx: &mpsc::Sender<RemoteClientNotification>,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         // Cache session
         self.session_store.cache_session(remote_fingerprint).await?;
 
@@ -718,10 +715,8 @@ impl RemoteClientInner {
         query: CredentialQuery,
         incoming_rx: &mut mpsc::UnboundedReceiver<IncomingMessage>,
         notification_tx: &mpsc::Sender<RemoteClientNotification>,
-    ) -> Result<CredentialData, RemoteClientError> {
-        let remote_fingerprint = self
-            .remote_fingerprint
-            .ok_or(RemoteClientError::NotInitialized)?;
+    ) -> Result<CredentialData, ClientError> {
+        let remote_fingerprint = self.remote_fingerprint.ok_or(ClientError::NotInitialized)?;
 
         // Sliced string is a UUID and isn't going to contain wide chars
         #[allow(clippy::string_slice)]
@@ -743,10 +738,10 @@ impl RemoteClientInner {
             let transport = self
                 .transport
                 .as_mut()
-                .ok_or(RemoteClientError::SecureChannelNotEstablished)?;
+                .ok_or(ClientError::SecureChannelNotEstablished)?;
             let encrypted_packet = transport
                 .encrypt(request_json.as_bytes())
-                .map_err(|e| RemoteClientError::NoiseProtocol(e.to_string()))?;
+                .map_err(|e| ClientError::NoiseProtocol(e.to_string()))?;
             STANDARD.encode(encrypted_packet.encode())
         };
 
@@ -776,7 +771,7 @@ impl RemoteClientInner {
         .await
         {
             Ok(result) => result,
-            Err(_) => Err(RemoteClientError::Timeout(format!(
+            Err(_) => Err(ClientError::Timeout(format!(
                 "Timeout waiting for credential response for query: {query:?}"
             ))),
         }
@@ -791,7 +786,7 @@ impl RemoteClientInner {
         request_id: &str,
         incoming_rx: &mut mpsc::UnboundedReceiver<IncomingMessage>,
         notification_tx: &mpsc::Sender<RemoteClientNotification>,
-    ) -> Result<CredentialData, RemoteClientError> {
+    ) -> Result<CredentialData, ClientError> {
         loop {
             match incoming_rx.recv().await {
                 Some(IncomingMessage::Send { payload, .. }) => {
@@ -804,7 +799,7 @@ impl RemoteClientInner {
                             .await
                         {
                             Ok(credential) => return Ok(credential),
-                            Err(RemoteClientError::CredentialRequestFailed(ref msg))
+                            Err(ClientError::CredentialRequestFailed(ref msg))
                                 if msg.contains("request_id mismatch") =>
                             {
                                 // Stale response from a previous request — skip it
@@ -819,7 +814,7 @@ impl RemoteClientInner {
                     // Non-Send messages (RendezvousInfo, IdentityInfo) — ignore
                 }
                 None => {
-                    return Err(RemoteClientError::ChannelClosed);
+                    return Err(ClientError::ChannelClosed);
                 }
             }
         }
@@ -831,22 +826,22 @@ impl RemoteClientInner {
         encrypted: &str,
         request_id: &str,
         notification_tx: &mpsc::Sender<RemoteClientNotification>,
-    ) -> Result<CredentialData, RemoteClientError> {
+    ) -> Result<CredentialData, ClientError> {
         let encrypted_bytes = STANDARD
             .decode(encrypted)
-            .map_err(|e| RemoteClientError::Serialization(format!("Invalid base64: {e}")))?;
+            .map_err(|e| ClientError::Serialization(format!("Invalid base64: {e}")))?;
 
         let packet = ap_noise::TransportPacket::decode(&encrypted_bytes)
-            .map_err(|e| RemoteClientError::NoiseProtocol(format!("Invalid packet: {e}")))?;
+            .map_err(|e| ClientError::NoiseProtocol(format!("Invalid packet: {e}")))?;
 
         let transport = self
             .transport
             .as_mut()
-            .ok_or(RemoteClientError::SecureChannelNotEstablished)?;
+            .ok_or(ClientError::SecureChannelNotEstablished)?;
 
         let decrypted = transport
             .decrypt(&packet)
-            .map_err(|e| RemoteClientError::NoiseProtocol(e.to_string()))?;
+            .map_err(|e| ClientError::NoiseProtocol(e.to_string()))?;
 
         let response: CredentialResponsePayload = serde_json::from_slice(&decrypted)?;
 
@@ -856,13 +851,13 @@ impl RemoteClientInner {
                 "Ignoring response with mismatched request_id: {:?}",
                 response.request_id
             );
-            return Err(RemoteClientError::CredentialRequestFailed(
+            return Err(ClientError::CredentialRequestFailed(
                 "Response request_id mismatch".to_string(),
             ));
         }
 
         if let Some(error) = response.error {
-            return Err(RemoteClientError::CredentialRequestFailed(error));
+            return Err(ClientError::CredentialRequestFailed(error));
         }
 
         if let Some(credential) = response.credential {
@@ -874,7 +869,7 @@ impl RemoteClientInner {
                 .ok();
             Ok(credential)
         } else {
-            Err(RemoteClientError::CredentialRequestFailed(
+            Err(ClientError::CredentialRequestFailed(
                 "Response contains neither credential nor error".to_string(),
             ))
         }
@@ -887,12 +882,12 @@ impl RemoteClientInner {
         proxy_client: &dyn ProxyClient,
         incoming_rx: &mut mpsc::UnboundedReceiver<IncomingMessage>,
         rendezvous_code: &str,
-    ) -> Result<IdentityFingerprint, RemoteClientError> {
+    ) -> Result<IdentityFingerprint, ClientError> {
         // Send GetIdentity request
         proxy_client
             .request_identity(RendezvousCode::from_string(rendezvous_code.to_string()))
             .await
-            .map_err(|e| RemoteClientError::RendezvousResolutionFailed(e.to_string()))?;
+            .map_err(|e| ClientError::RendezvousResolutionFailed(e.to_string()))?;
 
         // Wait for IdentityInfo response with timeout
         let timeout_duration = Duration::from_secs(10);
@@ -907,10 +902,10 @@ impl RemoteClientInner {
         .await
         {
             Ok(Some(fingerprint)) => Ok(fingerprint),
-            Ok(None) => Err(RemoteClientError::RendezvousResolutionFailed(
+            Ok(None) => Err(ClientError::RendezvousResolutionFailed(
                 "Connection closed while waiting for identity response".to_string(),
             )),
-            Err(_) => Err(RemoteClientError::RendezvousResolutionFailed(
+            Err(_) => Err(ClientError::RendezvousResolutionFailed(
                 "Timeout waiting for identity response. The rendezvous code may be invalid, expired, or the target client may be disconnected.".to_string(),
             )),
         }
@@ -922,7 +917,7 @@ impl RemoteClientInner {
         incoming_rx: &mut mpsc::UnboundedReceiver<IncomingMessage>,
         remote_fingerprint: IdentityFingerprint,
         psk: Option<Psk>,
-    ) -> Result<(MultiDeviceTransport, String), RemoteClientError> {
+    ) -> Result<(MultiDeviceTransport, String), ClientError> {
         // Compute PSK ID before moving the PSK into the handshake
         let psk_id = psk.as_ref().map(|p| p.id());
 
@@ -962,7 +957,7 @@ impl RemoteClientInner {
                                 && let Ok(ProtocolMessage::HandshakeResponse { data, .. }) =
                                     serde_json::from_str::<ProtocolMessage>(&text)
                             {
-                                return Ok::<String, RemoteClientError>(data);
+                                return Ok::<String, ClientError>(data);
                             }
                         }
                         _ => continue,
@@ -971,15 +966,15 @@ impl RemoteClientInner {
             }
         })
         .await
-        .map_err(|_| RemoteClientError::Timeout("Waiting for handshake response".to_string()))??;
+        .map_err(|_| ClientError::Timeout("Waiting for handshake response".to_string()))??;
 
         // Decode and process response
         let response_bytes = STANDARD
             .decode(&response)
-            .map_err(|e| RemoteClientError::Serialization(format!("Invalid base64: {e}")))?;
+            .map_err(|e| ClientError::Serialization(format!("Invalid base64: {e}")))?;
 
         let response_packet = ap_noise::HandshakePacket::decode(&response_bytes)
-            .map_err(|e| RemoteClientError::NoiseProtocol(format!("Invalid packet: {e}")))?;
+            .map_err(|e| ClientError::NoiseProtocol(format!("Invalid packet: {e}")))?;
 
         // Complete handshake
         handshake.receive_finish(&response_packet)?;

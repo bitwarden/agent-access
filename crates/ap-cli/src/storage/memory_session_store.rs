@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ap_client::{RemoteClientError, SessionStore};
+use ap_client::{ClientError, SessionStore};
 use ap_noise::{MultiDeviceTransport, PersistentTransportState};
 use ap_proxy_protocol::IdentityFingerprint;
 use async_trait::async_trait;
@@ -42,10 +42,7 @@ impl SessionStore for MemorySessionStore {
         self.sessions.contains_key(fingerprint)
     }
 
-    async fn cache_session(
-        &mut self,
-        fingerprint: IdentityFingerprint,
-    ) -> Result<(), RemoteClientError> {
+    async fn cache_session(&mut self, fingerprint: IdentityFingerprint) -> Result<(), ClientError> {
         let now = now_seconds();
         self.sessions
             .entry(fingerprint)
@@ -63,12 +60,12 @@ impl SessionStore for MemorySessionStore {
     async fn remove_session(
         &mut self,
         fingerprint: &IdentityFingerprint,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         self.sessions.remove(fingerprint);
         Ok(())
     }
 
-    async fn clear(&mut self) -> Result<(), RemoteClientError> {
+    async fn clear(&mut self) -> Result<(), ClientError> {
         self.sessions.clear();
         Ok(())
     }
@@ -91,28 +88,24 @@ impl SessionStore for MemorySessionStore {
         &mut self,
         fingerprint: &IdentityFingerprint,
         name: String,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         if let Some(session) = self.sessions.get_mut(fingerprint) {
             session.name = Some(name);
             Ok(())
         } else {
-            Err(RemoteClientError::SessionCache(
-                "Session not found".to_string(),
-            ))
+            Err(ClientError::SessionCache("Session not found".to_string()))
         }
     }
 
     async fn update_last_connected(
         &mut self,
         fingerprint: &IdentityFingerprint,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         if let Some(session) = self.sessions.get_mut(fingerprint) {
             session.last_connected_at = now_seconds();
             Ok(())
         } else {
-            Err(RemoteClientError::SessionCache(
-                "Session not found".to_string(),
-            ))
+            Err(ClientError::SessionCache("Session not found".to_string()))
         }
     }
 
@@ -120,34 +113,32 @@ impl SessionStore for MemorySessionStore {
         &mut self,
         fingerprint: &IdentityFingerprint,
         transport_state: MultiDeviceTransport,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         if let Some(session) = self.sessions.get_mut(fingerprint) {
             session.transport_state = Some(
                 PersistentTransportState::from(&transport_state)
                     .to_bytes()
                     .map_err(|e| {
-                        RemoteClientError::NoiseProtocol(format!(
+                        ClientError::NoiseProtocol(format!(
                             "Failed to serialize transport state: {e}"
                         ))
                     })?,
             );
             Ok(())
         } else {
-            Err(RemoteClientError::SessionCache(
-                "Session not found".to_string(),
-            ))
+            Err(ClientError::SessionCache("Session not found".to_string()))
         }
     }
 
     async fn load_transport_state(
         &self,
         fingerprint: &IdentityFingerprint,
-    ) -> Result<Option<MultiDeviceTransport>, RemoteClientError> {
+    ) -> Result<Option<MultiDeviceTransport>, ClientError> {
         if let Some(session) = self.sessions.get(fingerprint) {
             Ok(Some(
                 PersistentTransportState::from_bytes(session.transport_state.as_ref().ok_or_else(
                     || {
-                        RemoteClientError::SessionCache(
+                        ClientError::SessionCache(
                             "No transport state stored for this session".to_string(),
                         )
                     },
@@ -155,9 +146,7 @@ impl SessionStore for MemorySessionStore {
                 .map(MultiDeviceTransport::from)?,
             ))
         } else {
-            Err(RemoteClientError::SessionCache(
-                "Session not found".to_string(),
-            ))
+            Err(ClientError::SessionCache("Session not found".to_string()))
         }
     }
 }

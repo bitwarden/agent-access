@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ap_client::{RemoteClientError, SessionStore};
+use ap_client::{ClientError, SessionStore};
 use ap_noise::{MultiDeviceTransport, PersistentTransportState};
 use ap_proxy_protocol::IdentityFingerprint;
 use async_trait::async_trait;
@@ -59,10 +59,7 @@ impl SessionStore for FileSessionCache {
         exists
     }
 
-    async fn cache_session(
-        &mut self,
-        fingerprint: IdentityFingerprint,
-    ) -> Result<(), RemoteClientError> {
+    async fn cache_session(&mut self, fingerprint: IdentityFingerprint) -> Result<(), ClientError> {
         // Check if already exists
         if let Some(existing) = self
             .data
@@ -93,7 +90,7 @@ impl SessionStore for FileSessionCache {
     async fn remove_session(
         &mut self,
         fingerprint: &IdentityFingerprint,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         self.data
             .sessions
             .retain(|s| s.remote_fingerprint != *fingerprint);
@@ -101,7 +98,7 @@ impl SessionStore for FileSessionCache {
         Ok(())
     }
 
-    async fn clear(&mut self) -> Result<(), RemoteClientError> {
+    async fn clear(&mut self) -> Result<(), ClientError> {
         self.data.sessions.clear();
         self.save()?;
         debug!("Cleared all session cache entries");
@@ -127,7 +124,7 @@ impl SessionStore for FileSessionCache {
         &mut self,
         fingerprint: &IdentityFingerprint,
         name: String,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         if let Some(session) = self
             .data
             .sessions
@@ -139,16 +136,14 @@ impl SessionStore for FileSessionCache {
             debug!("Set session name for {:?}", fingerprint);
             Ok(())
         } else {
-            Err(RemoteClientError::SessionCache(
-                "Session not found".to_string(),
-            ))
+            Err(ClientError::SessionCache("Session not found".to_string()))
         }
     }
 
     async fn update_last_connected(
         &mut self,
         fingerprint: &IdentityFingerprint,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         if let Some(session) = self
             .data
             .sessions
@@ -160,9 +155,7 @@ impl SessionStore for FileSessionCache {
             debug!("Updated last_connected_at for session");
             Ok(())
         } else {
-            Err(RemoteClientError::SessionCache(
-                "Session not found".to_string(),
-            ))
+            Err(ClientError::SessionCache("Session not found".to_string()))
         }
     }
 
@@ -170,7 +163,7 @@ impl SessionStore for FileSessionCache {
         &mut self,
         fingerprint: &IdentityFingerprint,
         transport_state: MultiDeviceTransport,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         if let Some(session) = self
             .data
             .sessions
@@ -181,7 +174,7 @@ impl SessionStore for FileSessionCache {
                 PersistentTransportState::from(&transport_state)
                     .to_bytes()
                     .map_err(|e| {
-                        RemoteClientError::NoiseProtocol(format!(
+                        ClientError::NoiseProtocol(format!(
                             "Failed to serialize transport state: {e}"
                         ))
                     })?,
@@ -190,16 +183,14 @@ impl SessionStore for FileSessionCache {
             debug!("Saved transport state for session");
             Ok(())
         } else {
-            Err(RemoteClientError::SessionCache(
-                "Session not found".to_string(),
-            ))
+            Err(ClientError::SessionCache("Session not found".to_string()))
         }
     }
 
     async fn load_transport_state(
         &self,
         fingerprint: &IdentityFingerprint,
-    ) -> Result<Option<MultiDeviceTransport>, RemoteClientError> {
+    ) -> Result<Option<MultiDeviceTransport>, ClientError> {
         if let Some(session) = self
             .data
             .sessions
@@ -209,7 +200,7 @@ impl SessionStore for FileSessionCache {
             Ok(Some(
                 PersistentTransportState::from_bytes(session.transport_state.as_ref().ok_or_else(
                     || {
-                        RemoteClientError::SessionCache(
+                        ClientError::SessionCache(
                             "No transport state stored for this session".to_string(),
                         )
                     },
@@ -217,16 +208,14 @@ impl SessionStore for FileSessionCache {
                 .map(MultiDeviceTransport::from)?,
             ))
         } else {
-            Err(RemoteClientError::SessionCache(
-                "Session not found".to_string(),
-            ))
+            Err(ClientError::SessionCache("Session not found".to_string()))
         }
     }
 }
 
 impl FileSessionCache {
     /// Load or create session cache
-    pub fn load_or_create(cache_name: &str) -> Result<Self, RemoteClientError> {
+    pub fn load_or_create(cache_name: &str) -> Result<Self, ClientError> {
         let cache_path = Self::default_cache_path(cache_name)?;
 
         let data = if cache_path.exists() {
@@ -243,28 +232,27 @@ impl FileSessionCache {
     }
 
     /// Save cache to disk
-    fn save(&self) -> Result<(), RemoteClientError> {
+    fn save(&self) -> Result<(), ClientError> {
         let json = serde_json::to_string_pretty(&self.data)
-            .map_err(|e| RemoteClientError::SessionCache(format!("Serialization failed: {e}")))?;
+            .map_err(|e| ClientError::SessionCache(format!("Serialization failed: {e}")))?;
 
-        fs::write(&self.cache_path, json).map_err(|e| {
-            RemoteClientError::SessionCache(format!("Failed to write cache file: {e}"))
-        })?;
+        fs::write(&self.cache_path, json)
+            .map_err(|e| ClientError::SessionCache(format!("Failed to write cache file: {e}")))?;
 
         debug!("Saved session cache");
         Ok(())
     }
 
     /// Get default cache path (~/.access-protocol/session_cache_{cache_name}.json)
-    fn default_cache_path(cache_name: &str) -> Result<PathBuf, RemoteClientError> {
+    fn default_cache_path(cache_name: &str) -> Result<PathBuf, ClientError> {
         let home_dir = dirs::home_dir().ok_or_else(|| {
-            RemoteClientError::SessionCache("Could not find home directory".to_string())
+            ClientError::SessionCache("Could not find home directory".to_string())
         })?;
 
         let ap_dir = home_dir.join(".access-protocol");
         if !ap_dir.exists() {
             fs::create_dir_all(&ap_dir).map_err(|e| {
-                RemoteClientError::SessionCache(format!(
+                ClientError::SessionCache(format!(
                     "Failed to create .access-protocol directory: {e}"
                 ))
             })?;
@@ -274,14 +262,12 @@ impl FileSessionCache {
     }
 
     /// Load cache from file
-    fn load_from_file(path: &Path) -> Result<SessionCacheData, RemoteClientError> {
-        let contents = fs::read_to_string(path).map_err(|e| {
-            RemoteClientError::SessionCache(format!("Failed to read cache file: {e}"))
-        })?;
+    fn load_from_file(path: &Path) -> Result<SessionCacheData, ClientError> {
+        let contents = fs::read_to_string(path)
+            .map_err(|e| ClientError::SessionCache(format!("Failed to read cache file: {e}")))?;
 
-        let data: SessionCacheData = serde_json::from_str(&contents).map_err(|e| {
-            RemoteClientError::SessionCache(format!("Failed to parse cache file: {e}"))
-        })?;
+        let data: SessionCacheData = serde_json::from_str(&contents)
+            .map_err(|e| ClientError::SessionCache(format!("Failed to parse cache file: {e}")))?;
 
         debug!("Loaded {} session(s) from cache", data.sessions.len());
         Ok(data)
