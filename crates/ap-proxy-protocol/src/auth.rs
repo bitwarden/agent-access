@@ -85,7 +85,7 @@ impl IdentityKeyPair {
                 let mut seed = [0u8; 32];
                 let mut rng = rand::thread_rng();
                 rng.fill_bytes(&mut seed);
-                let keypair = MlDsa65::key_gen_internal(&seed.into());
+                let keypair = MlDsa65::from_seed(&seed.into());
                 let private_key = keypair.signing_key();
                 let public_key = keypair.verifying_key();
                 IdentityKeyPair::MlDsa65 {
@@ -214,7 +214,7 @@ impl IdentityKeyPair {
                         "Missing ML-DSA-65 private key seed in COSE key".to_string(),
                     )
                 })?;
-                let keypair = MlDsa65::key_gen_internal(&seed.into());
+                let keypair = MlDsa65::from_seed(&seed.into());
                 let private_key = keypair.signing_key();
                 let public_key = keypair.verifying_key();
 
