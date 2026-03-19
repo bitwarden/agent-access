@@ -2,7 +2,7 @@ use ap_noise::MultiDeviceTransport;
 use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair};
 use async_trait::async_trait;
 
-use crate::error::RemoteClientError;
+use crate::error::ClientError;
 
 /// Trait for session cache storage implementations
 ///
@@ -16,19 +16,16 @@ pub trait SessionStore: Send + Sync {
     /// Cache a new session fingerprint
     ///
     /// If the fingerprint already exists, updates the cached_at timestamp.
-    async fn cache_session(
-        &mut self,
-        fingerprint: IdentityFingerprint,
-    ) -> Result<(), RemoteClientError>;
+    async fn cache_session(&mut self, fingerprint: IdentityFingerprint) -> Result<(), ClientError>;
 
     /// Remove a fingerprint from the cache
     async fn remove_session(
         &mut self,
         fingerprint: &IdentityFingerprint,
-    ) -> Result<(), RemoteClientError>;
+    ) -> Result<(), ClientError>;
 
     /// Clear all cached sessions
-    async fn clear(&mut self) -> Result<(), RemoteClientError>;
+    async fn clear(&mut self) -> Result<(), ClientError>;
 
     /// List all cached sessions
     ///
@@ -40,13 +37,13 @@ pub trait SessionStore: Send + Sync {
         &mut self,
         fingerprint: &IdentityFingerprint,
         name: String,
-    ) -> Result<(), RemoteClientError>;
+    ) -> Result<(), ClientError>;
 
     /// Update the last_connected_at timestamp for a session
     async fn update_last_connected(
         &mut self,
         fingerprint: &IdentityFingerprint,
-    ) -> Result<(), RemoteClientError>;
+    ) -> Result<(), ClientError>;
 
     /// Save transport state for a session
     ///
@@ -55,7 +52,7 @@ pub trait SessionStore: Send + Sync {
         &mut self,
         fingerprint: &IdentityFingerprint,
         transport_state: MultiDeviceTransport,
-    ) -> Result<(), RemoteClientError>;
+    ) -> Result<(), ClientError>;
 
     /// Load transport state for a session
     ///
@@ -63,7 +60,7 @@ pub trait SessionStore: Send + Sync {
     async fn load_transport_state(
         &self,
         fingerprint: &IdentityFingerprint,
-    ) -> Result<Option<MultiDeviceTransport>, RemoteClientError>;
+    ) -> Result<Option<MultiDeviceTransport>, ClientError>;
 }
 
 /// Provides a cryptographic identity for the current client.

@@ -176,7 +176,7 @@ impl RunArgs {
             Ok(c) => c,
             Err(e) => {
                 let code = e
-                    .downcast_ref::<ap_client::RemoteClientError>()
+                    .downcast_ref::<ap_client::ClientError>()
                     .map(exit_code_for_error)
                     .unwrap_or(exit_code::GENERAL_ERROR);
                 tracing::error!("{e}");

@@ -8,9 +8,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use ap_client::{
-    FingerprintVerificationReply, IdentityProvider, ProxyClient, Psk, RemoteClient,
-    RemoteClientError, RemoteClientFingerprintReply, RemoteClientNotification, RemoteClientRequest,
-    SessionStore, UserClient, UserClientNotification, UserClientRequest,
+    ClientError, FingerprintVerificationReply, IdentityProvider, ProxyClient, Psk, RemoteClient,
+    RemoteClientFingerprintReply, RemoteClientNotification, RemoteClientRequest, SessionStore,
+    UserClient, UserClientNotification, UserClientRequest,
 };
 use ap_noise::{MultiDeviceTransport, PersistentTransportState};
 use ap_proxy_client::IncomingMessage;
@@ -79,7 +79,7 @@ impl SessionStore for MockSessionStore {
     async fn cache_session(
         &mut self,
         fingerprint: IdentityFingerprint,
-    ) -> Result<(), ap_client::RemoteClientError> {
+    ) -> Result<(), ap_client::ClientError> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -102,7 +102,7 @@ impl SessionStore for MockSessionStore {
     async fn remove_session(
         &mut self,
         fingerprint: &IdentityFingerprint,
-    ) -> Result<(), ap_client::RemoteClientError> {
+    ) -> Result<(), ap_client::ClientError> {
         self.sessions
             .lock()
             .expect("Lock should not be poisoned")
@@ -110,7 +110,7 @@ impl SessionStore for MockSessionStore {
         Ok(())
     }
 
-    async fn clear(&mut self) -> Result<(), ap_client::RemoteClientError> {
+    async fn clear(&mut self) -> Result<(), ap_client::ClientError> {
         self.sessions
             .lock()
             .expect("Lock should not be poisoned")
@@ -138,14 +138,14 @@ impl SessionStore for MockSessionStore {
         &mut self,
         _fingerprint: &IdentityFingerprint,
         _name: String,
-    ) -> Result<(), ap_client::RemoteClientError> {
+    ) -> Result<(), ap_client::ClientError> {
         Ok(())
     }
 
     async fn update_last_connected(
         &mut self,
         fingerprint: &IdentityFingerprint,
-    ) -> Result<(), ap_client::RemoteClientError> {
+    ) -> Result<(), ap_client::ClientError> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -162,7 +162,7 @@ impl SessionStore for MockSessionStore {
         &mut self,
         fingerprint: &IdentityFingerprint,
         transport_state: MultiDeviceTransport,
-    ) -> Result<(), ap_client::RemoteClientError> {
+    ) -> Result<(), ap_client::ClientError> {
         let mut sessions = self.sessions.lock().expect("Lock should not be poisoned");
         if let Some(entry) = sessions.get_mut(fingerprint) {
             entry.transport_state = Some(
@@ -177,7 +177,7 @@ impl SessionStore for MockSessionStore {
     async fn load_transport_state(
         &self,
         fingerprint: &IdentityFingerprint,
-    ) -> Result<Option<MultiDeviceTransport>, ap_client::RemoteClientError> {
+    ) -> Result<Option<MultiDeviceTransport>, ap_client::ClientError> {
         let sessions = self.sessions.lock().expect("Lock should not be poisoned");
         Ok(sessions.get(fingerprint).and_then(|e| {
             PersistentTransportState::from_bytes(
@@ -239,13 +239,13 @@ impl MockProxyClient {
 impl ProxyClient for MockProxyClient {
     async fn connect(
         &mut self,
-    ) -> Result<mpsc::UnboundedReceiver<IncomingMessage>, ap_client::RemoteClientError> {
+    ) -> Result<mpsc::UnboundedReceiver<IncomingMessage>, ap_client::ClientError> {
         self.incoming_rx
             .take()
-            .ok_or(ap_client::RemoteClientError::NotInitialized)
+            .ok_or(ap_client::ClientError::NotInitialized)
     }
 
-    async fn request_rendezvous(&self) -> Result<(), ap_client::RemoteClientError> {
+    async fn request_rendezvous(&self) -> Result<(), ap_client::ClientError> {
         // Generate a rendezvous code and send it to ourselves
         let code = self
             .rendezvous_code
@@ -253,14 +253,11 @@ impl ProxyClient for MockProxyClient {
             .unwrap_or_else(|| RendezvousCode::from_string("TEST12345".to_string()));
         self.incoming_tx
             .send(IncomingMessage::RendezvousInfo(code))
-            .map_err(|_| ap_client::RemoteClientError::ChannelClosed)?;
+            .map_err(|_| ap_client::ClientError::ChannelClosed)?;
         Ok(())
     }
 
-    async fn request_identity(
-        &self,
-        _code: RendezvousCode,
-    ) -> Result<(), ap_client::RemoteClientError> {
+    async fn request_identity(&self, _code: RendezvousCode) -> Result<(), ap_client::ClientError> {
         // Return the peer's identity
         if let Some(peer_fp) = self.peer_fingerprint {
             // Create a dummy identity for the peer
@@ -270,7 +267,7 @@ impl ProxyClient for MockProxyClient {
                     fingerprint: peer_fp,
                     identity: dummy_keypair.identity(),
                 })
-                .map_err(|_| ap_client::RemoteClientError::ChannelClosed)?;
+                .map_err(|_| ap_client::ClientError::ChannelClosed)?;
         }
         Ok(())
     }
@@ -279,14 +276,14 @@ impl ProxyClient for MockProxyClient {
         &self,
         fingerprint: IdentityFingerprint,
         data: Vec<u8>,
-    ) -> Result<(), ap_client::RemoteClientError> {
+    ) -> Result<(), ap_client::ClientError> {
         self.outgoing_tx
             .send((fingerprint, data))
-            .map_err(|_| ap_client::RemoteClientError::ChannelClosed)?;
+            .map_err(|_| ap_client::ClientError::ChannelClosed)?;
         Ok(())
     }
 
-    async fn disconnect(&mut self) -> Result<(), ap_client::RemoteClientError> {
+    async fn disconnect(&mut self) -> Result<(), ap_client::ClientError> {
         Ok(())
     }
 }
@@ -636,9 +633,7 @@ impl ReconnectingMockProxyClient {
 
 #[async_trait]
 impl ProxyClient for ReconnectingMockProxyClient {
-    async fn connect(
-        &mut self,
-    ) -> Result<mpsc::UnboundedReceiver<IncomingMessage>, RemoteClientError> {
+    async fn connect(&mut self) -> Result<mpsc::UnboundedReceiver<IncomingMessage>, ClientError> {
         let call_num = self.connect_calls.fetch_add(1, Ordering::SeqCst) + 1;
 
         if call_num == 1 {
@@ -655,7 +650,7 @@ impl ProxyClient for ReconnectingMockProxyClient {
         // Subsequent connects: fail `fail_count` times, then succeed
         let reconnect_attempt = call_num - 1; // 1-based reconnection attempts
         if reconnect_attempt <= self.fail_count {
-            return Err(RemoteClientError::ChannelClosed);
+            return Err(ClientError::ChannelClosed);
         }
 
         // Success: create a new channel that stays open
@@ -664,11 +659,11 @@ impl ProxyClient for ReconnectingMockProxyClient {
         Ok(rx)
     }
 
-    async fn request_rendezvous(&self) -> Result<(), RemoteClientError> {
+    async fn request_rendezvous(&self) -> Result<(), ClientError> {
         Ok(())
     }
 
-    async fn request_identity(&self, _code: RendezvousCode) -> Result<(), RemoteClientError> {
+    async fn request_identity(&self, _code: RendezvousCode) -> Result<(), ClientError> {
         Ok(())
     }
 
@@ -676,11 +671,11 @@ impl ProxyClient for ReconnectingMockProxyClient {
         &self,
         _fingerprint: IdentityFingerprint,
         _data: Vec<u8>,
-    ) -> Result<(), RemoteClientError> {
+    ) -> Result<(), ClientError> {
         Ok(())
     }
 
-    async fn disconnect(&mut self) -> Result<(), RemoteClientError> {
+    async fn disconnect(&mut self) -> Result<(), ClientError> {
         self.incoming_tx = None;
         Ok(())
     }

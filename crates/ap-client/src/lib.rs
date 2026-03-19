@@ -96,7 +96,7 @@ pub use clients::user_client::{
     CredentialRequestReply, FingerprintVerificationReply, UserClient, UserClientNotification,
     UserClientRequest,
 };
-pub use error::RemoteClientError;
+pub use error::ClientError;
 #[cfg(feature = "native-websocket")]
 pub use proxy::DefaultProxyClient;
 pub use proxy::ProxyClient;
@@ -109,4 +109,4 @@ pub use types::{ConnectionMode, CredentialData, CredentialQuery, PskId};
 // Re-export ap-proxy-protocol types
 pub use ap_proxy_protocol::{IdentityFingerprint, RendezvousCode};
 // Re-export PSK type from noise protocol
-pub use ap_noise::Psk;
+pub use ap_noise::{MultiDeviceTransport, Psk};

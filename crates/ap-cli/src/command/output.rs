@@ -3,7 +3,7 @@
 //! Provides structured output for agent/LLM consumption: JSON or plain text,
 //! with well-defined exit codes for programmatic error handling.
 
-use ap_client::{CredentialData, RemoteClientError};
+use ap_client::{ClientError, CredentialData};
 use clap::ValueEnum;
 
 /// Output format for single-shot mode
@@ -26,22 +26,23 @@ pub mod exit_code {
     pub const FINGERPRINT_MISMATCH: i32 = 5;
 }
 
-/// Map a `RemoteClientError` to the appropriate exit code
-pub fn exit_code_for_error(err: &RemoteClientError) -> i32 {
+/// Map a `ClientError` to the appropriate exit code
+pub fn exit_code_for_error(err: &ClientError) -> i32 {
     match err {
-        RemoteClientError::ConnectionFailed(_) | RemoteClientError::WebSocket(_) => {
+        ClientError::ConnectionFailed(_) | ClientError::WebSocket(_) => {
             exit_code::CONNECTION_FAILED
         }
-        RemoteClientError::ProxyAuthFailed(_)
-        | RemoteClientError::HandshakeFailed(_)
-        | RemoteClientError::NoiseProtocol(_)
-        | RemoteClientError::Timeout(_)
-        | RemoteClientError::InvalidPairingCode(_)
-        | RemoteClientError::RendezvousResolutionFailed(_)
-        | RemoteClientError::InvalidRendezvousCode(_) => exit_code::AUTH_HANDSHAKE_FAILED,
-        RemoteClientError::CredentialRequestFailed(_)
-        | RemoteClientError::SecureChannelNotEstablished => exit_code::CREDENTIAL_NOT_FOUND,
-        RemoteClientError::FingerprintRejected => exit_code::FINGERPRINT_MISMATCH,
+        ClientError::ProxyAuthFailed(_)
+        | ClientError::HandshakeFailed(_)
+        | ClientError::NoiseProtocol(_)
+        | ClientError::Timeout(_)
+        | ClientError::InvalidPairingCode(_)
+        | ClientError::RendezvousResolutionFailed(_)
+        | ClientError::InvalidRendezvousCode(_) => exit_code::AUTH_HANDSHAKE_FAILED,
+        ClientError::CredentialRequestFailed(_) | ClientError::SecureChannelNotEstablished => {
+            exit_code::CREDENTIAL_NOT_FOUND
+        }
+        ClientError::FingerprintRejected => exit_code::FINGERPRINT_MISMATCH,
         _ => exit_code::GENERAL_ERROR,
     }
 }
