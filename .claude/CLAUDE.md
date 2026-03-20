@@ -60,7 +60,7 @@ ap-cli (CLI binary)
 - **ap-noise** — Noise NNpsk2 handshake, `MultiDeviceTransport` for encrypted messaging, XChaCha20-Poly1305 transport encryption, session state persistence for resumption.
 - **ap-proxy** — WebSocket proxy server (`ap-proxy` binary) and `ProxyProtocolClient` library. Three-phase protocol: authentication, rendezvous, messaging. Default listen address: `ws://localhost:8080`.
 - **ap-client** — `RemoteClient` (untrusted device requesting credentials) and `UserClient` (trusted device serving credentials). Uses trait abstractions (`SessionStore`, `IdentityProvider`, `ProxyClient`) and async event/response channels.
-- **ap-cli** (`aac` binary) — CLI driver with interactive TUI (ratatui + crossterm) and non-interactive single-shot mode. Subcommands: `connect`, `listen`, `cache` (with `clear`/`list`), `list-devices`, `clear-keypairs`. Integrates with `bw` CLI for credential lookup via `bw get item`.
+- **ap-cli** (`aac` binary) — CLI driver with interactive TUI (ratatui + crossterm) and non-interactive single-shot mode. Subcommands: `connect`, `listen`, `connections` (with `clear`/`list`), `run`. Integrates with `bw` CLI for credential lookup via `bw get item`.
 - **ap-error / ap-error-macro** — Error handling utilities ported from Bitwarden's `sdk-internal`.
 
 ## Key Design Patterns
