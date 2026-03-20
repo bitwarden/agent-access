@@ -65,6 +65,10 @@ pub struct RunArgs {
     #[arg(long)]
     pub ephemeral_connection: bool,
 
+    /// Timeout in seconds for credential response
+    #[arg(long, default_value = "120")]
+    pub timeout: u64,
+
     /// Map a credential field to an env var: VAR_NAME=field
     /// Valid fields: username, password, totp, uri, notes, domain, credential_id
     #[arg(long = "env", value_name = "VAR=FIELD")]
@@ -166,12 +170,14 @@ impl RunArgs {
         }
 
         // Fetch the credential
+        let credential_timeout = Some(std::time::Duration::from_secs(self.timeout));
         let credential = match fetch_credential(
             &self.proxy_url,
             self.token.as_deref(),
             self.session.as_deref(),
             self.ephemeral_connection,
             &query,
+            credential_timeout,
         )
         .await
         {

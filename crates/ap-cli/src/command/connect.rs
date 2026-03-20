@@ -72,6 +72,10 @@ pub struct ConnectArgs {
     #[arg(long, conflicts_with = "domain")]
     pub id: Option<String>,
 
+    /// Timeout in seconds for credential response
+    #[arg(long, default_value = "120")]
+    pub timeout: u64,
+
     /// Output format for single-shot mode
     #[arg(long, default_value = "text", value_enum)]
     pub output: OutputFormat,
@@ -94,6 +98,7 @@ impl ConnectArgs {
                 self.ephemeral_connection,
                 query,
                 self.output,
+                self.timeout,
             )
             .await
         } else {
@@ -492,7 +497,7 @@ async fn run_interactive_session(
 
                                     if let Some(ref c) = client {
                                         let query = ap_client::CredentialQuery::Domain(domain.clone());
-                                        let mut cred_fut = std::pin::pin!(c.request_credential(&query));
+                                        let mut cred_fut = std::pin::pin!(c.request_credential(&query, None));
                                         let mut user_quit = false;
                                         let cred_result = loop {
                                             term.draw(|frame| app.draw(frame))
@@ -708,6 +713,7 @@ pub(super) async fn fetch_credential(
     session_fingerprint: Option<&str>,
     ephemeral_connection: bool,
     query: &ap_client::CredentialQuery,
+    credential_timeout: Option<std::time::Duration>,
 ) -> Result<ap_client::CredentialData> {
     let identity_provider: Box<dyn IdentityProvider> =
         Box::new(FileIdentityStorage::load_or_generate("remote_client")?);
@@ -756,7 +762,7 @@ pub(super) async fn fetch_credential(
 
     info!("Requesting credential for {query}");
 
-    match client.request_credential(query).await {
+    match client.request_credential(query, credential_timeout).await {
         Ok(credential) => {
             drop(client);
             Ok(credential)
@@ -775,15 +781,18 @@ async fn run_single_shot(
     ephemeral_connection: bool,
     query: ap_client::CredentialQuery,
     output: OutputFormat,
+    timeout_secs: u64,
 ) -> Result<()> {
     use super::output::{exit_code, exit_code_name};
 
+    let credential_timeout = Some(std::time::Duration::from_secs(timeout_secs));
     match fetch_credential(
         &proxy_url,
         token.as_deref(),
         session_fingerprint.as_deref(),
         ephemeral_connection,
         &query,
+        credential_timeout,
     )
     .await
     {

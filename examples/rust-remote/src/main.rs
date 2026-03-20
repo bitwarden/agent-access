@@ -69,7 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Request credential
     let query = CredentialQuery::Domain(domain.to_string());
-    let credential = client.request_credential(&query).await?;
+    let credential = client.request_credential(&query, None).await?;
 
     // Print result
     if let Some(username) = &credential.username {

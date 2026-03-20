@@ -166,6 +166,7 @@ pub async fn process_command(cli: Cli, log_rx: Option<LogReceiver>) -> Result<()
                 verify_fingerprint: cli.verify_fingerprint,
                 domain: cli.domain,
                 id: cli.id,
+                timeout: 120,
                 output: cli.output,
             };
             args.run(log_rx).await

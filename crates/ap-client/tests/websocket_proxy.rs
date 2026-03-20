@@ -199,9 +199,10 @@ async fn test_e2e_psk_pairing_and_credential_request() {
     // 12. RemoteClient requests credential
     let credential = timeout(
         Duration::from_secs(10),
-        remote_client.request_credential(&ap_client::CredentialQuery::Domain(
-            "example.com".to_string(),
-        )),
+        remote_client.request_credential(
+            &ap_client::CredentialQuery::Domain("example.com".to_string()),
+            None,
+        ),
     )
     .await
     .expect("Credential request should not timeout")
@@ -347,9 +348,10 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
     // 14. RemoteClient requests credential
     let credential = timeout(
         Duration::from_secs(10),
-        remote_client.request_credential(&ap_client::CredentialQuery::Domain(
-            "example.com".to_string(),
-        )),
+        remote_client.request_credential(
+            &ap_client::CredentialQuery::Domain("example.com".to_string()),
+            None,
+        ),
     )
     .await
     .expect("Credential request should not timeout")
@@ -456,9 +458,10 @@ async fn test_e2e_credential_request_denied() {
     // 9. RemoteClient requests credential - should fail
     let result = timeout(
         Duration::from_secs(10),
-        remote_client.request_credential(&ap_client::CredentialQuery::Domain(
-            "example.com".to_string(),
-        )),
+        remote_client.request_credential(
+            &ap_client::CredentialQuery::Domain("example.com".to_string()),
+            None,
+        ),
     )
     .await
     .expect("Credential request should not timeout");
@@ -583,8 +586,10 @@ async fn test_e2e_multiple_credential_requests() {
     for domain in &domains {
         let credential = timeout(
             Duration::from_secs(10),
-            remote_client
-                .request_credential(&ap_client::CredentialQuery::Domain(domain.to_string())),
+            remote_client.request_credential(
+                &ap_client::CredentialQuery::Domain(domain.to_string()),
+                None,
+            ),
         )
         .await
         .expect("Credential request should not timeout")
@@ -894,9 +899,10 @@ async fn test_e2e_multi_device_credential_response() {
     for _ in 0..100 {
         let credential = timeout(
             Duration::from_secs(10),
-            remote_client.request_credential(&ap_client::CredentialQuery::Domain(
-                "example.com".to_string(),
-            )),
+            remote_client.request_credential(
+                &ap_client::CredentialQuery::Domain("example.com".to_string()),
+                None,
+            ),
         )
         .await
         .expect("Should not timeout")
