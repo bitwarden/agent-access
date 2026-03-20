@@ -97,6 +97,12 @@ The `aac` CLI tool has built-in support for connecting to the Bitwarden CLI. The
 aac listen
 ```
 
+If you don't have the `bw` CLI installed, you can use the built-in example credential provider:
+
+```shell
+aac listen --provider example
+```
+
 The interactive CLI will create a pairing token that you can use to establish a connection on the remote side.
 
 **Setting up the remote side**
