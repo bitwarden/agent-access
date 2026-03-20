@@ -3,11 +3,15 @@
 //! Handles the user-client (trusted device) mode for receiving and
 //! approving connection requests from remote clients.
 
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
+
 use ap_client::{
     ConnectionInfo, ConnectionStore, CredentialData, CredentialRequestReply, DefaultProxyClient,
     FingerprintVerificationReply, IdentityProvider, PskStore, UserClient, UserClientNotification,
     UserClientRequest,
 };
+use ap_proxy_protocol::IdentityFingerprint;
 use clap::Args;
 use color_eyre::eyre::Result;
 use crossterm::event::{Event, EventStream, KeyEventKind};
@@ -17,7 +21,8 @@ use ratatui::text::{Line, Span};
 use tokio::sync::{mpsc, oneshot};
 
 use super::tui::{
-    App, AppAction, Message, MessageKind, Mode, init_terminal, restore_terminal, wait_for_keypress,
+    App, AppAction, CredentialApproval, Message, MessageKind, Mode, init_terminal,
+    restore_terminal, wait_for_keypress,
 };
 use super::util::{format_listen_notification, format_relative_time, val_style};
 use crate::providers::{CredentialProvider, LookupResult, ProviderStatus};
@@ -36,6 +41,46 @@ enum PairingMode {
     EphemeralPsk,
     /// Reusable PSK — persisted to disk, survives restarts.
     ReusablePsk,
+}
+
+/// Caches credential approval decisions so repeated requests from the same
+/// device for the same credential are auto-approved within a time window.
+struct ApprovalCache {
+    /// Maps (source identity, query string) -> (when approved, how long valid).
+    approvals: HashMap<(IdentityFingerprint, String), (Instant, Duration)>,
+}
+
+impl ApprovalCache {
+    fn new() -> Self {
+        Self {
+            approvals: HashMap::new(),
+        }
+    }
+
+    /// Check whether a matching approval exists and has not expired.
+    /// Also removes any expired entries to prevent unbounded growth.
+    fn is_approved(
+        &mut self,
+        identity: &IdentityFingerprint,
+        query: &ap_client::CredentialQuery,
+    ) -> bool {
+        self.approvals
+            .retain(|_, (approved_at, duration)| approved_at.elapsed() < *duration);
+        self.approvals.contains_key(&(*identity, query.to_string()))
+    }
+
+    /// Record an approval for the given identity and query.
+    fn approve(
+        &mut self,
+        identity: IdentityFingerprint,
+        query: &ap_client::CredentialQuery,
+        minutes: u32,
+    ) {
+        self.approvals.insert(
+            (identity, query.to_string()),
+            (Instant::now(), Duration::from_secs(u64::from(minutes) * 60)),
+        );
+    }
 }
 
 /// Arguments for the listen command
@@ -93,6 +138,7 @@ enum Phase {
     CredentialApproval {
         query: ap_client::CredentialQuery,
         credential: CredentialData,
+        identity: ap_proxy_protocol::IdentityFingerprint,
         reply: oneshot::Sender<CredentialRequestReply>,
     },
     /// Waiting for the user to enter unlock input (password or session key).
@@ -259,6 +305,7 @@ async fn run_event_loop(
     pending_connection_name: &Option<String>,
     provider: &mut dyn CredentialProvider,
     log_rx: &mut Option<super::tui_tracing::LogReceiver>,
+    approval_cache: &mut ApprovalCache,
 ) -> Result<EventLoopExit> {
     let mut phase = Phase::Idle;
 
@@ -375,26 +422,31 @@ async fn run_event_loop(
                                 }
 
                                 // Credential approval
-                                (Phase::CredentialApproval { .. }, AppAction::Confirmed(approved)) => {
-                                    let approved = *approved;
+                                (Phase::CredentialApproval { .. }, AppAction::CredentialConfirmed(approval)) => {
                                     let old_phase = std::mem::replace(&mut phase, Phase::Idle);
-                                    if let Phase::CredentialApproval { query, credential, reply } = old_phase {
+                                    if let Phase::CredentialApproval { query, credential, identity, reply } = old_phase {
                                         let label = credential.domain.clone().unwrap_or_else(|| query.to_string());
                                         let cred_id = credential.credential_id.clone();
-                                        if approved {
-                                            let _ = reply.send(CredentialRequestReply {
-                                                approved: true,
-                                                credential: Some(credential),
-                                                credential_id: cred_id,
-                                            });
-                                            app.push_msg(MessageKind::Success, format!("Credential sent for {label}"));
-                                        } else {
+                                        if matches!(approval, CredentialApproval::Deny) {
                                             let _ = reply.send(CredentialRequestReply {
                                                 approved: false,
                                                 credential: None,
                                                 credential_id: cred_id,
                                             });
                                             app.push_msg(MessageKind::Error, format!("Credential denied for {label}"));
+                                        } else {
+                                            if let CredentialApproval::AutoApprove { minutes } = approval {
+                                                let mins = *minutes;
+                                                approval_cache.approve(identity, &query, mins);
+                                                app.push_msg(MessageKind::Success, format!("Credential sent for {label} (auto-approving for {mins}m)"));
+                                            } else {
+                                                app.push_msg(MessageKind::Success, format!("Credential sent for {label}"));
+                                            }
+                                            let _ = reply.send(CredentialRequestReply {
+                                                approved: true,
+                                                credential: Some(credential),
+                                                credential_id: cred_id,
+                                            });
                                         }
                                     }
                                     app.enter_idle(idle_footer(), IDLE_COMMANDS);
@@ -499,69 +551,96 @@ async fn run_event_loop(
                             ]);
                         }
                         UserClientRequest::CredentialRequest { query, identity, reply } => {
-                            // Display the request
-                            app.push_rich(Message::rich(
-                                MessageKind::Prompt,
-                                vec![
-                                    Span::styled("Credential request - ", Style::default().fg(Color::White)),
-                                    Span::styled(query.to_string(), val_style()),
-                                ],
-                            ));
-
-                            match provider.lookup(&query) {
-                                LookupResult::Found(credential) => {
-                                    let domain = credential.domain.clone().unwrap_or_else(|| query.to_string());
-                                    let found_msg = format!(
-                                        "Found: {} ({})",
-                                        credential.username.as_deref().unwrap_or("no username"),
-                                        credential.uri.as_deref().unwrap_or("no uri")
-                                    );
-                                    app.push_msg(MessageKind::Info, found_msg);
-                                    app.commands = &[];
-                                    let device_label = sessions
-                                        .iter()
-                                        .find(|s| s.fingerprint == identity)
-                                        .map(|s| {
-                                            s.name.clone().unwrap_or_else(|| {
-                                                hex::encode(s.fingerprint.0)
-                                                    .chars()
-                                                    .take(12)
-                                                    .collect::<String>()
-                                            })
-                                        })
-                                        .unwrap_or_else(|| "unknown device".to_string());
-                                    phase = Phase::CredentialApproval {
-                                        query,
-                                        credential,
-                                        reply,
-                                    };
-                                    app.set_mode(Mode::Confirm {
-                                        title: format!("Send credential for {domain} to {device_label}?"),
-                                        description: Line::from(""),
-                                    });
-                                    app.footer = Line::from(
-                                        Span::styled(
-                                            " Press [y] to approve or [n] to deny",
-                                            Style::default().fg(Color::Yellow),
-                                        )
-                                    );
-                                }
-                                result @ (LookupResult::NotReady { .. } | LookupResult::NotFound) => {
-                                    let label = query.to_string();
-                                    match result {
-                                        LookupResult::NotReady { message } => {
-                                            app.push_msg(MessageKind::Warning, format!("{message} — cannot look up credential for {label}"));
-                                        }
-                                        _ => {
-                                            app.push_msg(MessageKind::Error, format!("No credential found in vault for {label}"));
-                                        }
+                            // Check auto-approval cache first
+                            if approval_cache.is_approved(&identity, &query) {
+                                match provider.lookup(&query) {
+                                    LookupResult::Found(credential) => {
+                                        let label = credential.domain.clone().unwrap_or_else(|| query.to_string());
+                                        let cred_id = credential.credential_id.clone();
+                                        let _ = reply.send(CredentialRequestReply {
+                                            approved: true,
+                                            credential: Some(credential),
+                                            credential_id: cred_id,
+                                        });
+                                        app.push_msg(MessageKind::Success, format!("Auto-approved credential for {label}"));
                                     }
-                                    // Auto-deny: reply through the oneshot directly
-                                    let _ = reply.send(CredentialRequestReply {
-                                        approved: false,
-                                        credential: None,
-                                        credential_id: None,
-                                    });
+                                    _ => {
+                                        let label = query.to_string();
+                                        app.push_msg(MessageKind::Warning, format!("Auto-approve: credential not found for {label}, denying"));
+                                        let _ = reply.send(CredentialRequestReply {
+                                            approved: false,
+                                            credential: None,
+                                            credential_id: None,
+                                        });
+                                    }
+                                }
+                            } else {
+                                // Display the request
+                                app.push_rich(Message::rich(
+                                    MessageKind::Prompt,
+                                    vec![
+                                        Span::styled("Credential request - ", Style::default().fg(Color::White)),
+                                        Span::styled(query.to_string(), val_style()),
+                                    ],
+                                ));
+
+                                match provider.lookup(&query) {
+                                    LookupResult::Found(credential) => {
+                                        let domain = credential.domain.clone().unwrap_or_else(|| query.to_string());
+                                        let found_msg = format!(
+                                            "Found: {} ({})",
+                                            credential.username.as_deref().unwrap_or("no username"),
+                                            credential.uri.as_deref().unwrap_or("no uri")
+                                        );
+                                        app.push_msg(MessageKind::Info, found_msg);
+                                        app.commands = &[];
+                                        let device_label = sessions
+                                            .iter()
+                                            .find(|s| s.fingerprint == identity)
+                                            .map(|s| {
+                                                s.name.clone().unwrap_or_else(|| {
+                                                    hex::encode(s.fingerprint.0)
+                                                        .chars()
+                                                        .take(12)
+                                                        .collect::<String>()
+                                                })
+                                            })
+                                            .unwrap_or_else(|| "unknown device".to_string());
+                                        phase = Phase::CredentialApproval {
+                                            query,
+                                            credential,
+                                            identity,
+                                            reply,
+                                        };
+                                        app.set_mode(Mode::CredentialConfirm {
+                                            title: format!("Send credential for {domain} to {device_label}?"),
+                                            description: Line::from(""),
+                                            auto_approve_minutes: 10,
+                                        });
+                                        app.footer = Line::from(
+                                            Span::styled(
+                                                " Press [y] approve  [a] approve + auto-approve  [n] deny",
+                                                Style::default().fg(Color::Yellow),
+                                            )
+                                        );
+                                    }
+                                    result @ (LookupResult::NotReady { .. } | LookupResult::NotFound) => {
+                                        let label = query.to_string();
+                                        match result {
+                                            LookupResult::NotReady { message } => {
+                                                app.push_msg(MessageKind::Warning, format!("{message} — cannot look up credential for {label}"));
+                                            }
+                                            _ => {
+                                                app.push_msg(MessageKind::Error, format!("No credential found in vault for {label}"));
+                                            }
+                                        }
+                                        // Auto-deny: reply through the oneshot directly
+                                        let _ = reply.send(CredentialRequestReply {
+                                            approved: false,
+                                            credential: None,
+                                            credential_id: None,
+                                        });
+                                    }
                                 }
                             }
                         }
@@ -626,6 +705,7 @@ async fn run_user_client_loop(
     apply_status_spans(&mut app, name, &initial_status);
     let mut term = init_terminal();
     let mut reader = EventStream::new();
+    let mut approval_cache = ApprovalCache::new();
 
     loop {
         let identity_provider = Box::new(FileIdentityStorage::load_or_generate("user_client")?);
@@ -749,6 +829,7 @@ async fn run_user_client_loop(
             &pending_connection_name,
             provider,
             &mut log_rx,
+            &mut approval_cache,
         )
         .await?
         {

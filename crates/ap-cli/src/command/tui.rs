@@ -142,6 +142,12 @@ pub enum Mode {
         title: String,
         description: Line<'static>,
     },
+    /// Credential approval prompt with optional auto-approve.
+    CredentialConfirm {
+        title: String,
+        description: Line<'static>,
+        auto_approve_minutes: u32,
+    },
     /// Arrow-key pick list.
     Pick {
         title: String,
@@ -152,12 +158,24 @@ pub enum Mode {
 
 // ── Actions returned to caller ──
 
+/// Result of a credential approval prompt (CredentialConfirm mode).
+pub enum CredentialApproval {
+    /// Approve this single request.
+    Approve,
+    /// Approve and auto-approve matching requests for the given duration.
+    AutoApprove { minutes: u32 },
+    /// Deny the request.
+    Deny,
+}
+
 /// Action emitted by `App::handle_key` for the caller to process.
 pub enum AppAction {
     /// User pressed Enter with text content (TextInput mode).
     Submit(String),
     /// User answered a confirmation prompt (Confirm mode).
     Confirmed(bool),
+    /// User answered a credential approval prompt (CredentialConfirm mode).
+    CredentialConfirmed(CredentialApproval),
     /// User selected an option from a pick list (Pick mode).
     Picked(usize),
     /// User requested quit (Ctrl+C or Esc).
@@ -386,6 +404,37 @@ impl App {
                 }
                 _ => None,
             },
+            Mode::CredentialConfirm {
+                auto_approve_minutes,
+                ..
+            } => match key.code {
+                KeyCode::Char('y' | 'Y') => {
+                    self.set_mode(Mode::TextInput);
+                    Some(AppAction::CredentialConfirmed(CredentialApproval::Approve))
+                }
+                KeyCode::Char('a' | 'A') => {
+                    let minutes = *auto_approve_minutes;
+                    self.set_mode(Mode::TextInput);
+                    Some(AppAction::CredentialConfirmed(
+                        CredentialApproval::AutoApprove { minutes },
+                    ))
+                }
+                KeyCode::Char('n' | 'N') => {
+                    self.set_mode(Mode::TextInput);
+                    Some(AppAction::CredentialConfirmed(CredentialApproval::Deny))
+                }
+                KeyCode::Up => {
+                    *auto_approve_minutes = auto_approve_minutes.saturating_add(5);
+                    None
+                }
+                KeyCode::Down => {
+                    if *auto_approve_minutes > 1 {
+                        *auto_approve_minutes -= 1;
+                    }
+                    None
+                }
+                _ => None,
+            },
             Mode::Pick {
                 options, selected, ..
             } => match key.code {
@@ -415,7 +464,7 @@ impl App {
         // Determine input panel height based on mode
         let input_height = match &self.mode {
             Mode::TextInput => 3,
-            Mode::Confirm { .. } => 6,
+            Mode::Confirm { .. } | Mode::CredentialConfirm { .. } => 6,
             Mode::Pick { options, .. } => (options.len() as u16) + 2, // border + items
         };
 
@@ -624,6 +673,46 @@ impl App {
                 ];
                 let confirm_widget = Paragraph::new(lines)
                     .block(Block::default().borders(Borders::ALL).title(" Confirm "));
+                frame.render_widget(confirm_widget, area);
+            }
+            Mode::CredentialConfirm {
+                title,
+                description,
+                auto_approve_minutes,
+            } => {
+                let lines = vec![
+                    Line::from(Span::styled(
+                        title.as_str(),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    )),
+                    description.clone(),
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled(
+                            "[y]",
+                            Style::default()
+                                .fg(Color::Green)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::raw(" Yes  "),
+                        Span::styled(
+                            "[a]",
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::raw(format!(" Yes + auto-approve {auto_approve_minutes}m ")),
+                        Span::styled("(\u{2191}/\u{2193})", Style::default().fg(Color::DarkGray)),
+                        Span::raw("  "),
+                        Span::styled(
+                            "[n]",
+                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::raw(" No"),
+                    ]),
+                ];
+                let confirm_widget = Paragraph::new(lines)
+                    .block(Block::default().borders(Borders::ALL).title(" Approve "));
                 frame.render_widget(confirm_widget, area);
             }
             Mode::Pick {
