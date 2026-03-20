@@ -24,7 +24,8 @@ use super::tui::{
     App, AppAction, MessageKind, Mode, init_terminal, restore_terminal, wait_for_keypress,
 };
 use super::util::{format_connect_notification, format_relative_time};
-use crate::storage::{FileIdentityStorage, FileSessionCache, MemorySessionStore};
+use crate::storage::{FileIdentityStorage, FileSessionCache};
+use ap_client::MemorySessionStore;
 
 use super::DEFAULT_PROXY_URL;
 

@@ -3,14 +3,14 @@
 //! These tests exercise the complete protocol stack using a real WebSocket proxy server,
 //! covering PSK and fingerprint-based pairing modes as well as credential exchange.
 
-use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Mutex;
+use std::sync::Arc;
 
 use ap_client::{
     CredentialData, CredentialRequestReply, DefaultProxyClient, FingerprintVerificationReply,
-    MemoryIdentityProvider, PskToken, RemoteClient, RemoteClientHandle, RemoteClientNotification,
-    SessionStore, UserClient, UserClientHandle, UserClientNotification, UserClientRequest,
+    MemoryIdentityProvider, MemorySessionStore, PskToken, RemoteClient, RemoteClientHandle,
+    RemoteClientNotification, SessionStore, UserClient, UserClientHandle, UserClientNotification,
+    UserClientRequest,
 };
 use ap_noise::MultiDeviceTransport;
 use ap_proxy::server::ProxyServer;
@@ -23,210 +23,38 @@ use tokio::time::{Duration, timeout};
 
 // Uses MemoryIdentityProvider from the library instead of a local mock
 
-/// Session entry with cached_at timestamp
-#[derive(Clone)]
-struct SessionEntry {
-    fingerprint: IdentityFingerprint,
-    name: Option<String>,
-    #[allow(dead_code)]
-    cached_at: u64,
-    last_connected_at: u64,
-    transport_state: Option<MultiDeviceTransport>,
-}
-
-/// In-memory HashMap-based session store
-struct MockSessionStore {
-    sessions: Mutex<HashMap<IdentityFingerprint, SessionEntry>>,
-}
-
-impl MockSessionStore {
-    fn new() -> Self {
-        Self {
-            sessions: Mutex::new(HashMap::new()),
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl SessionStore for MockSessionStore {
-    async fn has_session(&self, fingerprint: &IdentityFingerprint) -> bool {
-        self.sessions
-            .lock()
-            .expect("Lock should not be poisoned")
-            .contains_key(fingerprint)
-    }
-
-    async fn cache_session(
-        &mut self,
-        fingerprint: IdentityFingerprint,
-    ) -> Result<(), ap_client::ClientError> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-
-        let mut sessions = self.sessions.lock().expect("Lock should not be poisoned");
-        sessions.insert(
-            fingerprint,
-            SessionEntry {
-                fingerprint,
-                name: None,
-                cached_at: now,
-                last_connected_at: now,
-                transport_state: None,
-            },
-        );
-        Ok(())
-    }
-
-    async fn remove_session(
-        &mut self,
-        fingerprint: &IdentityFingerprint,
-    ) -> Result<(), ap_client::ClientError> {
-        self.sessions
-            .lock()
-            .expect("Lock should not be poisoned")
-            .remove(fingerprint);
-        Ok(())
-    }
-
-    async fn clear(&mut self) -> Result<(), ap_client::ClientError> {
-        self.sessions
-            .lock()
-            .expect("Lock should not be poisoned")
-            .clear();
-        Ok(())
-    }
-
-    async fn list_sessions(&self) -> Vec<(IdentityFingerprint, Option<String>, u64, u64)> {
-        self.sessions
-            .lock()
-            .expect("Lock should not be poisoned")
-            .values()
-            .map(|e| {
-                (
-                    e.fingerprint,
-                    e.name.clone(),
-                    e.cached_at,
-                    e.last_connected_at,
-                )
-            })
-            .collect()
-    }
-
-    async fn set_session_name(
-        &mut self,
-        _fingerprint: &IdentityFingerprint,
-        _name: String,
-    ) -> Result<(), ap_client::ClientError> {
-        Ok(())
-    }
-
-    async fn update_last_connected(
-        &mut self,
-        fingerprint: &IdentityFingerprint,
-    ) -> Result<(), ap_client::ClientError> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-
-        let mut sessions = self.sessions.lock().expect("Lock should not be poisoned");
-        if let Some(entry) = sessions.get_mut(fingerprint) {
-            entry.last_connected_at = now;
-        }
-        Ok(())
-    }
-
-    async fn save_transport_state(
-        &mut self,
-        fingerprint: &IdentityFingerprint,
-        transport_state: MultiDeviceTransport,
-    ) -> Result<(), ap_client::ClientError> {
-        let mut sessions = self.sessions.lock().expect("Lock should not be poisoned");
-        if let Some(entry) = sessions.get_mut(fingerprint) {
-            entry.transport_state = Some(transport_state);
-        }
-        Ok(())
-    }
-
-    async fn load_transport_state(
-        &self,
-        fingerprint: &IdentityFingerprint,
-    ) -> Result<Option<MultiDeviceTransport>, ap_client::ClientError> {
-        let sessions = self.sessions.lock().expect("Lock should not be poisoned");
-        Ok(sessions
-            .get(fingerprint)
-            .and_then(|e| e.transport_state.clone()))
-    }
-}
-
-/// Wrapper to share MockSessionStore via Arc.
+/// Wrapper to share a MemorySessionStore via Arc<tokio::sync::Mutex>.
 ///
-/// This works because MockSessionStore uses interior mutability (Mutex<HashMap>),
-/// so no outer Mutex is needed. The async trait methods can delegate directly.
-struct SharedSessionStore(std::sync::Arc<MockSessionStore>);
+/// Needed by multi-device tests where multiple clients share the same session store.
+/// Uses tokio::sync::Mutex (whose MutexGuard is Send) to avoid Send issues in async trait methods.
+struct SharedSessionStore(Arc<tokio::sync::Mutex<MemorySessionStore>>);
 
 #[async_trait::async_trait]
 impl SessionStore for SharedSessionStore {
     async fn has_session(&self, fingerprint: &IdentityFingerprint) -> bool {
-        self.0.has_session(fingerprint).await
+        self.0.lock().await.has_session(fingerprint).await
     }
 
     async fn cache_session(
         &mut self,
         fingerprint: IdentityFingerprint,
     ) -> Result<(), ap_client::ClientError> {
-        // MockSessionStore uses interior mutability, so &self is sufficient
-        let store = std::sync::Arc::get_mut(&mut self.0);
-        // In tests, Arc is never shared at the point of mutation through SessionStore,
-        // so get_mut succeeds. If it doesn't, fall back to direct field access.
-        if let Some(store) = store {
-            store.cache_session(fingerprint).await
-        } else {
-            // Fallback: direct interior-mutability access
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            let mut sessions = self.0.sessions.lock().expect("Lock should not be poisoned");
-            sessions.insert(
-                fingerprint,
-                SessionEntry {
-                    fingerprint,
-                    name: None,
-                    cached_at: now,
-                    last_connected_at: now,
-                    transport_state: None,
-                },
-            );
-            Ok(())
-        }
+        self.0.lock().await.cache_session(fingerprint).await
     }
 
     async fn remove_session(
         &mut self,
         fingerprint: &IdentityFingerprint,
     ) -> Result<(), ap_client::ClientError> {
-        self.0
-            .sessions
-            .lock()
-            .expect("Lock should not be poisoned")
-            .remove(fingerprint);
-        Ok(())
+        self.0.lock().await.remove_session(fingerprint).await
     }
 
     async fn clear(&mut self) -> Result<(), ap_client::ClientError> {
-        self.0
-            .sessions
-            .lock()
-            .expect("Lock should not be poisoned")
-            .clear();
-        Ok(())
+        self.0.lock().await.clear().await
     }
 
     async fn list_sessions(&self) -> Vec<(IdentityFingerprint, Option<String>, u64, u64)> {
-        self.0.list_sessions().await
+        self.0.lock().await.list_sessions().await
     }
 
     async fn set_session_name(
@@ -234,26 +62,18 @@ impl SessionStore for SharedSessionStore {
         fingerprint: &IdentityFingerprint,
         name: String,
     ) -> Result<(), ap_client::ClientError> {
-        let mut sessions = self.0.sessions.lock().expect("Lock should not be poisoned");
-        if let Some(entry) = sessions.get_mut(fingerprint) {
-            entry.name = Some(name);
-        }
-        Ok(())
+        self.0
+            .lock()
+            .await
+            .set_session_name(fingerprint, name)
+            .await
     }
 
     async fn update_last_connected(
         &mut self,
         fingerprint: &IdentityFingerprint,
     ) -> Result<(), ap_client::ClientError> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let mut sessions = self.0.sessions.lock().expect("Lock should not be poisoned");
-        if let Some(entry) = sessions.get_mut(fingerprint) {
-            entry.last_connected_at = now;
-        }
-        Ok(())
+        self.0.lock().await.update_last_connected(fingerprint).await
     }
 
     async fn save_transport_state(
@@ -261,18 +81,18 @@ impl SessionStore for SharedSessionStore {
         fingerprint: &IdentityFingerprint,
         transport_state: MultiDeviceTransport,
     ) -> Result<(), ap_client::ClientError> {
-        let mut sessions = self.0.sessions.lock().expect("Lock should not be poisoned");
-        if let Some(entry) = sessions.get_mut(fingerprint) {
-            entry.transport_state = Some(transport_state);
-        }
-        Ok(())
+        self.0
+            .lock()
+            .await
+            .save_transport_state(fingerprint, transport_state)
+            .await
     }
 
     async fn load_transport_state(
         &self,
         fingerprint: &IdentityFingerprint,
     ) -> Result<Option<MultiDeviceTransport>, ap_client::ClientError> {
-        self.0.load_transport_state(fingerprint).await
+        self.0.lock().await.load_transport_state(fingerprint).await
     }
 }
 
@@ -326,7 +146,7 @@ async fn test_e2e_psk_pairing_and_credential_request() {
 
     // 3. Create UserClient with DefaultProxyClient
     let user_proxy = create_proxy_client(addr);
-    let user_session_store = MockSessionStore::new();
+    let user_session_store = MemorySessionStore::new();
 
     let UserClientHandle {
         client: user_client,
@@ -354,7 +174,7 @@ async fn test_e2e_psk_pairing_and_credential_request() {
 
     // 5. Create RemoteClient with DefaultProxyClient
     let remote_proxy = create_proxy_client(addr);
-    let remote_session_store = MockSessionStore::new();
+    let remote_session_store = MemorySessionStore::new();
 
     let RemoteClientHandle {
         client: remote_client,
@@ -463,7 +283,7 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
 
     // 3. Create UserClient with DefaultProxyClient
     let user_proxy = create_proxy_client(addr);
-    let user_session_store = MockSessionStore::new();
+    let user_session_store = MemorySessionStore::new();
 
     let UserClientHandle {
         client: user_client,
@@ -487,7 +307,7 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
 
     // 5. Create RemoteClient with DefaultProxyClient
     let remote_proxy = create_proxy_client(addr);
-    let remote_session_store = MockSessionStore::new();
+    let remote_session_store = MemorySessionStore::new();
 
     let RemoteClientHandle {
         client: remote_client,
@@ -607,7 +427,7 @@ async fn test_e2e_credential_request_denied() {
 
     // 3. Create UserClient with DefaultProxyClient
     let user_proxy = create_proxy_client(addr);
-    let user_session_store = MockSessionStore::new();
+    let user_session_store = MemorySessionStore::new();
 
     let UserClientHandle {
         client: user_client,
@@ -635,7 +455,7 @@ async fn test_e2e_credential_request_denied() {
 
     // 5. Create RemoteClient
     let remote_proxy = create_proxy_client(addr);
-    let remote_session_store = MockSessionStore::new();
+    let remote_session_store = MemorySessionStore::new();
 
     let RemoteClientHandle {
         client: remote_client,
@@ -713,7 +533,7 @@ async fn test_e2e_multiple_credential_requests() {
 
     // 3. Create UserClient with DefaultProxyClient
     let user_proxy = create_proxy_client(addr);
-    let user_session_store = MockSessionStore::new();
+    let user_session_store = MemorySessionStore::new();
 
     let UserClientHandle {
         client: user_client,
@@ -741,7 +561,7 @@ async fn test_e2e_multiple_credential_requests() {
 
     // 5. Create RemoteClient
     let remote_proxy = create_proxy_client(addr);
-    let remote_session_store = MockSessionStore::new();
+    let remote_session_store = MemorySessionStore::new();
 
     let RemoteClientHandle {
         client: remote_client,
@@ -833,8 +653,6 @@ async fn test_e2e_multiple_credential_requests() {
 
 #[tokio::test]
 async fn test_e2e_transport_state_persistence() {
-    use std::sync::Arc;
-
     // 1. Start real proxy server
     let addr = start_test_server().await;
 
@@ -844,7 +662,7 @@ async fn test_e2e_transport_state_persistence() {
 
     // 3. Create UserClient with DefaultProxyClient
     let user_proxy = create_proxy_client(addr);
-    let user_session_store = MockSessionStore::new();
+    let user_session_store = MemorySessionStore::new();
 
     let UserClientHandle {
         client: user_client,
@@ -870,9 +688,9 @@ async fn test_e2e_transport_state_persistence() {
         .expect("Should parse PSK token")
         .into_parts();
 
-    // 5. Create RemoteClient with Arc<MockSessionStore> for later access
+    // 5. Create RemoteClient with shared session store for later access
     let remote_proxy = create_proxy_client(addr);
-    let remote_session_store = Arc::new(MockSessionStore::new());
+    let remote_session_store = Arc::new(tokio::sync::Mutex::new(MemorySessionStore::new()));
     let session_store_clone = Arc::clone(&remote_session_store);
 
     // Reuse the module-level SharedSessionStore wrapper
@@ -927,6 +745,8 @@ async fn test_e2e_transport_state_persistence() {
 
     // 10. Load transport state from session store and verify it was saved
     let transport_state = session_store_clone
+        .lock()
+        .await
         .load_transport_state(&fingerprint)
         .await
         .expect("Should load transport state");
@@ -961,8 +781,6 @@ async fn test_e2e_transport_state_persistence() {
 
 #[tokio::test]
 async fn test_e2e_multi_device_credential_response() {
-    use std::sync::Arc;
-
     // 1. Start real proxy server
     let addr = start_test_server().await;
 
@@ -973,8 +791,8 @@ async fn test_e2e_multi_device_credential_response() {
     // 3. Create UserClient Device 1 with DefaultProxyClient
     let user_proxy1 = create_proxy_client(addr);
 
-    // Use Arc<MockSessionStore> for later access to transport state
-    let user_session_store1 = Arc::new(MockSessionStore::new());
+    // Use Arc for shared access between multiple UserClient devices
+    let user_session_store1 = Arc::new(tokio::sync::Mutex::new(MemorySessionStore::new()));
     let session_store_clone = Arc::clone(&user_session_store1);
 
     let UserClientHandle {
@@ -1009,7 +827,7 @@ async fn test_e2e_multi_device_credential_response() {
         requests: mut _remote_request_rx,
     } = RemoteClient::connect(
         Box::new(MemoryIdentityProvider::new()),
-        Box::new(MockSessionStore::new()),
+        Box::new(MemorySessionStore::new()),
         Box::new(remote_proxy),
     )
     .await

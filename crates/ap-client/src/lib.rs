@@ -57,6 +57,7 @@ pub mod types;
 
 mod clients;
 pub(crate) mod compat;
+mod memory_session_store;
 
 pub use clients::remote_client::{
     RemoteClient, RemoteClientFingerprintReply, RemoteClientHandle, RemoteClientNotification,
@@ -67,6 +68,7 @@ pub use clients::user_client::{
     UserClientNotification, UserClientRequest,
 };
 pub use error::ClientError;
+pub use memory_session_store::MemorySessionStore;
 #[cfg(feature = "native-websocket")]
 pub use proxy::DefaultProxyClient;
 pub use proxy::ProxyClient;
