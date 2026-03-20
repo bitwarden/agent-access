@@ -108,14 +108,10 @@ impl PendingPairings {
         }
     }
 
-    /// Drain buffered messages after fingerprint approval.
-    fn drain_buffered_messages(&mut self, source: &IdentityFingerprint) -> Vec<IncomingMessage> {
+    /// Remove and return buffered messages for a source.
+    /// Used to replay on approval or discard on rejection.
+    fn take_buffered_messages(&mut self, source: &IdentityFingerprint) -> Vec<IncomingMessage> {
         self.buffered_messages.remove(source).unwrap_or_default()
-    }
-
-    /// Discard buffered messages on fingerprint rejection.
-    fn discard_buffered_messages(&mut self, source: &IdentityFingerprint) {
-        self.buffered_messages.remove(source);
     }
 }
 
@@ -1029,7 +1025,7 @@ impl UserClientInner {
 
                 // Drain and replay buffered messages
                 let mut futures = Vec::new();
-                for msg in self.pending_pairings.drain_buffered_messages(&source) {
+                for msg in self.pending_pairings.take_buffered_messages(&source) {
                     match self.handle_incoming(msg, notification_tx, request_tx).await {
                         Ok(Some(fut)) => futures.push(fut),
                         Ok(None) => {}
@@ -1072,7 +1068,7 @@ impl UserClientInner {
         reason: &str,
         notification_tx: &mpsc::Sender<UserClientNotification>,
     ) {
-        self.pending_pairings.discard_buffered_messages(source);
+        self.pending_pairings.take_buffered_messages(source);
 
         self.audit_log
             .write(AuditEvent::ConnectionRejected {
