@@ -320,12 +320,12 @@ impl UserClient {
         mut proxy_client: Box<dyn ProxyClient>,
         audit_log: Option<Box<dyn AuditLog>>,
     ) -> Result<UserClientHandle, ClientError> {
-        // Extract identity once — used for proxy auth and own fingerprint
+        // Extract identity once — used for proxy auth, reconnection, and own fingerprint
         let identity_keypair = identity_provider.identity().await;
         let own_fingerprint = identity_keypair.identity().fingerprint();
 
         // Authenticate with the proxy (the async part — before spawn)
-        let incoming_rx = proxy_client.connect(identity_keypair).await?;
+        let incoming_rx = proxy_client.connect(identity_keypair.clone()).await?;
 
         // Create channels
         let (notification_tx, notification_rx) = mpsc::channel(32);
@@ -338,7 +338,7 @@ impl UserClient {
         let inner = UserClientInner {
             session_store,
             proxy_client,
-            identity_keypair: identity_provider.identity().await,
+            identity_keypair,
             own_fingerprint,
             transports: HashMap::new(),
             pending_pairings: PendingPairings::new(),
