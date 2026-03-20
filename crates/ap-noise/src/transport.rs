@@ -390,7 +390,7 @@ struct XChaCha20Poly1305Nonce([u8; 24]);
 impl XChaCha20Poly1305Nonce {
     fn from_slice(slice: &[u8]) -> Result<Self, NoiseProtocolError> {
         if slice.len() != 24 {
-            return Err(NoiseProtocolError::DecryptionFailed)
+            return Err(NoiseProtocolError::DecryptionFailed);
         }
         let mut nonce = [0u8; 24];
         nonce.copy_from_slice(slice);
