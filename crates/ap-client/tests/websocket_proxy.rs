@@ -108,13 +108,14 @@ async fn test_e2e_psk_pairing_and_credential_request() {
         Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
+        None,
     )
     .await
     .expect("UserClient should connect");
 
     // 4. Get PSK token
     let token = user_client
-        .get_psk_token(None)
+        .get_psk_token(None, false)
         .await
         .expect("Should generate PSK token");
 
@@ -244,6 +245,7 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
         Box::new(user_identity),
         Box::new(user_connection_store),
         Box::new(user_proxy),
+        None,
         None,
     )
     .await
@@ -389,13 +391,14 @@ async fn test_e2e_credential_request_denied() {
         Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
+        None,
     )
     .await
     .expect("UserClient should connect");
 
     // 4. Get PSK token
     let token = user_client
-        .get_psk_token(None)
+        .get_psk_token(None, false)
         .await
         .expect("Should generate PSK token");
 
@@ -495,13 +498,14 @@ async fn test_e2e_multiple_credential_requests() {
         Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
+        None,
     )
     .await
     .expect("UserClient should connect");
 
     // 4. Get PSK token
     let token = user_client
-        .get_psk_token(None)
+        .get_psk_token(None, false)
         .await
         .expect("Should generate PSK token");
 
@@ -624,13 +628,14 @@ async fn test_e2e_transport_state_persistence() {
         Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
+        None,
     )
     .await
     .expect("UserClient should connect");
 
     // 4. Get PSK token
     let token = user_client
-        .get_psk_token(None)
+        .get_psk_token(None, false)
         .await
         .expect("Should generate PSK token");
 
@@ -757,13 +762,14 @@ async fn test_e2e_multi_device_credential_response() {
         Box::new(SharedConnectionStore(Arc::clone(&user_connection_store1))),
         Box::new(user_proxy1),
         None,
+        None,
     )
     .await
     .expect("UserClient Device 1 should connect");
 
     // 5. Get PSK token
     let token = user_client1
-        .get_psk_token(None)
+        .get_psk_token(None, false)
         .await
         .expect("Should generate PSK token");
 
@@ -819,6 +825,7 @@ async fn test_e2e_multi_device_credential_response() {
         Box::new(MemoryIdentityProvider::from_keypair(user_keypair_device2)),
         Box::new(SharedConnectionStore(Arc::clone(&connection_store_clone))),
         Box::new(user_proxy2),
+        None,
         None,
     )
     .await

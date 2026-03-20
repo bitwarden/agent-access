@@ -39,10 +39,10 @@
 //!
 //! // Connect — spawns event loop internally, returns handle with channels
 //! let UserClientHandle { client, mut notifications, mut requests } =
-//!     UserClient::connect(identity_provider, connection_store, proxy_client, None).await?;
+//!     UserClient::connect(identity_provider, connection_store, proxy_client, None, None).await?;
 //!
 //! // Already listening. Just use it.
-//! let token = client.get_psk_token(None).await?;
+//! let token = client.get_psk_token(None, false).await?;
 //! // Or: let code = client.get_rendezvous_token(None).await?;
 //! ```
 
@@ -58,6 +58,7 @@ pub mod types;
 mod clients;
 pub(crate) mod compat;
 mod memory_connection_store;
+mod memory_psk_store;
 
 pub use clients::remote_client::{
     RemoteClient, RemoteClientFingerprintReply, RemoteClientHandle, RemoteClientNotification,
@@ -69,12 +70,13 @@ pub use clients::user_client::{
 };
 pub use error::ClientError;
 pub use memory_connection_store::MemoryConnectionStore;
+pub use memory_psk_store::MemoryPskStore;
 #[cfg(feature = "native-websocket")]
 pub use proxy::DefaultProxyClient;
 pub use proxy::ProxyClient;
 pub use traits::{
     AuditConnectionType, AuditEvent, AuditLog, ConnectionInfo, ConnectionStore, ConnectionUpdate,
-    CredentialFieldSet, IdentityProvider, MemoryIdentityProvider, NoOpAuditLog,
+    CredentialFieldSet, IdentityProvider, MemoryIdentityProvider, NoOpAuditLog, PskEntry, PskStore,
 };
 pub use types::{ConnectionMode, CredentialData, CredentialQuery, PskId, PskToken};
 

@@ -37,6 +37,7 @@ AUTOMATION / AGENT / LLM USE:
 
     1. Request a credential:  aac connect --domain <DOMAIN> --output json
 
+  The token can be passed via --token <TOKEN> or the AAC_TOKEN env var.
   If only one session is cached, it is used automatically.
   With multiple cached sessions, specify one with --session <HEX>.
   --session accepts a full 64-char hex fingerprint or any unique prefix.
@@ -48,7 +49,7 @@ pub struct ConnectArgs {
     pub proxy_url: String,
 
     /// Token (rendezvous code or PSK token)
-    #[arg(long, conflicts_with = "session")]
+    #[arg(long, env = "AAC_TOKEN", conflicts_with = "session")]
     pub token: Option<String>,
 
     /// Session fingerprint to reconnect to (hex string or unique prefix)
