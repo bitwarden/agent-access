@@ -78,6 +78,57 @@ pub trait IdentityProvider: Send + Sync {
     }
 }
 
+/// An [`IdentityProvider`] that generates a random ephemeral identity on creation.
+///
+/// Useful for tests, examples, and consumers that don't need persistent identity.
+/// The keypair lives only in memory and is lost when the provider is dropped.
+///
+/// ```
+/// use ap_client::EphemeralIdentityProvider;
+///
+/// let identity = EphemeralIdentityProvider::new();
+/// ```
+///
+/// To wrap an existing keypair:
+///
+/// ```
+/// use ap_client::EphemeralIdentityProvider;
+/// use ap_proxy_protocol::IdentityKeyPair;
+///
+/// let keypair = IdentityKeyPair::generate();
+/// let identity = EphemeralIdentityProvider::from_keypair(keypair);
+/// ```
+pub struct EphemeralIdentityProvider {
+    keypair: IdentityKeyPair,
+}
+
+impl EphemeralIdentityProvider {
+    /// Generate a new random ephemeral identity.
+    pub fn new() -> Self {
+        Self {
+            keypair: IdentityKeyPair::generate(),
+        }
+    }
+
+    /// Wrap an existing keypair as an ephemeral identity provider.
+    pub fn from_keypair(keypair: IdentityKeyPair) -> Self {
+        Self { keypair }
+    }
+}
+
+impl Default for EphemeralIdentityProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl IdentityProvider for EphemeralIdentityProvider {
+    async fn identity(&self) -> IdentityKeyPair {
+        self.keypair.clone()
+    }
+}
+
 /// How a new connection was established between devices.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuditConnectionType {
