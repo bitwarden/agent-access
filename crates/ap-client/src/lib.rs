@@ -7,20 +7,20 @@
 //!
 //! - PSK-based authentication using pairing codes
 //! - Noise Protocol NNpsk2 pattern for secure 2-message handshake
-//! - Session caching for reconnection without re-pairing
+//! - Connection caching for reconnection without re-pairing
 //! - Supports both classical (Curve25519) and post-quantum (Kyber768) cryptography
 //!
 //! ## Remote Client Usage (untrusted device)
 //!
 //! ```ignore
-//! use ap_client::{RemoteClient, RemoteClientHandle, DefaultProxyClient, IdentityProvider, SessionStore};
+//! use ap_client::{RemoteClient, RemoteClientHandle, DefaultProxyClient, IdentityProvider, ConnectionStore};
 //!
 //! // Create proxy client — identity is wired internally by connect()
 //! let proxy_client = Box::new(DefaultProxyClient::from_url("ws://localhost:8080".to_string()));
 //!
 //! // Connect — spawns event loop internally, returns handle with channels
 //! let RemoteClientHandle { client, mut notifications, mut requests } =
-//!     RemoteClient::connect(identity_provider, session_store, proxy_client).await?;
+//!     RemoteClient::connect(identity_provider, connection_store, proxy_client).await?;
 //!
 //! // Pair with rendezvous code
 //! client.pair_with_handshake("ABCDEF123".to_string(), false).await?;
@@ -39,7 +39,7 @@
 //!
 //! // Connect — spawns event loop internally, returns handle with channels
 //! let UserClientHandle { client, mut notifications, mut requests } =
-//!     UserClient::connect(identity_provider, session_store, proxy_client, None).await?;
+//!     UserClient::connect(identity_provider, connection_store, proxy_client, None).await?;
 //!
 //! // Already listening. Just use it.
 //! let token = client.get_psk_token(None).await?;
@@ -57,7 +57,7 @@ pub mod types;
 
 mod clients;
 pub(crate) mod compat;
-mod memory_session_store;
+mod memory_connection_store;
 
 pub use clients::remote_client::{
     RemoteClient, RemoteClientFingerprintReply, RemoteClientHandle, RemoteClientNotification,
@@ -68,13 +68,13 @@ pub use clients::user_client::{
     UserClientNotification, UserClientRequest,
 };
 pub use error::ClientError;
-pub use memory_session_store::MemorySessionStore;
+pub use memory_connection_store::MemoryConnectionStore;
 #[cfg(feature = "native-websocket")]
 pub use proxy::DefaultProxyClient;
 pub use proxy::ProxyClient;
 pub use traits::{
-    AuditConnectionType, AuditEvent, AuditLog, CredentialFieldSet, IdentityProvider,
-    MemoryIdentityProvider, NoOpAuditLog, SessionInfo, SessionStore, SessionUpdate,
+    AuditConnectionType, AuditEvent, AuditLog, ConnectionInfo, ConnectionStore, ConnectionUpdate,
+    CredentialFieldSet, IdentityProvider, MemoryIdentityProvider, NoOpAuditLog,
 };
 pub use types::{ConnectionMode, CredentialData, CredentialQuery, PskId, PskToken};
 

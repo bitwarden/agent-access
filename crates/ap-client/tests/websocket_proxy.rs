@@ -7,10 +7,10 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use ap_client::{
-    CredentialData, CredentialRequestReply, DefaultProxyClient, FingerprintVerificationReply,
-    MemoryIdentityProvider, MemorySessionStore, PskToken, RemoteClient, RemoteClientHandle,
-    RemoteClientNotification, SessionInfo, SessionStore, SessionUpdate, UserClient,
-    UserClientHandle, UserClientNotification, UserClientRequest,
+    ConnectionInfo, ConnectionStore, ConnectionUpdate, CredentialData, CredentialRequestReply,
+    DefaultProxyClient, FingerprintVerificationReply, MemoryConnectionStore,
+    MemoryIdentityProvider, PskToken, RemoteClient, RemoteClientHandle, RemoteClientNotification,
+    UserClient, UserClientHandle, UserClientNotification, UserClientRequest,
 };
 use ap_proxy::server::ProxyServer;
 use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair};
@@ -22,27 +22,27 @@ use tokio::time::{Duration, timeout};
 
 // Uses MemoryIdentityProvider from the library instead of a local mock
 
-/// Wrapper to share a MemorySessionStore via Arc<tokio::sync::Mutex>.
+/// Wrapper to share a MemoryConnectionStore via Arc<tokio::sync::Mutex>.
 ///
-/// Needed by multi-device tests where multiple clients share the same session store.
+/// Needed by multi-device tests where multiple clients share the same connection store.
 /// Uses tokio::sync::Mutex (whose MutexGuard is Send) to avoid Send issues in async trait methods.
-struct SharedSessionStore(Arc<tokio::sync::Mutex<MemorySessionStore>>);
+struct SharedConnectionStore(Arc<tokio::sync::Mutex<MemoryConnectionStore>>);
 
 #[async_trait::async_trait]
-impl SessionStore for SharedSessionStore {
-    async fn get(&self, fingerprint: &IdentityFingerprint) -> Option<SessionInfo> {
+impl ConnectionStore for SharedConnectionStore {
+    async fn get(&self, fingerprint: &IdentityFingerprint) -> Option<ConnectionInfo> {
         self.0.lock().await.get(fingerprint).await
     }
 
-    async fn save(&mut self, session: SessionInfo) -> Result<(), ap_client::ClientError> {
-        self.0.lock().await.save(session).await
+    async fn save(&mut self, connection: ConnectionInfo) -> Result<(), ap_client::ClientError> {
+        self.0.lock().await.save(connection).await
     }
 
-    async fn update(&mut self, update: SessionUpdate) -> Result<(), ap_client::ClientError> {
+    async fn update(&mut self, update: ConnectionUpdate) -> Result<(), ap_client::ClientError> {
         self.0.lock().await.update(update).await
     }
 
-    async fn list(&self) -> Vec<SessionInfo> {
+    async fn list(&self) -> Vec<ConnectionInfo> {
         self.0.lock().await.list().await
     }
 }
@@ -97,7 +97,7 @@ async fn test_e2e_psk_pairing_and_credential_request() {
 
     // 3. Create UserClient with DefaultProxyClient
     let user_proxy = create_proxy_client(addr);
-    let user_session_store = MemorySessionStore::new();
+    let user_connection_store = MemoryConnectionStore::new();
 
     let UserClientHandle {
         client: user_client,
@@ -105,7 +105,7 @@ async fn test_e2e_psk_pairing_and_credential_request() {
         requests: mut request_rx,
     } = UserClient::connect(
         Box::new(user_identity),
-        Box::new(user_session_store),
+        Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
     )
@@ -125,7 +125,7 @@ async fn test_e2e_psk_pairing_and_credential_request() {
 
     // 5. Create RemoteClient with DefaultProxyClient
     let remote_proxy = create_proxy_client(addr);
-    let remote_session_store = MemorySessionStore::new();
+    let remote_connection_store = MemoryConnectionStore::new();
 
     let RemoteClientHandle {
         client: remote_client,
@@ -133,7 +133,7 @@ async fn test_e2e_psk_pairing_and_credential_request() {
         requests: mut _remote_request_rx,
     } = RemoteClient::connect(
         Box::new(remote_identity),
-        Box::new(remote_session_store),
+        Box::new(remote_connection_store),
         Box::new(remote_proxy),
     )
     .await
@@ -234,7 +234,7 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
 
     // 3. Create UserClient with DefaultProxyClient
     let user_proxy = create_proxy_client(addr);
-    let user_session_store = MemorySessionStore::new();
+    let user_connection_store = MemoryConnectionStore::new();
 
     let UserClientHandle {
         client: user_client,
@@ -242,7 +242,7 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
         requests: mut request_rx,
     } = UserClient::connect(
         Box::new(user_identity),
-        Box::new(user_session_store),
+        Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
     )
@@ -258,7 +258,7 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
 
     // 5. Create RemoteClient with DefaultProxyClient
     let remote_proxy = create_proxy_client(addr);
-    let remote_session_store = MemorySessionStore::new();
+    let remote_connection_store = MemoryConnectionStore::new();
 
     let RemoteClientHandle {
         client: remote_client,
@@ -266,7 +266,7 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
         requests: mut _remote_request_rx,
     } = RemoteClient::connect(
         Box::new(remote_identity),
-        Box::new(remote_session_store),
+        Box::new(remote_connection_store),
         Box::new(remote_proxy),
     )
     .await
@@ -311,13 +311,13 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
         "RemoteClient should emit HandshakeFingerprint (informational)"
     );
 
-    // 11. Verify session is cached
+    // 11. Verify connection is cached
     assert!(
         remote_client
-            .has_session(paired_fingerprint)
+            .has_connection(paired_fingerprint)
             .await
-            .expect("has_session should not fail"),
-        "Session should be cached in RemoteClient's session store"
+            .expect("has_connection should not fail"),
+        "Connection should be cached in RemoteClient's connection store"
     );
 
     // 12. Spawn credential response handler for UserClient
@@ -378,7 +378,7 @@ async fn test_e2e_credential_request_denied() {
 
     // 3. Create UserClient with DefaultProxyClient
     let user_proxy = create_proxy_client(addr);
-    let user_session_store = MemorySessionStore::new();
+    let user_connection_store = MemoryConnectionStore::new();
 
     let UserClientHandle {
         client: user_client,
@@ -386,7 +386,7 @@ async fn test_e2e_credential_request_denied() {
         requests: mut request_rx,
     } = UserClient::connect(
         Box::new(user_identity),
-        Box::new(user_session_store),
+        Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
     )
@@ -406,7 +406,7 @@ async fn test_e2e_credential_request_denied() {
 
     // 5. Create RemoteClient
     let remote_proxy = create_proxy_client(addr);
-    let remote_session_store = MemorySessionStore::new();
+    let remote_connection_store = MemoryConnectionStore::new();
 
     let RemoteClientHandle {
         client: remote_client,
@@ -414,7 +414,7 @@ async fn test_e2e_credential_request_denied() {
         requests: mut _remote_request_rx,
     } = RemoteClient::connect(
         Box::new(remote_identity),
-        Box::new(remote_session_store),
+        Box::new(remote_connection_store),
         Box::new(remote_proxy),
     )
     .await
@@ -484,7 +484,7 @@ async fn test_e2e_multiple_credential_requests() {
 
     // 3. Create UserClient with DefaultProxyClient
     let user_proxy = create_proxy_client(addr);
-    let user_session_store = MemorySessionStore::new();
+    let user_connection_store = MemoryConnectionStore::new();
 
     let UserClientHandle {
         client: user_client,
@@ -492,7 +492,7 @@ async fn test_e2e_multiple_credential_requests() {
         requests: mut request_rx,
     } = UserClient::connect(
         Box::new(user_identity),
-        Box::new(user_session_store),
+        Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
     )
@@ -512,7 +512,7 @@ async fn test_e2e_multiple_credential_requests() {
 
     // 5. Create RemoteClient
     let remote_proxy = create_proxy_client(addr);
-    let remote_session_store = MemorySessionStore::new();
+    let remote_connection_store = MemoryConnectionStore::new();
 
     let RemoteClientHandle {
         client: remote_client,
@@ -520,7 +520,7 @@ async fn test_e2e_multiple_credential_requests() {
         requests: mut _remote_request_rx,
     } = RemoteClient::connect(
         Box::new(remote_identity),
-        Box::new(remote_session_store),
+        Box::new(remote_connection_store),
         Box::new(remote_proxy),
     )
     .await
@@ -613,7 +613,7 @@ async fn test_e2e_transport_state_persistence() {
 
     // 3. Create UserClient with DefaultProxyClient
     let user_proxy = create_proxy_client(addr);
-    let user_session_store = MemorySessionStore::new();
+    let user_connection_store = MemoryConnectionStore::new();
 
     let UserClientHandle {
         client: user_client,
@@ -621,7 +621,7 @@ async fn test_e2e_transport_state_persistence() {
         requests: _request_rx,
     } = UserClient::connect(
         Box::new(user_identity),
-        Box::new(user_session_store),
+        Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
     )
@@ -639,19 +639,19 @@ async fn test_e2e_transport_state_persistence() {
         .expect("Should parse PSK token")
         .into_parts();
 
-    // 5. Create RemoteClient with shared session store for later access
+    // 5. Create RemoteClient with shared connection store for later access
     let remote_proxy = create_proxy_client(addr);
-    let remote_session_store = Arc::new(tokio::sync::Mutex::new(MemorySessionStore::new()));
-    let session_store_clone = Arc::clone(&remote_session_store);
+    let remote_connection_store = Arc::new(tokio::sync::Mutex::new(MemoryConnectionStore::new()));
+    let connection_store_clone = Arc::clone(&remote_connection_store);
 
-    // Reuse the module-level SharedSessionStore wrapper
+    // Reuse the module-level SharedConnectionStore wrapper
     let RemoteClientHandle {
         client: remote_client,
         notifications: mut remote_notification_rx,
         requests: mut _remote_request_rx,
     } = RemoteClient::connect(
         Box::new(remote_identity),
-        Box::new(SharedSessionStore(remote_session_store)),
+        Box::new(SharedConnectionStore(remote_connection_store)),
         Box::new(remote_proxy),
     )
     .await
@@ -694,20 +694,20 @@ async fn test_e2e_transport_state_persistence() {
         "UserClient should emit HandshakeComplete"
     );
 
-    // 10. Load session from session store and verify transport state was saved
-    let session = session_store_clone
+    // 10. Load connection from connection store and verify transport state was saved
+    let connection = connection_store_clone
         .lock()
         .await
         .get(&fingerprint)
         .await
-        .expect("Session should exist in store");
+        .expect("Connection should exist in store");
 
     // 11. Assert the transport state is Some
     assert!(
-        session.transport_state.is_some(),
+        connection.transport_state.is_some(),
         "Transport state should be saved after pairing"
     );
-    let mut restored_transport = session
+    let mut restored_transport = connection
         .transport_state
         .expect("Transport state should be present");
 
@@ -745,8 +745,8 @@ async fn test_e2e_multi_device_credential_response() {
     let user_proxy1 = create_proxy_client(addr);
 
     // Use Arc for shared access between multiple UserClient devices
-    let user_session_store1 = Arc::new(tokio::sync::Mutex::new(MemorySessionStore::new()));
-    let session_store_clone = Arc::clone(&user_session_store1);
+    let user_connection_store1 = Arc::new(tokio::sync::Mutex::new(MemoryConnectionStore::new()));
+    let connection_store_clone = Arc::clone(&user_connection_store1);
 
     let UserClientHandle {
         client: user_client1,
@@ -754,7 +754,7 @@ async fn test_e2e_multi_device_credential_response() {
         requests: mut request_rx1,
     } = UserClient::connect(
         Box::new(MemoryIdentityProvider::from_keypair(user_keypair)),
-        Box::new(SharedSessionStore(Arc::clone(&user_session_store1))),
+        Box::new(SharedConnectionStore(Arc::clone(&user_connection_store1))),
         Box::new(user_proxy1),
         None,
     )
@@ -780,7 +780,7 @@ async fn test_e2e_multi_device_credential_response() {
         requests: mut _remote_request_rx,
     } = RemoteClient::connect(
         Box::new(MemoryIdentityProvider::new()),
-        Box::new(MemorySessionStore::new()),
+        Box::new(MemoryConnectionStore::new()),
         Box::new(remote_proxy),
     )
     .await
@@ -809,7 +809,7 @@ async fn test_e2e_multi_device_credential_response() {
         }
     }
 
-    // 9. Create UserClient Device 2 with SHARED session store
+    // 9. Create UserClient Device 2 with SHARED connection store
     let user_proxy2 = create_proxy_client(addr);
     let UserClientHandle {
         client: user_client2,
@@ -817,7 +817,7 @@ async fn test_e2e_multi_device_credential_response() {
         requests: mut request_rx2,
     } = UserClient::connect(
         Box::new(MemoryIdentityProvider::from_keypair(user_keypair_device2)),
-        Box::new(SharedSessionStore(Arc::clone(&session_store_clone))),
+        Box::new(SharedConnectionStore(Arc::clone(&connection_store_clone))),
         Box::new(user_proxy2),
         None,
     )

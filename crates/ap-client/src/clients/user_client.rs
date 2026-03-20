@@ -126,8 +126,8 @@ use super::notify;
 use crate::{
     error::ClientError,
     traits::{
-        AuditConnectionType, AuditEvent, AuditLog, CredentialFieldSet, IdentityProvider,
-        NoOpAuditLog, SessionInfo, SessionStore,
+        AuditConnectionType, AuditEvent, AuditLog, ConnectionInfo, ConnectionStore,
+        CredentialFieldSet, IdentityProvider, NoOpAuditLog,
     },
     types::{CredentialRequestPayload, CredentialResponsePayload, ProtocolMessage},
 };
@@ -316,7 +316,7 @@ impl UserClient {
     /// Pass `None` for `audit_log` to use a no-op logger.
     pub async fn connect(
         identity_provider: Box<dyn IdentityProvider>,
-        session_store: Box<dyn SessionStore>,
+        connection_store: Box<dyn ConnectionStore>,
         mut proxy_client: Box<dyn ProxyClient>,
         audit_log: Option<Box<dyn AuditLog>>,
     ) -> Result<UserClientHandle, ClientError> {
@@ -336,7 +336,7 @@ impl UserClient {
 
         // Build the inner state
         let inner = UserClientInner {
-            session_store,
+            connection_store,
             proxy_client,
             identity_keypair,
             own_fingerprint,
@@ -399,7 +399,7 @@ impl UserClient {
 
 /// All mutable state for the user client, owned by the spawned event loop task.
 struct UserClientInner {
-    session_store: Box<dyn SessionStore>,
+    connection_store: Box<dyn ConnectionStore>,
     proxy_client: Box<dyn ProxyClient>,
     /// Our identity keypair (needed for reconnection).
     identity_keypair: IdentityKeyPair,
@@ -628,8 +628,8 @@ impl UserClientInner {
         debug!("Received handshake init from source: {:?}", source);
         notify!(notification_tx, UserClientNotification::HandshakeStart {});
 
-        // Check if this is an existing/cached session (bypass pairing lookup)
-        let is_new_connection = self.session_store.get(&source).await.is_none();
+        // Check if this is an existing/cached connection (bypass pairing lookup)
+        let is_new_connection = self.connection_store.get(&source).await.is_none();
 
         // Determine which PSK to use and find the matching pairing.
         let (psk_for_handshake, matched_pairing_name, is_psk_connection) = if !is_new_connection {
@@ -706,13 +706,13 @@ impl UserClientInner {
 
             Ok(Some(fut))
         } else if !is_new_connection {
-            // Existing/cached session: already verified on first connection.
-            // Get existing session to preserve name and cached_at, update transport.
-            let existing = self.session_store.get(&source).await;
+            // Existing/cached connection: already verified on first connection.
+            // Get existing connection to preserve name and cached_at, update transport.
+            let existing = self.connection_store.get(&source).await;
             let now = crate::compat::now_seconds();
             self.transports.insert(source, transport.clone());
-            self.session_store
-                .save(SessionInfo {
+            self.connection_store
+                .save(ConnectionInfo {
                     fingerprint: source,
                     name: existing.as_ref().and_then(|s| s.name.clone()),
                     cached_at: existing.as_ref().map_or(now, |s| s.cached_at),
@@ -758,20 +758,20 @@ impl UserClientInner {
         }
     }
 
-    /// Accept a new connection: cache session, store transport, set name, and audit
+    /// Accept a new connection: cache connection, store transport, set name, and audit
     async fn accept_new_connection(
         &mut self,
         fingerprint: IdentityFingerprint,
         transport: MultiDeviceTransport,
-        session_name: Option<&str>,
+        connection_name: Option<&str>,
         connection_type: AuditConnectionType,
     ) -> Result<(), ClientError> {
         let now = crate::compat::now_seconds();
         self.transports.insert(fingerprint, transport.clone());
-        self.session_store
-            .save(SessionInfo {
+        self.connection_store
+            .save(ConnectionInfo {
                 fingerprint,
-                name: session_name.map(|s| s.to_owned()),
+                name: connection_name.map(|s| s.to_owned()),
                 cached_at: now,
                 last_connected_at: now,
                 transport_state: Some(transport),
@@ -781,7 +781,7 @@ impl UserClientInner {
         self.audit_log
             .write(AuditEvent::ConnectionEstablished {
                 remote_identity: &fingerprint,
-                remote_name: session_name,
+                remote_name: connection_name,
                 connection_type,
             })
             .await;
@@ -799,12 +799,12 @@ impl UserClientInner {
     ) -> Result<Option<PendingReplyFuture>, ClientError> {
         if !self.transports.contains_key(&source) {
             debug!("Loading transport state for source: {:?}", source);
-            let session = self.session_store.get(&source).await.ok_or_else(|| {
-                ClientError::SessionCache(format!("Missing cached session {source:?}"))
+            let connection = self.connection_store.get(&source).await.ok_or_else(|| {
+                ClientError::ConnectionCache(format!("Missing cached connection {source:?}"))
             })?;
-            let transport = session.transport_state.ok_or_else(|| {
-                ClientError::SessionCache(format!(
-                    "Missing transport state for cached session {source:?}"
+            let transport = connection.transport_state.ok_or_else(|| {
+                ClientError::ConnectionCache(format!(
+                    "Missing transport state for cached connection {source:?}"
                 ))
             })?;
             self.transports.insert(source, transport);
@@ -994,11 +994,11 @@ impl UserClientInner {
                 name,
             }) => {
                 // Use the name from the reply, falling back to the pairing name
-                let session_name = name.or(connection_name);
+                let conn_name = name.or(connection_name);
                 self.accept_new_connection(
                     source,
                     transport,
-                    session_name.as_deref(),
+                    conn_name.as_deref(),
                     AuditConnectionType::Rendezvous,
                 )
                 .await?;

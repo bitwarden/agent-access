@@ -3,10 +3,10 @@ use tokio::sync::mpsc;
 
 use ap_client::{
     DefaultProxyClient, IdentityFingerprint, PskToken, RemoteClient, RemoteClientNotification,
-    SessionStore,
+    ConnectionStore,
 };
 
-use crate::storage::{FileIdentityStorage, FileSessionCache};
+use crate::storage::{FileIdentityStorage, FileConnectionCache};
 use crate::types::{PyCredentialData, RemoteAccessError};
 
 /// A remote-access client backed by the full Rust crypto/protocol stack.
@@ -64,8 +64,8 @@ impl PyRemoteClient {
     ///
     /// Args:
     ///     token: Rendezvous code (e.g. "ABC-DEF-GHI") or PSK token
-    ///            (<64hex>_<64hex>). If None, uses a cached session.
-    ///     session: Hex fingerprint of a specific cached session to reconnect.
+    ///            (<64hex>_<64hex>). If None, uses a cached connection.
+    ///     session: Hex fingerprint of a specific cached connection to reconnect.
     ///
     /// Returns:
     ///     The 6-char handshake fingerprint (for new connections) or None (cached).
@@ -79,7 +79,7 @@ impl PyRemoteClient {
         let identity = FileIdentityStorage::load_or_generate(&self.identity_name)
             .map_err(|e| RemoteAccessError::new_err(e.to_string()))?;
 
-        let session_store = FileSessionCache::load_or_create(&self.identity_name)
+        let connection_store = FileConnectionCache::load_or_create(&self.identity_name)
             .map_err(|e| RemoteAccessError::new_err(e.to_string()))?;
 
         let proxy_client = Box::new(DefaultProxyClient::from_url(self.proxy_url.clone()));
@@ -88,7 +88,7 @@ impl PyRemoteClient {
         let handle = py
             .allow_threads(|| {
                 self.runtime.block_on(async {
-                    RemoteClient::connect(Box::new(identity), Box::new(session_store), proxy_client)
+                    RemoteClient::connect(Box::new(identity), Box::new(connection_store), proxy_client)
                         .await
                 })
             })
@@ -126,32 +126,32 @@ impl PyRemoteClient {
                         let fingerprint = IdentityFingerprint::from_hex(session_hex)
                             .map_err(|e| format!("Invalid session fingerprint: {e}"))?;
                         client
-                            .load_cached_session(fingerprint)
+                            .load_cached_connection(fingerprint)
                             .await
                             .map_err(|e| e.to_string())?;
                         Ok(None)
                     } else {
                         // Auto-select cached session if exactly one exists
-                        let sessions = client
-                            .list_sessions()
+                        let connections = client
+                            .list_connections()
                             .await
                             .map_err(|e| e.to_string())?;
-                        if sessions.len() == 1 {
-                            let fingerprint = sessions[0].fingerprint;
+                        if connections.len() == 1 {
+                            let fingerprint = connections[0].fingerprint;
                             client
-                                .load_cached_session(fingerprint)
+                                .load_cached_connection(fingerprint)
                                 .await
                                 .map_err(|e| e.to_string())?;
                             Ok(None)
-                        } else if sessions.is_empty() {
+                        } else if connections.is_empty() {
                             Err(
-                                "No cached sessions — provide a token to start a new connection"
+                                "No cached connections — provide a token to start a new connection"
                                     .to_string(),
                             )
                         } else {
                             Err(format!(
-                                "Multiple cached sessions ({}) — specify one with session=",
-                                sessions.len()
+                                "Multiple cached connections ({}) — specify one with session=",
+                                connections.len()
                             ))
                         }
                     }
@@ -209,9 +209,9 @@ impl PyRemoteClient {
         self.ready
     }
 
-    /// Clear all cached sessions for this identity.
-    pub fn clear_sessions(&self) -> PyResult<()> {
-        let mut store = FileSessionCache::load_or_create(&self.identity_name)
+    /// Clear all cached connections for this identity.
+    pub fn clear_connections(&self) -> PyResult<()> {
+        let mut store = FileConnectionCache::load_or_create(&self.identity_name)
             .map_err(|e| RemoteAccessError::new_err(e.to_string()))?;
         self.runtime
             .block_on(store.clear())
@@ -219,9 +219,9 @@ impl PyRemoteClient {
         Ok(())
     }
 
-    /// List cached sessions. Returns a list of (fingerprint_hex, name, cached_at, last_connected_at).
-    pub fn list_sessions(&self) -> PyResult<Vec<(String, Option<String>, u64, u64)>> {
-        let store = FileSessionCache::load_or_create(&self.identity_name)
+    /// List cached connections. Returns a list of (fingerprint_hex, name, cached_at, last_connected_at).
+    pub fn list_connections(&self) -> PyResult<Vec<(String, Option<String>, u64, u64)>> {
+        let store = FileConnectionCache::load_or_create(&self.identity_name)
             .map_err(|e| RemoteAccessError::new_err(e.to_string()))?;
         Ok(self
             .runtime
