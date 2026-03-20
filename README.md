@@ -97,7 +97,7 @@ The `aac` CLI tool has built-in support for connecting to the Bitwarden CLI. The
 aac listen
 ```
 
-If you don't have the `bw` CLI installed, you can use the built-in example credential provider:
+If you don't have the `bw` CLI installed, you can use the built-in example credential provider (has credentials for example.com, google.com, and github.com):
 
 ```shell
 aac listen --provider example
