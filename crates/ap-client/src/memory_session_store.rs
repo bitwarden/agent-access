@@ -1,24 +1,18 @@
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use ap_client::{ClientError, SessionStore};
-use ap_noise::{MultiDeviceTransport, PersistentTransportState};
+use ap_noise::MultiDeviceTransport;
 use ap_proxy_protocol::IdentityFingerprint;
 use async_trait::async_trait;
+
+use crate::error::ClientError;
+use crate::traits::SessionStore;
 
 struct SessionEntry {
     fingerprint: IdentityFingerprint,
     name: Option<String>,
     cached_at: u64,
     last_connected_at: u64,
-    transport_state: Option<Vec<u8>>,
-}
-
-fn now_seconds() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+    transport_state: Option<MultiDeviceTransport>,
 }
 
 /// In-memory session store that does not persist to disk.
@@ -36,6 +30,12 @@ impl MemorySessionStore {
     }
 }
 
+impl Default for MemorySessionStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl SessionStore for MemorySessionStore {
     async fn has_session(&self, fingerprint: &IdentityFingerprint) -> bool {
@@ -43,7 +43,7 @@ impl SessionStore for MemorySessionStore {
     }
 
     async fn cache_session(&mut self, fingerprint: IdentityFingerprint) -> Result<(), ClientError> {
-        let now = now_seconds();
+        let now = crate::compat::now_seconds();
         self.sessions
             .entry(fingerprint)
             .and_modify(|e| e.cached_at = now)
@@ -102,7 +102,7 @@ impl SessionStore for MemorySessionStore {
         fingerprint: &IdentityFingerprint,
     ) -> Result<(), ClientError> {
         if let Some(session) = self.sessions.get_mut(fingerprint) {
-            session.last_connected_at = now_seconds();
+            session.last_connected_at = crate::compat::now_seconds();
             Ok(())
         } else {
             Err(ClientError::SessionCache("Session not found".to_string()))
@@ -115,15 +115,7 @@ impl SessionStore for MemorySessionStore {
         transport_state: MultiDeviceTransport,
     ) -> Result<(), ClientError> {
         if let Some(session) = self.sessions.get_mut(fingerprint) {
-            session.transport_state = Some(
-                PersistentTransportState::from(&transport_state)
-                    .to_bytes()
-                    .map_err(|e| {
-                        ClientError::NoiseProtocol(format!(
-                            "Failed to serialize transport state: {e}"
-                        ))
-                    })?,
-            );
+            session.transport_state = Some(transport_state);
             Ok(())
         } else {
             Err(ClientError::SessionCache("Session not found".to_string()))
@@ -135,16 +127,12 @@ impl SessionStore for MemorySessionStore {
         fingerprint: &IdentityFingerprint,
     ) -> Result<Option<MultiDeviceTransport>, ClientError> {
         if let Some(session) = self.sessions.get(fingerprint) {
-            Ok(Some(
-                PersistentTransportState::from_bytes(session.transport_state.as_ref().ok_or_else(
-                    || {
-                        ClientError::SessionCache(
-                            "No transport state stored for this session".to_string(),
-                        )
-                    },
-                )?)
-                .map(MultiDeviceTransport::from)?,
-            ))
+            match &session.transport_state {
+                Some(state) => Ok(Some(state.clone())),
+                None => Err(ClientError::SessionCache(
+                    "No transport state stored for this session".to_string(),
+                )),
+            }
         } else {
             Err(ClientError::SessionCache("Session not found".to_string()))
         }
