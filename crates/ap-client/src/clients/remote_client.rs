@@ -21,7 +21,7 @@ use crate::{
     },
 };
 
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
+const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
 // =============================================================================
 // Public types: Notifications (fire-and-forget) and Requests (with reply)
@@ -774,7 +774,7 @@ impl RemoteClientInner {
         );
 
         // Wait for matching response inline
-        let effective_timeout = credential_timeout.unwrap_or(DEFAULT_TIMEOUT);
+        let effective_timeout = credential_timeout.unwrap_or(DEFAULT_REQUEST_TIMEOUT);
         match timeout(
             effective_timeout,
             self.receive_credential_response(&request_id, incoming_rx, notification_tx),
