@@ -241,7 +241,7 @@ impl ConnectionStore for FileConnectionCache {
             self.persist()?;
             Ok(())
         } else {
-            Err(ClientError::ConnectionCache("Session not found".to_string()))
+            Err(ClientError::ConnectionCache("Connection not found".to_string()))
         }
     }
 
