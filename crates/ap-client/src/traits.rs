@@ -1,8 +1,9 @@
-use ap_noise::MultiDeviceTransport;
+use ap_noise::{MultiDeviceTransport, Psk};
 use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair};
 use async_trait::async_trait;
 
 use crate::error::ClientError;
+use crate::types::PskId;
 
 /// A cached connection record containing all connection data.
 #[derive(Debug, Clone)]
@@ -238,4 +239,34 @@ pub struct NoOpAuditLog;
 #[async_trait]
 impl AuditLog for NoOpAuditLog {
     async fn write(&self, _event: AuditEvent<'_>) {}
+}
+
+/// A stored reusable PSK entry.
+#[derive(Debug, Clone)]
+pub struct PskEntry {
+    pub psk_id: PskId,
+    pub psk: Psk,
+    pub name: Option<String>,
+    pub created_at: u64,
+}
+
+/// Persistent storage for reusable pre-shared keys.
+///
+/// Unlike ephemeral PSK pairings (which are consumed on first use),
+/// entries in a `PskStore` survive across connections and restarts.
+/// Used for automation scenarios where a remote client needs to
+/// connect repeatedly with the same PSK token.
+#[async_trait]
+pub trait PskStore: Send + Sync {
+    /// Get a PSK entry by its identifier.
+    async fn get(&self, psk_id: &PskId) -> Option<PskEntry>;
+
+    /// Save a PSK entry (insert or replace).
+    async fn save(&mut self, entry: PskEntry) -> Result<(), ClientError>;
+
+    /// Remove a PSK entry by its identifier.
+    async fn remove(&mut self, psk_id: &PskId) -> Result<(), ClientError>;
+
+    /// List all stored PSK entries.
+    async fn list(&self) -> Vec<PskEntry>;
 }

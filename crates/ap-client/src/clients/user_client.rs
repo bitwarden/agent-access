@@ -35,6 +35,8 @@ struct PskPairing {
     connection_name: Option<String>,
     created_at: Instant,
     psk: Psk,
+    /// If true, the pairing is not consumed on use and survives pruning.
+    reusable: bool,
 }
 
 /// A pending rendezvous pairing waiting for an incoming handshake.
@@ -69,9 +71,10 @@ impl PendingPairings {
     }
 
     /// Remove pairings older than `PENDING_PAIRING_MAX_AGE`.
+    /// Reusable pairings are never pruned.
     fn prune_stale(&mut self) {
         self.psk_pairings
-            .retain(|_, p| p.created_at.elapsed() < PENDING_PAIRING_MAX_AGE);
+            .retain(|_, p| p.reusable || p.created_at.elapsed() < PENDING_PAIRING_MAX_AGE);
         if self
             .rendezvous
             .as_ref()
@@ -127,7 +130,7 @@ use crate::{
     error::ClientError,
     traits::{
         AuditConnectionType, AuditEvent, AuditLog, ConnectionInfo, ConnectionStore,
-        CredentialFieldSet, IdentityProvider, NoOpAuditLog,
+        CredentialFieldSet, IdentityProvider, NoOpAuditLog, PskEntry, PskStore,
     },
     types::{CredentialRequestPayload, CredentialResponsePayload, ProtocolMessage},
 };
@@ -276,6 +279,7 @@ enum UserClientCommand {
     /// Generate a PSK token and register a pending pairing.
     GetPskToken {
         name: Option<String>,
+        reusable: bool,
         reply: oneshot::Sender<Result<String, ClientError>>,
     },
     /// Request a rendezvous code from the proxy and register a pending pairing.
@@ -314,11 +318,14 @@ impl UserClient {
     /// the returned handle's notification/request channels.
     ///
     /// Pass `None` for `audit_log` to use a no-op logger.
+    /// Pass `Some(store)` for `psk_store` to enable reusable PSK support.
+    /// Stored PSKs are loaded into pending pairings on startup.
     pub async fn connect(
         identity_provider: Box<dyn IdentityProvider>,
         connection_store: Box<dyn ConnectionStore>,
         mut proxy_client: Box<dyn ProxyClient>,
         audit_log: Option<Box<dyn AuditLog>>,
+        psk_store: Option<Box<dyn PskStore>>,
     ) -> Result<UserClientHandle, ClientError> {
         // Extract identity once — used for proxy auth, reconnection, and own fingerprint
         let identity_keypair = identity_provider.identity().await;
@@ -335,14 +342,33 @@ impl UserClient {
         let (command_tx, command_rx) = mpsc::channel(32);
 
         // Build the inner state
+        let mut pending_pairings = PendingPairings::new();
+
+        // Load stored reusable PSKs into pending pairings
+        if let Some(ref store) = psk_store {
+            for entry in store.list().await {
+                pending_pairings.psk_pairings.insert(
+                    entry.psk_id.clone(),
+                    PskPairing {
+                        connection_name: entry.name.clone(),
+                        created_at: Instant::now(),
+                        psk: entry.psk.clone(),
+                        reusable: true,
+                    },
+                );
+                debug!("Loaded reusable PSK from store: psk_id={}", entry.psk_id);
+            }
+        }
+
         let inner = UserClientInner {
             connection_store,
             proxy_client,
             identity_keypair,
             own_fingerprint,
             transports: HashMap::new(),
-            pending_pairings: PendingPairings::new(),
+            pending_pairings,
             audit_log: audit_log.unwrap_or_else(|| Box::new(NoOpAuditLog)),
+            psk_store,
         };
 
         // Spawn the event loop — use spawn_local on WASM (no Tokio runtime)
@@ -367,10 +393,22 @@ impl UserClient {
     ///
     /// Returns the formatted token string (`<psk_hex>_<fingerprint_hex>`).
     /// Multiple PSK pairings are supported concurrently (each matched by `psk_id`).
-    pub async fn get_psk_token(&self, name: Option<String>) -> Result<String, ClientError> {
+    ///
+    /// When `reusable` is true, the PSK is saved to the configured [`PskStore`]
+    /// and will not be consumed on first use. Requires a `PskStore` to have been
+    /// passed to [`UserClient::connect()`].
+    pub async fn get_psk_token(
+        &self,
+        name: Option<String>,
+        reusable: bool,
+    ) -> Result<String, ClientError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx
-            .send(UserClientCommand::GetPskToken { name, reply: tx })
+            .send(UserClientCommand::GetPskToken {
+                name,
+                reusable,
+                reply: tx,
+            })
             .await
             .map_err(|_| ClientError::ChannelClosed)?;
         rx.await.map_err(|_| ClientError::ChannelClosed)?
@@ -411,6 +449,8 @@ struct UserClientInner {
     pending_pairings: PendingPairings,
     /// Audit logger for security-relevant events
     audit_log: Box<dyn AuditLog>,
+    /// Optional persistent store for reusable PSKs.
+    psk_store: Option<Box<dyn PskStore>>,
 }
 
 impl UserClientInner {
@@ -642,8 +682,14 @@ impl UserClientInner {
             match &psk_id {
                 Some(id) => {
                     // PSK mode — find matching pairing by psk_id
-                    if let Some(pairing) = self.pending_pairings.psk_pairings.remove(id) {
-                        (Some(pairing.psk), pairing.connection_name, true)
+                    if let Some(pairing) = self.pending_pairings.psk_pairings.get(id) {
+                        let psk = pairing.psk.clone();
+                        let name = pairing.connection_name.clone();
+                        if !pairing.reusable {
+                            // Ephemeral — consume after cloning
+                            self.pending_pairings.psk_pairings.remove(id);
+                        }
+                        (Some(psk), name, true)
                     } else {
                         warn!("No matching PSK pairing for psk_id: {}", id);
                         return Err(ClientError::InvalidState {
@@ -926,8 +972,12 @@ impl UserClientInner {
         notification_tx: &mpsc::Sender<UserClientNotification>,
     ) {
         match cmd {
-            UserClientCommand::GetPskToken { name, reply } => {
-                let result = self.generate_psk_token(name).await;
+            UserClientCommand::GetPskToken {
+                name,
+                reusable,
+                reply,
+            } => {
+                let result = self.generate_psk_token(name, reusable).await;
                 let _ = reply.send(result);
             }
             UserClientCommand::GetRendezvousToken { name, reply } => {
@@ -959,21 +1009,48 @@ impl UserClientInner {
     }
 
     /// Generate a PSK token internally.
-    async fn generate_psk_token(&mut self, name: Option<String>) -> Result<String, ClientError> {
+    async fn generate_psk_token(
+        &mut self,
+        name: Option<String>,
+        reusable: bool,
+    ) -> Result<String, ClientError> {
+        if reusable && self.psk_store.is_none() {
+            return Err(ClientError::InvalidState {
+                expected: "PskStore configured".to_string(),
+                current: "no PskStore provided".to_string(),
+            });
+        }
+
         let psk = Psk::generate();
         let psk_id = psk.id();
         let token = PskToken::new(psk.clone(), self.own_fingerprint).to_string();
 
         self.pending_pairings.prune_stale();
         self.pending_pairings.psk_pairings.insert(
-            psk_id,
+            psk_id.clone(),
             PskPairing {
-                connection_name: name,
+                connection_name: name.clone(),
                 created_at: Instant::now(),
-                psk,
+                psk: psk.clone(),
+                reusable,
             },
         );
-        debug!("Created PSK pairing, token generated");
+
+        if reusable {
+            if let Some(store) = &mut self.psk_store {
+                store
+                    .save(PskEntry {
+                        psk_id,
+                        psk,
+                        name,
+                        created_at: crate::compat::now_seconds(),
+                    })
+                    .await?;
+                debug!("Created reusable PSK pairing, token generated and persisted");
+            }
+        } else {
+            debug!("Created ephemeral PSK pairing, token generated");
+        }
 
         Ok(token)
     }

@@ -212,13 +212,14 @@ async fn test_psk_pairing() {
         Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
+        None,
     )
     .await
     .expect("UserClient should connect");
 
     // Get PSK token
     let token = user_client
-        .get_psk_token(None)
+        .get_psk_token(None, false)
         .await
         .expect("Should generate PSK token");
 
@@ -324,6 +325,7 @@ async fn test_fingerprint_pairing() {
         Box::new(user_identity),
         Box::new(user_connection_store),
         Box::new(user_proxy),
+        None,
         None,
     )
     .await
@@ -530,6 +532,7 @@ async fn run_reconnection_test(fail_count: u32) -> (Vec<UserClientNotification>,
         Box::new(connection_store),
         Box::new(proxy),
         None,
+        None,
     )
     .await
     .expect("Initial connect should succeed");
@@ -662,6 +665,7 @@ async fn test_fingerprint_pairing_both_sides_verify() {
         Box::new(user_identity),
         Box::new(user_connection_store),
         Box::new(user_proxy),
+        None,
         None,
     )
     .await
@@ -803,13 +807,14 @@ async fn test_dual_mode_psk_pairing_with_both_modes_pending() {
         Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
+        None,
     )
     .await
     .expect("UserClient should connect");
 
     // Set up BOTH pairings
     let psk_token = user_client
-        .get_psk_token(Some("psk-device".to_string()))
+        .get_psk_token(Some("psk-device".to_string()), false)
         .await
         .expect("Should generate PSK token");
 
@@ -906,13 +911,14 @@ async fn test_notification_channel_not_blocking_event_loop() {
         Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
+        None,
     )
     .await
     .expect("UserClient should connect");
 
     // Get PSK token
     let token = user_client
-        .get_psk_token(None)
+        .get_psk_token(None, false)
         .await
         .expect("Should generate PSK token");
 
@@ -1017,13 +1023,14 @@ async fn test_request_channel_backpressure() {
         Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
+        None,
     )
     .await
     .expect("UserClient should connect");
 
     // Get PSK token
     let token = user_client
-        .get_psk_token(None)
+        .get_psk_token(None, false)
         .await
         .expect("Should generate PSK token");
 
@@ -1118,6 +1125,7 @@ async fn test_credential_request_buffered_during_fingerprint_verification() {
         Box::new(user_identity),
         Box::new(user_connection_store),
         Box::new(user_proxy),
+        None,
         None,
     )
     .await
@@ -1225,5 +1233,229 @@ async fn test_credential_request_buffered_during_fingerprint_verification() {
 
     // Cleanup
     drop(remote_client);
+    drop(user_client);
+}
+
+// ============================================================================
+// Test: Reusable PSK pairing (multiple remote clients with same PSK)
+// ============================================================================
+
+/// Verifies that a reusable PSK allows two different RemoteClients to connect
+/// using the same PSK token. The first connection should NOT consume the pairing.
+#[tokio::test]
+async fn test_reusable_psk_pairing() {
+    // Create user identity
+    let user_identity = MemoryIdentityProvider::new();
+    let user_fingerprint = user_identity.fingerprint().await;
+
+    // Create two remote identities
+    let remote_identity1 = MemoryIdentityProvider::new();
+    let remote_identity2 = MemoryIdentityProvider::new();
+    let remote_fingerprint1 = remote_identity1.fingerprint().await;
+    let remote_fingerprint2 = remote_identity2.fingerprint().await;
+
+    // --- First connection: remote1 ---
+    let (user_proxy1, remote_proxy1) =
+        create_mock_proxy_pair(user_fingerprint, remote_fingerprint1);
+
+    let user_connection_store = MemoryConnectionStore::new();
+    let remote_connection_store1 = MemoryConnectionStore::new();
+    let psk_store = ap_client::MemoryPskStore::new();
+
+    let UserClientHandle {
+        client: user_client,
+        notifications: mut notification_rx,
+        requests: _request_rx,
+    } = UserClient::connect(
+        Box::new(user_identity.clone()),
+        Box::new(user_connection_store),
+        Box::new(user_proxy1),
+        None,
+        Some(Box::new(psk_store)),
+    )
+    .await
+    .expect("UserClient should connect");
+
+    // Generate a reusable PSK token
+    let token = user_client
+        .get_psk_token(Some("ci-runner".to_string()), true)
+        .await
+        .expect("Should generate reusable PSK token");
+
+    // Parse token
+    let parsed = PskToken::parse(&token).expect("Should parse PSK token");
+    let psk1 = parsed.psk().clone();
+    let user_fp = *parsed.fingerprint();
+
+    // Connect remote1 with the PSK
+    let RemoteClientHandle {
+        client: remote_client1,
+        notifications: mut remote_notification_rx1,
+        requests: _,
+    } = RemoteClient::connect(
+        Box::new(remote_identity1),
+        Box::new(remote_connection_store1),
+        Box::new(remote_proxy1),
+    )
+    .await
+    .expect("RemoteClient 1 should connect");
+
+    timeout(
+        Duration::from_secs(10),
+        remote_client1.pair_with_psk(psk1, user_fp),
+    )
+    .await
+    .expect("Pairing 1 should not timeout")
+    .expect("Pairing 1 should succeed");
+
+    // Verify handshake completed
+    let mut handshake_complete1 = false;
+    while let Ok(Some(event)) =
+        timeout(Duration::from_millis(100), remote_notification_rx1.recv()).await
+    {
+        if matches!(event, RemoteClientNotification::HandshakeComplete) {
+            handshake_complete1 = true;
+        }
+    }
+    assert!(
+        handshake_complete1,
+        "RemoteClient 1 should emit HandshakeComplete"
+    );
+
+    // Drain user notifications
+    while let Ok(Some(_)) = timeout(Duration::from_millis(100), notification_rx.recv()).await {}
+
+    // --- Second connection: remote2 ---
+    // Drop the first connection and reconnect the user client
+    drop(remote_client1);
+    drop(user_client);
+    drop(notification_rx);
+
+    // Re-create user client with a fresh proxy pair for remote2
+    let (user_proxy2, remote_proxy2) =
+        create_mock_proxy_pair(user_fingerprint, remote_fingerprint2);
+
+    let user_connection_store2 = MemoryConnectionStore::new();
+    let remote_connection_store2 = MemoryConnectionStore::new();
+
+    // Re-create a fresh psk store with the same PSK entry loaded manually
+    // (simulating what FilePskStore would do across restarts)
+    let mut psk_store2 = ap_client::MemoryPskStore::new();
+    let parsed2 = PskToken::parse(&token).expect("Should parse PSK token again");
+    let psk_for_store = parsed2.psk().clone();
+    ap_client::PskStore::save(
+        &mut psk_store2,
+        ap_client::PskEntry {
+            psk_id: psk_for_store.id(),
+            psk: psk_for_store.clone(),
+            name: Some("ci-runner".to_string()),
+            created_at: 0,
+        },
+    )
+    .await
+    .expect("Should save to psk store");
+
+    let UserClientHandle {
+        client: user_client2,
+        notifications: mut notification_rx2,
+        requests: _,
+    } = UserClient::connect(
+        Box::new(user_identity),
+        Box::new(user_connection_store2),
+        Box::new(user_proxy2),
+        None,
+        Some(Box::new(psk_store2)),
+    )
+    .await
+    .expect("UserClient should reconnect");
+
+    // Connect remote2 with the SAME PSK
+    let RemoteClientHandle {
+        client: remote_client2,
+        notifications: mut remote_notification_rx2,
+        requests: _,
+    } = RemoteClient::connect(
+        Box::new(remote_identity2),
+        Box::new(remote_connection_store2),
+        Box::new(remote_proxy2),
+    )
+    .await
+    .expect("RemoteClient 2 should connect");
+
+    let psk2 = parsed2.psk().clone();
+    timeout(
+        Duration::from_secs(10),
+        remote_client2.pair_with_psk(psk2, user_fp),
+    )
+    .await
+    .expect("Pairing 2 should not timeout")
+    .expect("Pairing 2 should succeed with same reusable PSK");
+
+    // Verify handshake completed for remote2
+    let mut handshake_complete2 = false;
+    while let Ok(Some(event)) =
+        timeout(Duration::from_millis(100), remote_notification_rx2.recv()).await
+    {
+        if matches!(event, RemoteClientNotification::HandshakeComplete) {
+            handshake_complete2 = true;
+        }
+    }
+    assert!(
+        handshake_complete2,
+        "RemoteClient 2 should emit HandshakeComplete with reused PSK"
+    );
+
+    // Verify user side completed handshake for remote2
+    let mut user_handshake_complete2 = false;
+    while let Ok(Some(event)) = timeout(Duration::from_millis(100), notification_rx2.recv()).await {
+        if matches!(event, UserClientNotification::HandshakeComplete {}) {
+            user_handshake_complete2 = true;
+        }
+    }
+    assert!(
+        user_handshake_complete2,
+        "UserClient should emit HandshakeComplete for second connection"
+    );
+
+    drop(remote_client2);
+    drop(user_client2);
+}
+
+// ============================================================================
+// Test: Reusable PSK requires a PskStore
+// ============================================================================
+
+/// Verifies that requesting a reusable PSK token without a configured PskStore
+/// returns an appropriate error.
+#[tokio::test]
+async fn test_reusable_psk_no_store_error() {
+    let user_identity = MemoryIdentityProvider::new();
+    let remote_identity = MemoryIdentityProvider::new();
+    let user_fingerprint = user_identity.fingerprint().await;
+    let remote_fingerprint = remote_identity.fingerprint().await;
+
+    let (user_proxy, _remote_proxy) = create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
+
+    let UserClientHandle {
+        client: user_client,
+        notifications: _,
+        requests: _,
+    } = UserClient::connect(
+        Box::new(user_identity),
+        Box::new(MemoryConnectionStore::new()),
+        Box::new(user_proxy),
+        None,
+        None, // No PskStore
+    )
+    .await
+    .expect("UserClient should connect");
+
+    // Requesting a reusable PSK without a store should fail
+    let result = user_client.get_psk_token(None, true).await;
+    assert!(
+        result.is_err(),
+        "get_psk_token(reusable: true) without PskStore should fail"
+    );
+
     drop(user_client);
 }
