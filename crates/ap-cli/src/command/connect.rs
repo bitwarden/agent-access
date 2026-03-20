@@ -498,7 +498,7 @@ async fn run_interactive_session(
                                     if let Some(ref c) = client {
                                         let query = ap_client::CredentialQuery::Domain(domain.clone());
                                         let mut cred_fut = std::pin::pin!(c.request_credential(&query, None));
-                                        let mut user_quit = false;
+                                        let mut user_cancelled = false;
                                         let cred_result = loop {
                                             term.draw(|frame| app.draw(frame))
                                                 .map_err(|e| color_eyre::eyre::eyre!("TUI draw error: {}", e))?;
@@ -510,7 +510,7 @@ async fn run_interactive_session(
                                                     if let Some(Ok(Event::Key(key))) = maybe_ev {
                                                         if key.kind == KeyEventKind::Press {
                                                             if let Some(AppAction::Quit) = app.handle_key(key) {
-                                                                user_quit = true;
+                                                                user_cancelled = true;
                                                                 break None;
                                                             }
                                                         }
@@ -531,8 +531,8 @@ async fn run_interactive_session(
                                             }
                                         };
 
-                                        if user_quit {
-                                            break;
+                                        if user_cancelled {
+                                            app.push_msg(MessageKind::Info, "Request cancelled");
                                         }
 
                                         match cred_result {
