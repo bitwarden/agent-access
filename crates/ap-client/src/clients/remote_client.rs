@@ -201,7 +201,8 @@ impl RemoteClient {
         session_store: Box<dyn SessionStore>,
         mut proxy_client: Box<dyn ProxyClient>,
     ) -> Result<RemoteClientHandle, ClientError> {
-        let own_fingerprint = identity_provider.fingerprint().await;
+        let identity_keypair = identity_provider.identity().await;
+        let own_fingerprint = identity_keypair.identity().fingerprint();
 
         debug!("Connecting to proxy with identity {:?}", own_fingerprint);
 
@@ -210,7 +211,7 @@ impl RemoteClient {
 
         notify!(notification_tx, RemoteClientNotification::Connecting);
 
-        let incoming_rx = proxy_client.connect().await?;
+        let incoming_rx = proxy_client.connect(identity_keypair).await?;
 
         notify!(
             notification_tx,

@@ -240,6 +240,7 @@ impl MockProxyClient {
 impl ProxyClient for MockProxyClient {
     async fn connect(
         &mut self,
+        _identity: IdentityKeyPair,
     ) -> Result<mpsc::UnboundedReceiver<IncomingMessage>, ap_client::ClientError> {
         self.incoming_rx
             .take()
@@ -620,7 +621,10 @@ impl ReconnectingMockProxyClient {
 
 #[async_trait]
 impl ProxyClient for ReconnectingMockProxyClient {
-    async fn connect(&mut self) -> Result<mpsc::UnboundedReceiver<IncomingMessage>, ClientError> {
+    async fn connect(
+        &mut self,
+        _identity: IdentityKeyPair,
+    ) -> Result<mpsc::UnboundedReceiver<IncomingMessage>, ClientError> {
         let call_num = self.connect_calls.fetch_add(1, Ordering::SeqCst) + 1;
 
         if call_num == 1 {

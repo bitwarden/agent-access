@@ -7,7 +7,6 @@ use ap_client::{
     CredentialData, CredentialRequestReply, DefaultProxyClient, FingerprintVerificationReply,
     IdentityProvider, SessionStore, UserClient, UserClientNotification, UserClientRequest,
 };
-use ap_proxy_client::ProxyClientConfig;
 use ap_proxy_protocol::IdentityFingerprint;
 use clap::Args;
 use color_eyre::eyre::Result;
@@ -611,10 +610,7 @@ async fn run_user_client_session(
 
         let has_cached = !cached_sessions.is_empty() && !force_new_session;
 
-        let proxy_client = Box::new(DefaultProxyClient::new(ProxyClientConfig {
-            proxy_url: proxy_url.clone(),
-            identity_keypair: Some(identity_provider.identity().await),
-        }));
+        let proxy_client = Box::new(DefaultProxyClient::from_url(proxy_url.clone()));
 
         let handle = UserClient::connect(
             identity_provider as Box<dyn IdentityProvider>,

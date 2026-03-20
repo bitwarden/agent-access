@@ -14,7 +14,6 @@ use ap_client::{
 };
 use ap_noise::MultiDeviceTransport;
 use ap_proxy::server::ProxyServer;
-use ap_proxy_client::ProxyClientConfig;
 use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair};
 use tokio::time::{Duration, timeout};
 
@@ -317,11 +316,8 @@ async fn start_test_server() -> SocketAddr {
 }
 
 /// Create a DefaultProxyClient connected to the given address
-fn create_proxy_client(addr: SocketAddr, keypair: Option<IdentityKeyPair>) -> DefaultProxyClient {
-    DefaultProxyClient::new(ProxyClientConfig {
-        proxy_url: format!("ws://{addr}"),
-        identity_keypair: keypair,
-    })
+fn create_proxy_client(addr: SocketAddr) -> DefaultProxyClient {
+    DefaultProxyClient::from_url(format!("ws://{addr}"))
 }
 
 /// Create a test credential for use in tests
@@ -350,10 +346,8 @@ async fn test_e2e_psk_pairing_and_credential_request() {
     let user_identity = MockIdentityProvider::new();
     let remote_identity = MockIdentityProvider::new();
 
-    let user_keypair = user_identity.identity().await;
-
     // 3. Create UserClient with DefaultProxyClient
-    let user_proxy = create_proxy_client(addr, Some(user_keypair));
+    let user_proxy = create_proxy_client(addr);
     let user_session_store = MockSessionStore::new();
 
     let UserClientHandle {
@@ -381,7 +375,7 @@ async fn test_e2e_psk_pairing_and_credential_request() {
         .into_parts();
 
     // 5. Create RemoteClient with DefaultProxyClient
-    let remote_proxy = create_proxy_client(addr, None);
+    let remote_proxy = create_proxy_client(addr);
     let remote_session_store = MockSessionStore::new();
 
     let RemoteClientHandle {
@@ -489,10 +483,8 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
     let user_identity = MockIdentityProvider::new();
     let remote_identity = MockIdentityProvider::new();
 
-    let user_keypair = user_identity.identity().await;
-
     // 3. Create UserClient with DefaultProxyClient
-    let user_proxy = create_proxy_client(addr, Some(user_keypair));
+    let user_proxy = create_proxy_client(addr);
     let user_session_store = MockSessionStore::new();
 
     let UserClientHandle {
@@ -516,7 +508,7 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
     let code = code.as_str().to_string();
 
     // 5. Create RemoteClient with DefaultProxyClient
-    let remote_proxy = create_proxy_client(addr, None);
+    let remote_proxy = create_proxy_client(addr);
     let remote_session_store = MockSessionStore::new();
 
     let RemoteClientHandle {
@@ -635,10 +627,8 @@ async fn test_e2e_credential_request_denied() {
     let user_identity = MockIdentityProvider::new();
     let remote_identity = MockIdentityProvider::new();
 
-    let user_keypair = user_identity.identity().await;
-
     // 3. Create UserClient with DefaultProxyClient
-    let user_proxy = create_proxy_client(addr, Some(user_keypair));
+    let user_proxy = create_proxy_client(addr);
     let user_session_store = MockSessionStore::new();
 
     let UserClientHandle {
@@ -666,7 +656,7 @@ async fn test_e2e_credential_request_denied() {
         .into_parts();
 
     // 5. Create RemoteClient
-    let remote_proxy = create_proxy_client(addr, None);
+    let remote_proxy = create_proxy_client(addr);
     let remote_session_store = MockSessionStore::new();
 
     let RemoteClientHandle {
@@ -743,10 +733,8 @@ async fn test_e2e_multiple_credential_requests() {
     let user_identity = MockIdentityProvider::new();
     let remote_identity = MockIdentityProvider::new();
 
-    let user_keypair = user_identity.identity().await;
-
     // 3. Create UserClient with DefaultProxyClient
-    let user_proxy = create_proxy_client(addr, Some(user_keypair));
+    let user_proxy = create_proxy_client(addr);
     let user_session_store = MockSessionStore::new();
 
     let UserClientHandle {
@@ -774,7 +762,7 @@ async fn test_e2e_multiple_credential_requests() {
         .into_parts();
 
     // 5. Create RemoteClient
-    let remote_proxy = create_proxy_client(addr, None);
+    let remote_proxy = create_proxy_client(addr);
     let remote_session_store = MockSessionStore::new();
 
     let RemoteClientHandle {
@@ -876,10 +864,8 @@ async fn test_e2e_transport_state_persistence() {
     let user_identity = MockIdentityProvider::new();
     let remote_identity = MockIdentityProvider::new();
 
-    let user_keypair = user_identity.identity().await;
-
     // 3. Create UserClient with DefaultProxyClient
-    let user_proxy = create_proxy_client(addr, Some(user_keypair));
+    let user_proxy = create_proxy_client(addr);
     let user_session_store = MockSessionStore::new();
 
     let UserClientHandle {
@@ -907,7 +893,7 @@ async fn test_e2e_transport_state_persistence() {
         .into_parts();
 
     // 5. Create RemoteClient with Arc<MockSessionStore> for later access
-    let remote_proxy = create_proxy_client(addr, None);
+    let remote_proxy = create_proxy_client(addr);
     let remote_session_store = Arc::new(MockSessionStore::new());
     let session_store_clone = Arc::clone(&remote_session_store);
 
@@ -1004,13 +990,10 @@ async fn test_e2e_multi_device_credential_response() {
 
     // 2. Create identities - same user identity for both devices
     let user_keypair = IdentityKeyPair::generate();
-    let remote_keypair = IdentityKeyPair::generate();
-
-    // Clone keypair for device 2
     let user_keypair_device2 = user_keypair.clone();
 
     // 3. Create UserClient Device 1 with DefaultProxyClient
-    let user_proxy1 = create_proxy_client(addr, Some(user_keypair.clone()));
+    let user_proxy1 = create_proxy_client(addr);
 
     // Use Arc<MockSessionStore> for later access to transport state
     let user_session_store1 = Arc::new(MockSessionStore::new());
@@ -1041,7 +1024,7 @@ async fn test_e2e_multi_device_credential_response() {
         .into_parts();
 
     // 6. Create RemoteClient
-    let remote_proxy = create_proxy_client(addr, Some(remote_keypair));
+    let remote_proxy = create_proxy_client(addr);
     let RemoteClientHandle {
         client: remote_client,
         notifications: mut remote_notification_rx,
@@ -1078,7 +1061,7 @@ async fn test_e2e_multi_device_credential_response() {
     }
 
     // 9. Create UserClient Device 2 with SHARED session store
-    let user_proxy2 = create_proxy_client(addr, Some(user_keypair_device2.clone()));
+    let user_proxy2 = create_proxy_client(addr);
     let UserClientHandle {
         client: user_client2,
         notifications: mut notification_rx2,

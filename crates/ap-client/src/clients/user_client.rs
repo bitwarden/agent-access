@@ -10,7 +10,7 @@ use web_time::Instant;
 
 use ap_noise::{Ciphersuite, MultiDeviceTransport, Psk, ResponderHandshake};
 use ap_proxy_client::IncomingMessage;
-use ap_proxy_protocol::{IdentityFingerprint, RendezvousCode};
+use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair, RendezvousCode};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
@@ -320,8 +320,12 @@ impl UserClient {
         mut proxy_client: Box<dyn ProxyClient>,
         audit_log: Option<Box<dyn AuditLog>>,
     ) -> Result<UserClientHandle, ClientError> {
+        // Extract identity once — used for proxy auth, reconnection, and own fingerprint
+        let identity_keypair = identity_provider.identity().await;
+        let own_fingerprint = identity_keypair.identity().fingerprint();
+
         // Authenticate with the proxy (the async part — before spawn)
-        let incoming_rx = proxy_client.connect().await?;
+        let incoming_rx = proxy_client.connect(identity_keypair.clone()).await?;
 
         // Create channels
         let (notification_tx, notification_rx) = mpsc::channel(32);
@@ -330,13 +334,11 @@ impl UserClient {
         // Create command channel
         let (command_tx, command_rx) = mpsc::channel(32);
 
-        // Cache fingerprint before spawning (avoids repeated async calls)
-        let own_fingerprint = identity_provider.fingerprint().await;
-
         // Build the inner state
         let inner = UserClientInner {
             session_store,
             proxy_client,
+            identity_keypair,
             own_fingerprint,
             transports: HashMap::new(),
             pending_pairings: PendingPairings::new(),
@@ -399,6 +401,8 @@ impl UserClient {
 struct UserClientInner {
     session_store: Box<dyn SessionStore>,
     proxy_client: Box<dyn ProxyClient>,
+    /// Our identity keypair (needed for reconnection).
+    identity_keypair: IdentityKeyPair,
     /// Our own identity fingerprint (cached at construction time).
     own_fingerprint: IdentityFingerprint,
     /// Map of fingerprint -> transport
@@ -506,7 +510,11 @@ impl UserClientInner {
             // Disconnect (ignore errors — connection may already be dead)
             let _ = self.proxy_client.disconnect().await;
 
-            match self.proxy_client.connect().await {
+            match self
+                .proxy_client
+                .connect(self.identity_keypair.clone())
+                .await
+            {
                 Ok(new_rx) => {
                     debug!("Reconnected to proxy on attempt {}", attempt);
                     return Ok(new_rx);
