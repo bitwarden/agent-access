@@ -9,8 +9,8 @@ mod example;
 use ap_client::CredentialData;
 pub use ap_client::CredentialQuery;
 pub use bitwarden::BitwardenProvider;
-pub use example::ExampleProvider;
 use color_eyre::eyre::{Result, bail};
+pub use example::ExampleProvider;
 
 /// Current readiness of a credential provider.
 #[derive(Debug)]
