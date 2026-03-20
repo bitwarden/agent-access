@@ -27,6 +27,8 @@ const RECONNECT_BASE_DELAY: Duration = Duration::from_secs(2);
 const RECONNECT_MAX_DELAY: Duration = Duration::from_secs(15 * 60);
 /// Maximum age for pending pairings before they are pruned.
 const PENDING_PAIRING_MAX_AGE: Duration = Duration::from_secs(10 * 60);
+/// Maximum number of messages buffered per peer while awaiting fingerprint verification.
+const AWAITING_VERIFICATION_BUFFER_LIMIT: usize = 100;
 
 /// The kind of pairing: rendezvous (null PSK) or PSK (real key).
 pub(crate) enum PairingKind {
@@ -39,6 +41,12 @@ pub(crate) enum PairingKind {
     },
     /// PSK pairing — uses a real pre-shared key, no fingerprint verification needed.
     Psk { psk: Psk, psk_id: PskId },
+    /// Rendezvous handshake completed — awaiting fingerprint verification from the user.
+    /// Messages from the remote peer are buffered here until verification completes.
+    AwaitingVerification {
+        source: IdentityFingerprint,
+        buffered_messages: Vec<IncomingMessage>,
+    },
 }
 
 /// A pending pairing waiting for an incoming handshake.
@@ -390,12 +398,19 @@ impl UserClientInner {
                     }
                 }
                 Some(reply) = pending_replies.next() => {
-                    if let Err(e) = self.process_pending_reply(reply, &notification_tx).await {
-                        warn!("Error processing pending reply: {}", e);
-                        notify!(notification_tx, UserClientNotification::Error {
-                            message: e.to_string(),
-                            context: Some("process_pending_reply".to_string()),
-                        });
+                    match self.process_pending_reply(reply, &notification_tx, &request_tx).await {
+                        Ok(futs) => {
+                            for fut in futs {
+                                pending_replies.push(fut);
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Error processing pending reply: {}", e);
+                            notify!(notification_tx, UserClientNotification::Error {
+                                message: e.to_string(),
+                                context: Some("process_pending_reply".to_string()),
+                            });
+                        }
                     }
                 }
                 cmd = command_rx.recv() => {
@@ -466,9 +481,31 @@ impl UserClientInner {
         request_tx: &mpsc::Sender<UserClientRequest>,
     ) -> Result<Option<PendingReplyFuture>, ClientError> {
         match msg {
-            IncomingMessage::Send {
-                source, payload, ..
-            } => {
+            IncomingMessage::Send { ref source, .. } => {
+                // If this source is awaiting fingerprint verification, buffer the message
+                if let Some(PendingPairing {
+                    kind: PairingKind::AwaitingVerification { buffered_messages, .. },
+                    ..
+                }) = self.pending_pairings.iter_mut().find(|p| {
+                    matches!(&p.kind, PairingKind::AwaitingVerification { source: s, .. } if s == source)
+                }) {
+                    if buffered_messages.len() < AWAITING_VERIFICATION_BUFFER_LIMIT {
+                        debug!("Buffering message from {:?} pending fingerprint verification", source);
+                        buffered_messages.push(msg);
+                    } else {
+                        warn!("Buffer limit reached for {:?}, dropping message", source);
+                    }
+                    return Ok(None);
+                }
+
+                // Destructure now that we know we're not buffering
+                let IncomingMessage::Send {
+                    source, payload, ..
+                } = msg
+                else {
+                    unreachable!()
+                };
+
                 // Parse payload as ProtocolMessage
                 let text = String::from_utf8(payload)
                     .map_err(|e| ClientError::Serialization(format!("Invalid UTF-8: {e}")))?;
@@ -569,7 +606,8 @@ impl UserClientInner {
                         let pairing = self.pending_pairings.remove(idx);
                         let psk = match pairing.kind {
                             PairingKind::Psk { psk, .. } => psk,
-                            PairingKind::Rendezvous { .. } => unreachable!(),
+                            PairingKind::Rendezvous { .. }
+                            | PairingKind::AwaitingVerification { .. } => unreachable!(),
                         };
                         (Some(psk), pairing.connection_name, true)
                     } else {
@@ -605,6 +643,16 @@ impl UserClientInner {
 
         if is_new_connection && !is_psk_connection {
             // New rendezvous connection: require fingerprint verification.
+            // Buffer messages from this source until verification completes.
+            self.pending_pairings.push(PendingPairing {
+                connection_name: None,
+                created_at: Instant::now(),
+                kind: PairingKind::AwaitingVerification {
+                    source,
+                    buffered_messages: Vec::new(),
+                },
+            });
+
             let (tx, rx) = oneshot::channel();
 
             if request_tx.capacity() == 0 {
@@ -676,8 +724,13 @@ impl UserClientInner {
     }
 
     /// Remove pending pairings older than `PENDING_PAIRING_MAX_AGE`.
+    /// `AwaitingVerification` entries are excluded — they have their own timeout
+    /// via the `PendingReplyFuture` oneshot channel.
     fn prune_stale_pairings(pairings: &mut Vec<PendingPairing>) {
-        pairings.retain(|p| p.created_at.elapsed() < PENDING_PAIRING_MAX_AGE);
+        pairings.retain(|p| {
+            matches!(p.kind, PairingKind::AwaitingVerification { .. })
+                || p.created_at.elapsed() < PENDING_PAIRING_MAX_AGE
+        });
     }
 
     /// Accept a new connection: cache session, store transport, set name, and audit
@@ -809,7 +862,8 @@ impl UserClientInner {
         &mut self,
         reply: PendingReply,
         notification_tx: &mpsc::Sender<UserClientNotification>,
-    ) -> Result<(), ClientError> {
+        request_tx: &mpsc::Sender<UserClientRequest>,
+    ) -> Result<Vec<PendingReplyFuture>, ClientError> {
         match reply {
             PendingReply::FingerprintVerification {
                 source,
@@ -823,6 +877,7 @@ impl UserClientInner {
                     connection_name,
                     reply,
                     notification_tx,
+                    request_tx,
                 )
                 .await
             }
@@ -833,7 +888,8 @@ impl UserClientInner {
                 reply,
             } => {
                 self.process_credential_reply(source, request_id, query, reply, notification_tx)
-                    .await
+                    .await?;
+                Ok(Vec::new())
             }
         }
     }
@@ -924,7 +980,8 @@ impl UserClientInner {
         connection_name: Option<String>,
         reply: Result<FingerprintVerificationReply, oneshot::error::RecvError>,
         notification_tx: &mpsc::Sender<UserClientNotification>,
-    ) -> Result<(), ClientError> {
+        request_tx: &mpsc::Sender<UserClientRequest>,
+    ) -> Result<Vec<PendingReplyFuture>, ClientError> {
         match reply {
             Ok(FingerprintVerificationReply {
                 approved: true,
@@ -944,42 +1001,85 @@ impl UserClientInner {
                     notification_tx,
                     UserClientNotification::FingerprintVerified {}
                 );
+
+                // Drain buffered messages from the AwaitingVerification pairing
+                let buffered = self
+                    .pending_pairings
+                    .iter()
+                    .position(|p| {
+                        matches!(&p.kind, PairingKind::AwaitingVerification { source: s, .. } if *s == source)
+                    })
+                    .map(|idx| self.pending_pairings.remove(idx));
+
+                let mut futures = Vec::new();
+                if let Some(PendingPairing {
+                    kind:
+                        PairingKind::AwaitingVerification {
+                            buffered_messages, ..
+                        },
+                    ..
+                }) = buffered
+                {
+                    for msg in buffered_messages {
+                        match self.handle_incoming(msg, notification_tx, request_tx).await {
+                            Ok(Some(fut)) => futures.push(fut),
+                            Ok(None) => {}
+                            Err(e) => {
+                                warn!("Error processing buffered message: {}", e);
+                            }
+                        }
+                    }
+                }
+
+                Ok(futures)
             }
             Ok(FingerprintVerificationReply {
                 approved: false, ..
             }) => {
-                self.audit_log
-                    .write(AuditEvent::ConnectionRejected {
-                        remote_identity: &source,
-                    })
-                    .await;
-
-                notify!(
+                self.reject_fingerprint(
+                    &source,
+                    "User rejected fingerprint verification",
                     notification_tx,
-                    UserClientNotification::FingerprintRejected {
-                        reason: "User rejected fingerprint verification".to_string(),
-                    }
-                );
+                )
+                .await;
+                Ok(Vec::new())
             }
             Err(_) => {
-                // Oneshot sender was dropped without replying — treat as rejection
                 warn!("Fingerprint verification reply channel dropped, treating as rejection");
-                self.audit_log
-                    .write(AuditEvent::ConnectionRejected {
-                        remote_identity: &source,
-                    })
-                    .await;
-
-                notify!(
+                self.reject_fingerprint(
+                    &source,
+                    "Verification cancelled (reply dropped)",
                     notification_tx,
-                    UserClientNotification::FingerprintRejected {
-                        reason: "Verification cancelled (reply dropped)".to_string(),
-                    }
-                );
+                )
+                .await;
+                Ok(Vec::new())
             }
         }
+    }
 
-        Ok(())
+    /// Reject a fingerprint verification: discard buffered messages, audit, and notify.
+    async fn reject_fingerprint(
+        &mut self,
+        source: &IdentityFingerprint,
+        reason: &str,
+        notification_tx: &mpsc::Sender<UserClientNotification>,
+    ) {
+        self.pending_pairings.retain(|p| {
+            !matches!(&p.kind, PairingKind::AwaitingVerification { source: s, .. } if s == source)
+        });
+
+        self.audit_log
+            .write(AuditEvent::ConnectionRejected {
+                remote_identity: source,
+            })
+            .await;
+
+        notify!(
+            notification_tx,
+            UserClientNotification::FingerprintRejected {
+                reason: reason.to_string(),
+            }
+        );
     }
 
     /// Process a credential request reply.
