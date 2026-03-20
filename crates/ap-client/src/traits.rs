@@ -15,6 +15,7 @@ pub struct SessionInfo {
 }
 
 /// Lightweight update for an existing session (no full read needed).
+#[derive(Debug, Clone, Copy)]
 pub struct SessionUpdate {
     pub fingerprint: IdentityFingerprint,
     pub last_connected_at: u64,

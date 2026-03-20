@@ -147,6 +147,12 @@ pub struct FileSessionCache {
 }
 
 impl FileSessionCache {
+    pub async fn clear(&mut self) -> Result<(), ClientError> {
+        self.data.sessions.clear();
+        self.persist()?;
+        Ok(())
+    }
+
     pub fn load_or_create(cache_name: &str) -> Result<Self, ClientError> {
         let cache_path = Self::default_cache_path(cache_name)?;
 
@@ -159,12 +165,6 @@ impl FileSessionCache {
         };
 
         Ok(Self { cache_path, data })
-    }
-
-    pub async fn clear(&mut self) -> Result<(), ClientError> {
-        self.data.sessions.clear();
-        self.persist()?;
-        Ok(())
     }
 
     fn persist(&self) -> Result<(), ClientError> {

@@ -19,6 +19,11 @@ impl MemorySessionStore {
             sessions: HashMap::new(),
         }
     }
+
+    /// Clear all cached sessions.
+    pub fn clear(&mut self) {
+        self.sessions.clear();
+    }
 }
 
 impl Default for MemorySessionStore {

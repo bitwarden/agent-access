@@ -152,6 +152,14 @@ impl SessionStore for FileSessionCache {
 }
 
 impl FileSessionCache {
+    /// Clear all cached sessions.
+    pub async fn clear(&mut self) -> Result<(), ClientError> {
+        self.data.sessions.clear();
+        self.persist()?;
+        debug!("Cleared all session cache entries");
+        Ok(())
+    }
+
     /// Load or create session cache
     pub fn load_or_create(cache_name: &str) -> Result<Self, ClientError> {
         let cache_path = Self::default_cache_path(cache_name)?;
@@ -167,14 +175,6 @@ impl FileSessionCache {
         };
 
         Ok(Self { cache_path, data })
-    }
-
-    /// Clear all cached sessions.
-    pub async fn clear(&mut self) -> Result<(), ClientError> {
-        self.data.sessions.clear();
-        self.persist()?;
-        debug!("Cleared all session cache entries");
-        Ok(())
     }
 
     /// Save cache to disk
