@@ -4,9 +4,6 @@
     <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.svg">
     <img alt="Bitwarden Agent Access" src="assets/logo-light.svg" height="80">
   </picture>
-  <br>
-  <br>
-  <br>
 </p>
 
 
