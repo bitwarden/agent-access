@@ -1,10 +1,9 @@
 use pyo3::prelude::*;
 use tokio::sync::mpsc;
 
-use ap_proxy_client::ProxyClientConfig;
 use ap_client::{
-    DefaultProxyClient, IdentityFingerprint, IdentityProvider, PskToken, RemoteClient,
-    RemoteClientNotification, SessionStore,
+    DefaultProxyClient, IdentityFingerprint, PskToken, RemoteClient, RemoteClientNotification,
+    SessionStore,
 };
 
 use crate::storage::{FileIdentityStorage, FileSessionCache};
@@ -83,10 +82,7 @@ impl PyRemoteClient {
         let session_store = FileSessionCache::load_or_create(&self.identity_name)
             .map_err(|e| RemoteAccessError::new_err(e.to_string()))?;
 
-        let proxy_client = Box::new(DefaultProxyClient::new(ProxyClientConfig {
-            proxy_url: self.proxy_url.clone(),
-            identity_keypair: Some(self.runtime.block_on(identity.identity())),
-        }));
+        let proxy_client = Box::new(DefaultProxyClient::from_url(self.proxy_url.clone()));
 
         // Create the client (connects to proxy, spawns event loop)
         let handle = py

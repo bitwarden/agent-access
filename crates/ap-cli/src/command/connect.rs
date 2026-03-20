@@ -8,7 +8,6 @@ use ap_client::{
     PskToken, RemoteClient, RemoteClientFingerprintReply, RemoteClientNotification,
     RemoteClientRequest, SessionStore,
 };
-use ap_proxy_client::ProxyClientConfig;
 use clap::Args;
 use color_eyre::eyre::{Result, bail};
 use crossterm::event::{Event, EventStream, KeyEventKind};
@@ -824,10 +823,7 @@ async fn start_connection(
     mpsc::Receiver<RemoteClientRequest>,
     RemoteClient,
 )> {
-    let proxy_client = Box::new(DefaultProxyClient::new(ProxyClientConfig {
-        proxy_url: proxy_url.to_string(),
-        identity_keypair: Some(identity_provider.identity().await),
-    }));
+    let proxy_client = Box::new(DefaultProxyClient::from_url(proxy_url.to_string()));
 
     let handle = RemoteClient::connect(identity_provider, session_store, proxy_client)
         .await

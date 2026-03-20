@@ -14,13 +14,9 @@
 //!
 //! ```ignore
 //! use ap_client::{RemoteClient, RemoteClientHandle, DefaultProxyClient, IdentityProvider, SessionStore};
-//! use ap_proxy_client::ProxyClientConfig;
 //!
-//! // Create proxy client
-//! let proxy_client = Box::new(DefaultProxyClient::new(ProxyClientConfig {
-//!     proxy_url: "ws://localhost:8080".to_string(),
-//!     identity_keypair: Some(identity_provider.identity().to_owned()),
-//! }));
+//! // Create proxy client — identity is wired internally by connect()
+//! let proxy_client = Box::new(DefaultProxyClient::from_url("ws://localhost:8080".to_string()));
 //!
 //! // Connect — spawns event loop internally, returns handle with channels
 //! let RemoteClientHandle { client, mut notifications, mut requests } =
@@ -37,13 +33,9 @@
 //!
 //! ```ignore
 //! use ap_client::{DefaultProxyClient, IdentityProvider, UserClient, UserClientHandle};
-//! use ap_proxy_client::ProxyClientConfig;
 //!
-//! // Create proxy client
-//! let proxy_client = Box::new(DefaultProxyClient::new(ProxyClientConfig {
-//!     proxy_url: "ws://localhost:8080".to_string(),
-//!     identity_keypair: Some(identity_provider.identity().to_owned()),
-//! }));
+//! // Create proxy client — identity is wired internally by connect()
+//! let proxy_client = Box::new(DefaultProxyClient::from_url("ws://localhost:8080".to_string()));
 //!
 //! // Connect — spawns event loop internally, returns handle with channels
 //! let UserClientHandle { client, mut notifications, mut requests } =
