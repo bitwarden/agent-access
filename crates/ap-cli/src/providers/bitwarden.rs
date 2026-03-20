@@ -6,6 +6,7 @@
 use std::process::Command;
 
 use ap_client::CredentialData;
+use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use tracing::info;
 
@@ -38,8 +39,7 @@ struct BwItem {
 
 /// Credential provider backed by the Bitwarden CLI (`bw`).
 pub struct BitwardenProvider {
-    // TODO: Look into ways to keep the session key more secure (e.g. `secrecy::SecretString`)
-    session: Option<String>,
+    session: Option<SecretString>,
     /// Cached path to the `bw` binary (resolved once on construction).
     bw_path: Option<String>,
 }
@@ -47,7 +47,10 @@ pub struct BitwardenProvider {
 impl BitwardenProvider {
     /// Create a new provider, reading `BW_SESSION` from the environment if set.
     pub fn new() -> Self {
-        let session = std::env::var("BW_SESSION").ok().filter(|s| !s.is_empty());
+        let session = std::env::var("BW_SESSION")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(SecretString::from);
         let bw_path = resolve_bw_path();
         Self { session, bw_path }
     }
@@ -208,7 +211,7 @@ fn domain_from_uri(uri: &str) -> Option<String> {
 /// spawning `which`).
 #[cfg(test)]
 impl BitwardenProvider {
-    fn with_session(session: Option<String>) -> Self {
+    fn with_session(session: Option<SecretString>) -> Self {
         Self {
             session,
             bw_path: None,
@@ -231,7 +234,8 @@ impl CredentialProvider for BitwardenProvider {
             }
         };
 
-        let (status_str, user_email) = check_bw_cli_status(bw, self.session.as_deref());
+        let (status_str, user_email) =
+            check_bw_cli_status(bw, self.session.as_ref().map(|s| s.expose_secret()));
 
         match status_str.as_deref() {
             Some("unlocked") => ProviderStatus::Ready {
@@ -257,7 +261,7 @@ impl CredentialProvider for BitwardenProvider {
             // Try as a session key first — validate with `bw status`
             let (status, _) = check_bw_cli_status(bw, Some(input));
             if status.as_deref() == Some("unlocked") {
-                self.session = Some(input.to_string());
+                self.session = Some(SecretString::from(input.to_string()));
                 return Ok(());
             }
             // Fall through to try as password if it didn't validate
@@ -265,7 +269,7 @@ impl CredentialProvider for BitwardenProvider {
 
         // Treat as master password
         let key = run_bw_unlock(bw, input)?;
-        self.session = Some(key);
+        self.session = Some(SecretString::from(key));
         Ok(())
     }
 
@@ -281,7 +285,7 @@ impl CredentialProvider for BitwardenProvider {
 
         let search = query.search_string();
 
-        match lookup_credential(bw, search, self.session.as_deref()) {
+        match lookup_credential(bw, search, self.session.as_ref().map(|s| s.expose_secret())) {
             Some(cred) => LookupResult::Found(cred),
             None => {
                 // When there's no cached session the vault might still be unlocked
@@ -380,7 +384,7 @@ mod tests {
 
     #[test]
     fn provider_has_session_when_constructed_with_one() {
-        let p = BitwardenProvider::with_session(Some("key123".into()));
+        let p = BitwardenProvider::with_session(Some(SecretString::from("key123".to_string())));
         assert!(p.session.is_some());
     }
 
