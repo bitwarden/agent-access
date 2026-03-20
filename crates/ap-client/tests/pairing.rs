@@ -975,9 +975,10 @@ async fn test_notification_channel_not_blocking_event_loop() {
     for i in 0..40 {
         let result = timeout(
             Duration::from_secs(10),
-            remote_client.request_credential(&ap_client::CredentialQuery::Domain(
-                "example.com".to_string(),
-            )),
+            remote_client.request_credential(
+                &ap_client::CredentialQuery::Domain("example.com".to_string()),
+                None,
+            ),
         )
         .await
         .unwrap_or_else(|_| panic!("Request {i} should not timeout — event loop is blocked"))
@@ -1065,9 +1066,10 @@ async fn test_request_channel_backpressure() {
     // RemoteClient's request_credential will time out waiting for a response.
     let result = timeout(
         Duration::from_secs(3),
-        remote_client.request_credential(&ap_client::CredentialQuery::Domain(
-            "example.com".to_string(),
-        )),
+        remote_client.request_credential(
+            &ap_client::CredentialQuery::Domain("example.com".to_string()),
+            None,
+        ),
     )
     .await;
 
@@ -1163,9 +1165,10 @@ async fn test_credential_request_buffered_during_fingerprint_verification() {
 
             // Immediately request a credential — the UserClient hasn't approved yet
             let credential = remote_client
-                .request_credential(&ap_client::CredentialQuery::Domain(
-                    "buffered.example.com".to_string(),
-                ))
+                .request_credential(
+                    &ap_client::CredentialQuery::Domain("buffered.example.com".to_string()),
+                    None,
+                )
                 .await
                 .expect("Credential request should succeed after fingerprint approval");
 

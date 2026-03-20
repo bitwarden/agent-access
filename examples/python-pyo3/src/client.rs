@@ -188,7 +188,7 @@ impl PyRemoteClient {
         let cred = py
             .allow_threads(|| {
                 self.runtime
-                    .block_on(async { client.request_credential(&query).await })
+                    .block_on(async { client.request_credential(&query, None).await })
             })
             .map_err(|e| RemoteAccessError::new_err(e.to_string()))?;
 

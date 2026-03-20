@@ -21,7 +21,7 @@ use crate::{
     },
 };
 
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
 // =============================================================================
 // Public types: Notifications (fire-and-forget) and Requests (with reply)
@@ -148,6 +148,7 @@ enum RemoteClientCommand {
     },
     RequestCredential {
         query: CredentialQuery,
+        credential_timeout: Option<Duration>,
         reply: oneshot::Sender<Result<CredentialData, ClientError>>,
     },
     ListConnections {
@@ -312,14 +313,19 @@ impl RemoteClient {
     }
 
     /// Request a credential over the secure channel.
+    ///
+    /// An optional `timeout` overrides the default credential response timeout
+    /// (120 seconds). Pass `None` to use the default.
     pub async fn request_credential(
         &self,
         query: &CredentialQuery,
+        timeout: Option<Duration>,
     ) -> Result<CredentialData, ClientError> {
         let (tx, rx) = oneshot::channel();
         self.command_tx
             .send(RemoteClientCommand::RequestCredential {
                 query: query.clone(),
+                credential_timeout: timeout,
                 reply: tx,
             })
             .await
@@ -458,9 +464,13 @@ impl RemoteClientInner {
                     .await;
                 let _ = reply.send(result);
             }
-            RemoteClientCommand::RequestCredential { query, reply } => {
+            RemoteClientCommand::RequestCredential {
+                query,
+                credential_timeout,
+                reply,
+            } => {
                 let result = self
-                    .do_request_credential(query, incoming_rx, notification_tx)
+                    .do_request_credential(query, credential_timeout, incoming_rx, notification_tx)
                     .await;
                 let _ = reply.send(result);
             }
@@ -712,6 +722,7 @@ impl RemoteClientInner {
     async fn do_request_credential(
         &mut self,
         query: CredentialQuery,
+        credential_timeout: Option<Duration>,
         incoming_rx: &mut mpsc::UnboundedReceiver<IncomingMessage>,
         notification_tx: &mpsc::Sender<RemoteClientNotification>,
     ) -> Result<CredentialData, ClientError> {
@@ -763,8 +774,9 @@ impl RemoteClientInner {
         );
 
         // Wait for matching response inline
+        let effective_timeout = credential_timeout.unwrap_or(DEFAULT_REQUEST_TIMEOUT);
         match timeout(
-            DEFAULT_TIMEOUT,
+            effective_timeout,
             self.receive_credential_response(&request_id, incoming_rx, notification_tx),
         )
         .await

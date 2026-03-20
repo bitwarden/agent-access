@@ -26,7 +26,7 @@
 //! client.pair_with_handshake("ABCDEF123".to_string(), false).await?;
 //!
 //! let query = ap_client::CredentialQuery::Domain("example.com".to_string());
-//! let credential = client.request_credential(&query).await?;
+//! let credential = client.request_credential(&query, None).await?;
 //! ```
 //!
 //! ## User Client Usage (trusted device)
