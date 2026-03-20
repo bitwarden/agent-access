@@ -4,9 +4,9 @@ use async_trait::async_trait;
 
 use crate::error::ClientError;
 
-/// A cached session record containing all session data.
+/// A cached connection record containing all connection data.
 #[derive(Debug, Clone)]
-pub struct SessionInfo {
+pub struct ConnectionInfo {
     pub fingerprint: IdentityFingerprint,
     pub name: Option<String>,
     pub cached_at: u64,
@@ -14,30 +14,30 @@ pub struct SessionInfo {
     pub transport_state: Option<MultiDeviceTransport>,
 }
 
-/// Lightweight update for an existing session (no full read needed).
+/// Lightweight update for an existing connection (no full read needed).
 #[derive(Debug, Clone, Copy)]
-pub struct SessionUpdate {
+pub struct ConnectionUpdate {
     pub fingerprint: IdentityFingerprint,
     pub last_connected_at: u64,
 }
 
-/// Trait for session cache storage implementations.
+/// Trait for connection cache storage implementations.
 ///
-/// Provides an abstraction for storing and retrieving approved remote sessions.
+/// Provides an abstraction for storing and retrieving approved remote connections.
 /// Implementations must be thread-safe for use in async contexts.
 #[async_trait]
-pub trait SessionStore: Send + Sync {
-    /// Get a session by fingerprint, returning `None` if not found.
-    async fn get(&self, fingerprint: &IdentityFingerprint) -> Option<SessionInfo>;
+pub trait ConnectionStore: Send + Sync {
+    /// Get a connection by fingerprint, returning `None` if not found.
+    async fn get(&self, fingerprint: &IdentityFingerprint) -> Option<ConnectionInfo>;
 
-    /// Save a session (insert or replace).
-    async fn save(&mut self, session: SessionInfo) -> Result<(), ClientError>;
+    /// Save a connection (insert or replace).
+    async fn save(&mut self, connection: ConnectionInfo) -> Result<(), ClientError>;
 
-    /// Update only the `last_connected_at` timestamp for an existing session.
-    async fn update(&mut self, update: SessionUpdate) -> Result<(), ClientError>;
+    /// Update only the `last_connected_at` timestamp for an existing connection.
+    async fn update(&mut self, update: ConnectionUpdate) -> Result<(), ClientError>;
 
-    /// List all cached sessions.
-    async fn list(&self) -> Vec<SessionInfo>;
+    /// List all cached connections.
+    async fn list(&self) -> Vec<ConnectionInfo>;
 }
 
 /// Provides a cryptographic identity for the current client.

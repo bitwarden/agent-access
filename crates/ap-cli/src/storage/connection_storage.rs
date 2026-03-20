@@ -1,18 +1,18 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use ap_client::{ClientError, SessionInfo, SessionStore, SessionUpdate};
+use ap_client::{ClientError, ConnectionInfo, ConnectionStore, ConnectionUpdate};
 use ap_noise::{MultiDeviceTransport, PersistentTransportState};
 use ap_proxy_protocol::IdentityFingerprint;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
-/// Session record stored in cache (serde representation).
+/// Connection record stored in cache (serde representation).
 ///
 /// Transport state is stored as CBOR bytes for serialization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct SessionRecord {
+struct ConnectionRecord {
     remote_fingerprint: IdentityFingerprint,
     cached_at: u64,
     last_connected_at: u64,
@@ -24,12 +24,12 @@ struct SessionRecord {
 
 /// Cache data structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct SessionCacheData {
-    sessions: Vec<SessionRecord>,
+struct ConnectionCacheData {
+    connections: Vec<ConnectionRecord>,
 }
 
-/// Convert a `SessionRecord` to a `SessionInfo`, deserializing transport state.
-fn record_to_info(record: &SessionRecord) -> Result<SessionInfo, ClientError> {
+/// Convert a `ConnectionRecord` to a `ConnectionInfo`, deserializing transport state.
+fn record_to_info(record: &ConnectionRecord) -> Result<ConnectionInfo, ClientError> {
     let transport_state = match &record.transport_state {
         Some(bytes) => {
             Some(PersistentTransportState::from_bytes(bytes).map(MultiDeviceTransport::from)?)
@@ -37,7 +37,7 @@ fn record_to_info(record: &SessionRecord) -> Result<SessionInfo, ClientError> {
         None => None,
     };
 
-    Ok(SessionInfo {
+    Ok(ConnectionInfo {
         fingerprint: record.remote_fingerprint,
         name: record.name.clone(),
         cached_at: record.cached_at,
@@ -46,8 +46,8 @@ fn record_to_info(record: &SessionRecord) -> Result<SessionInfo, ClientError> {
     })
 }
 
-/// Convert a `SessionInfo` to a `SessionRecord`, serializing transport state.
-fn info_to_record(info: &SessionInfo) -> Result<SessionRecord, ClientError> {
+/// Convert a `ConnectionInfo` to a `ConnectionRecord`, serializing transport state.
+fn info_to_record(info: &ConnectionInfo) -> Result<ConnectionRecord, ClientError> {
     let transport_bytes = match &info.transport_state {
         Some(transport) => Some(
             PersistentTransportState::from(transport)
@@ -59,7 +59,7 @@ fn info_to_record(info: &SessionInfo) -> Result<SessionRecord, ClientError> {
         None => None,
     };
 
-    Ok(SessionRecord {
+    Ok(ConnectionRecord {
         remote_fingerprint: info.fingerprint,
         cached_at: info.cached_at,
         last_connected_at: info.last_connected_at,
@@ -68,74 +68,79 @@ fn info_to_record(info: &SessionInfo) -> Result<SessionRecord, ClientError> {
     })
 }
 
-/// File-based session cache implementation
+/// File-based connection cache implementation
 ///
-/// Stores sessions in a JSON file at ~/.access-protocol/session_cache_{name}.json
-pub struct FileSessionCache {
+/// Stores connections in a JSON file at ~/.access-protocol/connection_cache_{name}.json
+pub struct FileConnectionCache {
     cache_path: PathBuf,
-    data: SessionCacheData,
+    data: ConnectionCacheData,
 }
 
 #[async_trait]
-impl SessionStore for FileSessionCache {
-    async fn get(&self, fingerprint: &IdentityFingerprint) -> Option<SessionInfo> {
+impl ConnectionStore for FileConnectionCache {
+    async fn get(&self, fingerprint: &IdentityFingerprint) -> Option<ConnectionInfo> {
         self.data
-            .sessions
+            .connections
             .iter()
             .find(|s| s.remote_fingerprint == *fingerprint)
             .and_then(|record| match record_to_info(record) {
                 Ok(info) => Some(info),
                 Err(e) => {
-                    debug!("Failed to deserialize session for {:?}: {}", fingerprint, e);
+                    debug!(
+                        "Failed to deserialize connection for {:?}: {}",
+                        fingerprint, e
+                    );
                     None
                 }
             })
     }
 
-    async fn save(&mut self, session: SessionInfo) -> Result<(), ClientError> {
-        let record = info_to_record(&session)?;
+    async fn save(&mut self, connection: ConnectionInfo) -> Result<(), ClientError> {
+        let record = info_to_record(&connection)?;
 
         if let Some(existing) = self
             .data
-            .sessions
+            .connections
             .iter_mut()
-            .find(|s| s.remote_fingerprint == session.fingerprint)
+            .find(|s| s.remote_fingerprint == connection.fingerprint)
         {
             *existing = record;
-            debug!("Updated existing session cache entry");
+            debug!("Updated existing connection cache entry");
         } else {
-            self.data.sessions.push(record);
-            debug!("Added new session cache entry");
+            self.data.connections.push(record);
+            debug!("Added new connection cache entry");
         }
 
         self.persist()?;
         Ok(())
     }
 
-    async fn update(&mut self, update: SessionUpdate) -> Result<(), ClientError> {
-        if let Some(session) = self
+    async fn update(&mut self, update: ConnectionUpdate) -> Result<(), ClientError> {
+        if let Some(connection) = self
             .data
-            .sessions
+            .connections
             .iter_mut()
             .find(|s| s.remote_fingerprint == update.fingerprint)
         {
-            session.last_connected_at = update.last_connected_at;
+            connection.last_connected_at = update.last_connected_at;
             self.persist()?;
-            debug!("Updated last_connected_at for session");
+            debug!("Updated last_connected_at for connection");
             Ok(())
         } else {
-            Err(ClientError::SessionCache("Session not found".to_string()))
+            Err(ClientError::ConnectionCache(
+                "Connection not found".to_string(),
+            ))
         }
     }
 
-    async fn list(&self) -> Vec<SessionInfo> {
+    async fn list(&self) -> Vec<ConnectionInfo> {
         self.data
-            .sessions
+            .connections
             .iter()
             .filter_map(|record| match record_to_info(record) {
                 Ok(info) => Some(info),
                 Err(e) => {
-                    debug!("Failed to deserialize session: {}", e);
+                    debug!("Failed to deserialize connection: {}", e);
                     None
                 }
             })
@@ -143,26 +148,26 @@ impl SessionStore for FileSessionCache {
     }
 }
 
-impl FileSessionCache {
-    /// Clear all cached sessions.
+impl FileConnectionCache {
+    /// Clear all cached connections.
     pub async fn clear(&mut self) -> Result<(), ClientError> {
-        self.data.sessions.clear();
+        self.data.connections.clear();
         self.persist()?;
-        debug!("Cleared all session cache entries");
+        debug!("Cleared all connection cache entries");
         Ok(())
     }
 
-    /// Load or create session cache
+    /// Load or create connection cache
     pub fn load_or_create(cache_name: &str) -> Result<Self, ClientError> {
         let cache_path = Self::default_cache_path(cache_name)?;
 
         let data = if cache_path.exists() {
-            debug!("Loading session cache from {:?}", cache_path);
+            debug!("Loading connection cache from {:?}", cache_path);
             Self::load_from_file(&cache_path)?
         } else {
-            debug!("Creating new session cache");
-            SessionCacheData {
-                sessions: Vec::new(),
+            debug!("Creating new connection cache");
+            ConnectionCacheData {
+                connections: Vec::new(),
             }
         };
 
@@ -172,42 +177,44 @@ impl FileSessionCache {
     /// Save cache to disk
     fn persist(&self) -> Result<(), ClientError> {
         let json = serde_json::to_string_pretty(&self.data)
-            .map_err(|e| ClientError::SessionCache(format!("Serialization failed: {e}")))?;
+            .map_err(|e| ClientError::ConnectionCache(format!("Serialization failed: {e}")))?;
 
-        fs::write(&self.cache_path, json)
-            .map_err(|e| ClientError::SessionCache(format!("Failed to write cache file: {e}")))?;
+        fs::write(&self.cache_path, json).map_err(|e| {
+            ClientError::ConnectionCache(format!("Failed to write cache file: {e}"))
+        })?;
 
-        debug!("Saved session cache");
+        debug!("Saved connection cache");
         Ok(())
     }
 
-    /// Get default cache path (~/.access-protocol/session_cache_{cache_name}.json)
+    /// Get default cache path (~/.access-protocol/connection_cache_{cache_name}.json)
     fn default_cache_path(cache_name: &str) -> Result<PathBuf, ClientError> {
         let home_dir = dirs::home_dir().ok_or_else(|| {
-            ClientError::SessionCache("Could not find home directory".to_string())
+            ClientError::ConnectionCache("Could not find home directory".to_string())
         })?;
 
         let ap_dir = home_dir.join(".access-protocol");
         if !ap_dir.exists() {
             fs::create_dir_all(&ap_dir).map_err(|e| {
-                ClientError::SessionCache(format!(
+                ClientError::ConnectionCache(format!(
                     "Failed to create .access-protocol directory: {e}"
                 ))
             })?;
         }
 
-        Ok(ap_dir.join(format!("session_cache_{cache_name}.json")))
+        Ok(ap_dir.join(format!("connection_cache_{cache_name}.json")))
     }
 
     /// Load cache from file
-    fn load_from_file(path: &Path) -> Result<SessionCacheData, ClientError> {
+    fn load_from_file(path: &Path) -> Result<ConnectionCacheData, ClientError> {
         let contents = fs::read_to_string(path)
-            .map_err(|e| ClientError::SessionCache(format!("Failed to read cache file: {e}")))?;
+            .map_err(|e| ClientError::ConnectionCache(format!("Failed to read cache file: {e}")))?;
 
-        let data: SessionCacheData = serde_json::from_str(&contents)
-            .map_err(|e| ClientError::SessionCache(format!("Failed to parse cache file: {e}")))?;
+        let data: ConnectionCacheData = serde_json::from_str(&contents).map_err(|e| {
+            ClientError::ConnectionCache(format!("Failed to parse cache file: {e}"))
+        })?;
 
-        debug!("Loaded {} session(s) from cache", data.sessions.len());
+        debug!("Loaded {} connection(s) from cache", data.connections.len());
         Ok(data)
     }
 }

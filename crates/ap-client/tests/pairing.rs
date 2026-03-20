@@ -1,14 +1,14 @@
 //! Integration tests for ap-client pairing flows
 //!
 //! These tests verify the PSK and fingerprint-based pairing modes
-//! using mock implementations of the identity provider, session store, and proxy.
+//! using mock implementations of the identity provider, connection store, and proxy.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use ap_client::{
     ClientError, CredentialRequestReply, FingerprintVerificationReply, IdentityProvider,
-    MemoryIdentityProvider, MemorySessionStore, ProxyClient, PskToken, RemoteClient,
+    MemoryConnectionStore, MemoryIdentityProvider, ProxyClient, PskToken, RemoteClient,
     RemoteClientFingerprintReply, RemoteClientHandle, RemoteClientNotification,
     RemoteClientRequest, UserClient, UserClientHandle, UserClientNotification, UserClientRequest,
 };
@@ -198,9 +198,9 @@ async fn test_psk_pairing() {
     // Create mock proxy pair
     let (user_proxy, remote_proxy) = create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
 
-    // Create session stores
-    let user_session_store = MemorySessionStore::new();
-    let remote_session_store = MemorySessionStore::new();
+    // Create connection stores
+    let user_connection_store = MemoryConnectionStore::new();
+    let remote_connection_store = MemoryConnectionStore::new();
 
     // Create and connect UserClient (already listening)
     let UserClientHandle {
@@ -209,7 +209,7 @@ async fn test_psk_pairing() {
         requests: _request_rx,
     } = UserClient::connect(
         Box::new(user_identity),
-        Box::new(user_session_store),
+        Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
     )
@@ -234,7 +234,7 @@ async fn test_psk_pairing() {
         requests: _remote_request_rx,
     } = RemoteClient::connect(
         Box::new(remote_identity),
-        Box::new(remote_session_store),
+        Box::new(remote_connection_store),
         Box::new(remote_proxy),
     )
     .await
@@ -278,13 +278,13 @@ async fn test_psk_pairing() {
         "UserClient should emit HandshakeComplete"
     );
 
-    // Verify session is cached
+    // Verify connection is cached
     assert!(
         remote_client
-            .has_session(fingerprint)
+            .has_connection(fingerprint)
             .await
-            .expect("has_session should not fail"),
-        "Session should be cached in RemoteClient's session store"
+            .expect("has_connection should not fail"),
+        "Connection should be cached in RemoteClient's connection store"
     );
 
     // Cleanup
@@ -311,9 +311,9 @@ async fn test_fingerprint_pairing() {
     user_proxy.set_rendezvous_code(rendezvous_code.clone());
     remote_proxy.set_peer_fingerprint(user_fingerprint);
 
-    // Create session stores
-    let user_session_store = MemorySessionStore::new();
-    let remote_session_store = MemorySessionStore::new();
+    // Create connection stores
+    let user_connection_store = MemoryConnectionStore::new();
+    let remote_connection_store = MemoryConnectionStore::new();
 
     // Create and connect UserClient (already listening)
     let UserClientHandle {
@@ -322,7 +322,7 @@ async fn test_fingerprint_pairing() {
         requests: mut request_rx,
     } = UserClient::connect(
         Box::new(user_identity),
-        Box::new(user_session_store),
+        Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
     )
@@ -343,7 +343,7 @@ async fn test_fingerprint_pairing() {
         requests: _remote_request_rx,
     } = RemoteClient::connect(
         Box::new(remote_identity),
-        Box::new(remote_session_store),
+        Box::new(remote_connection_store),
         Box::new(remote_proxy),
     )
     .await
@@ -375,13 +375,13 @@ async fn test_fingerprint_pairing() {
     // The pairing should succeed
     let paired_fingerprint = pair_result.expect("Pairing should succeed");
 
-    // Verify session is cached
+    // Verify connection is cached
     assert!(
         remote_client
-            .has_session(paired_fingerprint)
+            .has_connection(paired_fingerprint)
             .await
-            .expect("has_session should not fail"),
-        "Session should be cached in RemoteClient's session store"
+            .expect("has_connection should not fail"),
+        "Connection should be cached in RemoteClient's connection store"
     );
 
     // Check that HandshakeFingerprint was emitted on remote side (informational)
@@ -516,7 +516,7 @@ async fn run_reconnection_test(fail_count: u32) -> (Vec<UserClientNotification>,
     tokio::time::pause();
 
     let identity = MemoryIdentityProvider::new();
-    let session_store = MemorySessionStore::new();
+    let connection_store = MemoryConnectionStore::new();
 
     let proxy = ReconnectingMockProxyClient::new(fail_count, Duration::from_millis(10));
     let connect_calls = Arc::clone(&proxy.connect_calls);
@@ -527,7 +527,7 @@ async fn run_reconnection_test(fail_count: u32) -> (Vec<UserClientNotification>,
         requests: _request_rx,
     } = UserClient::connect(
         Box::new(identity),
-        Box::new(session_store),
+        Box::new(connection_store),
         Box::new(proxy),
         None,
     )
@@ -649,9 +649,9 @@ async fn test_fingerprint_pairing_both_sides_verify() {
     user_proxy.set_rendezvous_code(rendezvous_code.clone());
     remote_proxy.set_peer_fingerprint(user_fingerprint);
 
-    // Create session stores
-    let user_session_store = MemorySessionStore::new();
-    let remote_session_store = MemorySessionStore::new();
+    // Create connection stores
+    let user_connection_store = MemoryConnectionStore::new();
+    let remote_connection_store = MemoryConnectionStore::new();
 
     // Create and connect UserClient (already listening)
     let UserClientHandle {
@@ -660,7 +660,7 @@ async fn test_fingerprint_pairing_both_sides_verify() {
         requests: mut request_rx,
     } = UserClient::connect(
         Box::new(user_identity),
-        Box::new(user_session_store),
+        Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
     )
@@ -681,7 +681,7 @@ async fn test_fingerprint_pairing_both_sides_verify() {
         requests: mut remote_request_rx,
     } = RemoteClient::connect(
         Box::new(remote_identity),
-        Box::new(remote_session_store),
+        Box::new(remote_connection_store),
         Box::new(remote_proxy),
     )
     .await
@@ -722,13 +722,13 @@ async fn test_fingerprint_pairing_both_sides_verify() {
     // The pairing should succeed
     let paired_fingerprint = pair_result.expect("Pairing should succeed");
 
-    // Verify session is cached
+    // Verify connection is cached
     assert!(
         remote_client
-            .has_session(paired_fingerprint)
+            .has_connection(paired_fingerprint)
             .await
-            .expect("has_session should not fail"),
-        "Session should be cached in RemoteClient's session store"
+            .expect("has_connection should not fail"),
+        "Connection should be cached in RemoteClient's connection store"
     );
 
     // Verify remote side emitted FingerprintVerified
@@ -790,8 +790,8 @@ async fn test_dual_mode_psk_pairing_with_both_modes_pending() {
     // Set up rendezvous so get_rendezvous_token doesn't hang
     user_proxy.set_rendezvous_code(RendezvousCode::from_string("DUAL12345".to_string()));
 
-    let user_session_store = MemorySessionStore::new();
-    let remote_session_store = MemorySessionStore::new();
+    let user_connection_store = MemoryConnectionStore::new();
+    let remote_connection_store = MemoryConnectionStore::new();
 
     // Create UserClient (already listening)
     let UserClientHandle {
@@ -800,7 +800,7 @@ async fn test_dual_mode_psk_pairing_with_both_modes_pending() {
         requests: _request_rx,
     } = UserClient::connect(
         Box::new(user_identity),
-        Box::new(user_session_store),
+        Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
     )
@@ -830,7 +830,7 @@ async fn test_dual_mode_psk_pairing_with_both_modes_pending() {
         requests: _remote_request_rx,
     } = RemoteClient::connect(
         Box::new(remote_identity),
-        Box::new(remote_session_store),
+        Box::new(remote_connection_store),
         Box::new(remote_proxy),
     )
     .await
@@ -893,8 +893,8 @@ async fn test_notification_channel_not_blocking_event_loop() {
 
     let (user_proxy, remote_proxy) = create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
 
-    let user_session_store = MemorySessionStore::new();
-    let remote_session_store = MemorySessionStore::new();
+    let user_connection_store = MemoryConnectionStore::new();
+    let remote_connection_store = MemoryConnectionStore::new();
 
     // Connect UserClient
     let UserClientHandle {
@@ -903,7 +903,7 @@ async fn test_notification_channel_not_blocking_event_loop() {
         requests: mut request_rx,
     } = UserClient::connect(
         Box::new(user_identity),
-        Box::new(user_session_store),
+        Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
     )
@@ -927,7 +927,7 @@ async fn test_notification_channel_not_blocking_event_loop() {
         requests: _remote_request_rx,
     } = RemoteClient::connect(
         Box::new(remote_identity),
-        Box::new(remote_session_store),
+        Box::new(remote_connection_store),
         Box::new(remote_proxy),
     )
     .await
@@ -1004,8 +1004,8 @@ async fn test_request_channel_backpressure() {
 
     let (user_proxy, remote_proxy) = create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
 
-    let user_session_store = MemorySessionStore::new();
-    let remote_session_store = MemorySessionStore::new();
+    let user_connection_store = MemoryConnectionStore::new();
+    let remote_connection_store = MemoryConnectionStore::new();
 
     // Connect UserClient — intentionally never drain requests
     let UserClientHandle {
@@ -1014,7 +1014,7 @@ async fn test_request_channel_backpressure() {
         requests: _request_rx, // deliberately NOT drained
     } = UserClient::connect(
         Box::new(user_identity),
-        Box::new(user_session_store),
+        Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
     )
@@ -1038,7 +1038,7 @@ async fn test_request_channel_backpressure() {
         requests: _remote_request_rx,
     } = RemoteClient::connect(
         Box::new(remote_identity),
-        Box::new(remote_session_store),
+        Box::new(remote_connection_store),
         Box::new(remote_proxy),
     )
     .await
@@ -1105,9 +1105,9 @@ async fn test_credential_request_buffered_during_fingerprint_verification() {
     user_proxy.set_rendezvous_code(rendezvous_code.clone());
     remote_proxy.set_peer_fingerprint(user_fingerprint);
 
-    // Create session stores
-    let user_session_store = MemorySessionStore::new();
-    let remote_session_store = MemorySessionStore::new();
+    // Create connection stores
+    let user_connection_store = MemoryConnectionStore::new();
+    let remote_connection_store = MemoryConnectionStore::new();
 
     // Create and connect UserClient
     let UserClientHandle {
@@ -1116,7 +1116,7 @@ async fn test_credential_request_buffered_during_fingerprint_verification() {
         requests: mut request_rx,
     } = UserClient::connect(
         Box::new(user_identity),
-        Box::new(user_session_store),
+        Box::new(user_connection_store),
         Box::new(user_proxy),
         None,
     )
@@ -1137,7 +1137,7 @@ async fn test_credential_request_buffered_during_fingerprint_verification() {
         requests: _remote_request_rx,
     } = RemoteClient::connect(
         Box::new(remote_identity),
-        Box::new(remote_session_store),
+        Box::new(remote_connection_store),
         Box::new(remote_proxy),
     )
     .await

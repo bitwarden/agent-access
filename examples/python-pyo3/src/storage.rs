@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use ap_noise::{MultiDeviceTransport, PersistentTransportState};
 use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair};
-use ap_client::{IdentityProvider, ClientError, SessionInfo, SessionStore, SessionUpdate};
+use ap_client::{IdentityProvider, ClientError, ConnectionInfo, ConnectionStore, ConnectionUpdate};
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -76,11 +76,11 @@ impl FileIdentityStorage {
 }
 
 // ---------------------------------------------------------------------------
-// FileSessionCache — implements SessionStore
+// FileConnectionCache — implements ConnectionStore
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct SessionRecord {
+struct ConnectionRecord {
     remote_fingerprint: IdentityFingerprint,
     cached_at: u64,
     last_connected_at: u64,
@@ -91,8 +91,8 @@ struct SessionRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct SessionCacheData {
-    sessions: Vec<SessionRecord>,
+struct ConnectionCacheData {
+    connections: Vec<ConnectionRecord>,
 }
 
 fn now_seconds() -> u64 {
@@ -102,7 +102,7 @@ fn now_seconds() -> u64 {
         .unwrap_or(0)
 }
 
-fn record_to_info(record: &SessionRecord) -> Result<SessionInfo, ClientError> {
+fn record_to_info(record: &ConnectionRecord) -> Result<ConnectionInfo, ClientError> {
     let transport_state = match &record.transport_state {
         Some(bytes) => Some(
             PersistentTransportState::from_bytes(bytes)
@@ -110,7 +110,7 @@ fn record_to_info(record: &SessionRecord) -> Result<SessionInfo, ClientError> {
         ),
         None => None,
     };
-    Ok(SessionInfo {
+    Ok(ConnectionInfo {
         fingerprint: record.remote_fingerprint,
         name: record.name.clone(),
         cached_at: record.cached_at,
@@ -119,7 +119,7 @@ fn record_to_info(record: &SessionRecord) -> Result<SessionInfo, ClientError> {
     })
 }
 
-fn info_to_record(info: &SessionInfo) -> Result<SessionRecord, ClientError> {
+fn info_to_record(info: &ConnectionInfo) -> Result<ConnectionRecord, ClientError> {
     let transport_bytes = match &info.transport_state {
         Some(transport) => Some(
             PersistentTransportState::from(transport)
@@ -132,7 +132,7 @@ fn info_to_record(info: &SessionInfo) -> Result<SessionRecord, ClientError> {
         ),
         None => None,
     };
-    Ok(SessionRecord {
+    Ok(ConnectionRecord {
         remote_fingerprint: info.fingerprint,
         cached_at: info.cached_at,
         last_connected_at: info.last_connected_at,
@@ -141,14 +141,14 @@ fn info_to_record(info: &SessionInfo) -> Result<SessionRecord, ClientError> {
     })
 }
 
-pub struct FileSessionCache {
+pub struct FileConnectionCache {
     cache_path: PathBuf,
-    data: SessionCacheData,
+    data: ConnectionCacheData,
 }
 
-impl FileSessionCache {
+impl FileConnectionCache {
     pub async fn clear(&mut self) -> Result<(), ClientError> {
-        self.data.sessions.clear();
+        self.data.connections.clear();
         self.persist()?;
         Ok(())
     }
@@ -159,8 +159,8 @@ impl FileSessionCache {
         let data = if cache_path.exists() {
             Self::load_from_file(&cache_path)?
         } else {
-            SessionCacheData {
-                sessions: Vec::new(),
+            ConnectionCacheData {
+                connections: Vec::new(),
             }
         };
 
@@ -169,85 +169,85 @@ impl FileSessionCache {
 
     fn persist(&self) -> Result<(), ClientError> {
         let json = serde_json::to_string_pretty(&self.data)
-            .map_err(|e| ClientError::SessionCache(format!("Serialization failed: {e}")))?;
+            .map_err(|e| ClientError::ConnectionCache(format!("Serialization failed: {e}")))?;
         fs::write(&self.cache_path, json).map_err(|e| {
-            ClientError::SessionCache(format!("Failed to write cache file: {e}"))
+            ClientError::ConnectionCache(format!("Failed to write cache file: {e}"))
         })?;
         Ok(())
     }
 
     fn default_cache_path(cache_name: &str) -> Result<PathBuf, ClientError> {
         let home_dir = dirs::home_dir().ok_or_else(|| {
-            ClientError::SessionCache("Could not find home directory".to_string())
+            ClientError::ConnectionCache("Could not find home directory".to_string())
         })?;
 
         let bw_remote_dir = home_dir.join(".bw-remote");
         if !bw_remote_dir.exists() {
             fs::create_dir_all(&bw_remote_dir).map_err(|e| {
-                ClientError::SessionCache(format!(
+                ClientError::ConnectionCache(format!(
                     "Failed to create .bw-remote directory: {e}"
                 ))
             })?;
         }
 
-        Ok(bw_remote_dir.join(format!("session_cache_{cache_name}.json")))
+        Ok(bw_remote_dir.join(format!("connection_cache_{cache_name}.json")))
     }
 
-    fn load_from_file(path: &Path) -> Result<SessionCacheData, ClientError> {
+    fn load_from_file(path: &Path) -> Result<ConnectionCacheData, ClientError> {
         let contents = fs::read_to_string(path).map_err(|e| {
-            ClientError::SessionCache(format!("Failed to read cache file: {e}"))
+            ClientError::ConnectionCache(format!("Failed to read cache file: {e}"))
         })?;
-        let data: SessionCacheData = serde_json::from_str(&contents).map_err(|e| {
-            ClientError::SessionCache(format!("Failed to parse cache file: {e}"))
+        let data: ConnectionCacheData = serde_json::from_str(&contents).map_err(|e| {
+            ClientError::ConnectionCache(format!("Failed to parse cache file: {e}"))
         })?;
         Ok(data)
     }
 }
 
 #[async_trait]
-impl SessionStore for FileSessionCache {
-    async fn get(&self, fingerprint: &IdentityFingerprint) -> Option<SessionInfo> {
+impl ConnectionStore for FileConnectionCache {
+    async fn get(&self, fingerprint: &IdentityFingerprint) -> Option<ConnectionInfo> {
         self.data
-            .sessions
+            .connections
             .iter()
             .find(|s| s.remote_fingerprint == *fingerprint)
             .and_then(|record| record_to_info(record).ok())
     }
 
-    async fn save(&mut self, session: SessionInfo) -> Result<(), ClientError> {
-        let record = info_to_record(&session)?;
+    async fn save(&mut self, connection: ConnectionInfo) -> Result<(), ClientError> {
+        let record = info_to_record(&connection)?;
         if let Some(existing) = self
             .data
-            .sessions
+            .connections
             .iter_mut()
-            .find(|s| s.remote_fingerprint == session.fingerprint)
+            .find(|s| s.remote_fingerprint == connection.fingerprint)
         {
             *existing = record;
         } else {
-            self.data.sessions.push(record);
+            self.data.connections.push(record);
         }
         self.persist()?;
         Ok(())
     }
 
-    async fn update(&mut self, update: SessionUpdate) -> Result<(), ClientError> {
-        if let Some(session) = self
+    async fn update(&mut self, update: ConnectionUpdate) -> Result<(), ClientError> {
+        if let Some(connection) = self
             .data
-            .sessions
+            .connections
             .iter_mut()
             .find(|s| s.remote_fingerprint == update.fingerprint)
         {
-            session.last_connected_at = update.last_connected_at;
+            connection.last_connected_at = update.last_connected_at;
             self.persist()?;
             Ok(())
         } else {
-            Err(ClientError::SessionCache("Session not found".to_string()))
+            Err(ClientError::ConnectionCache("Session not found".to_string()))
         }
     }
 
-    async fn list(&self) -> Vec<SessionInfo> {
+    async fn list(&self) -> Vec<ConnectionInfo> {
         self.data
-            .sessions
+            .connections
             .iter()
             .filter_map(|record| record_to_info(record).ok())
             .collect()
