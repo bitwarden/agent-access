@@ -39,11 +39,11 @@ Copy `reusable-psk-credential.yml` into your repo's `.github/workflows/` directo
   run: |
     aac run \
       --token "$AAC_PSK_TOKEN" \
-      --domain "db.example.com" \
+      --domain "registry.example.com" \
       --ephemeral-connection \
-      --env PGUSER=username \
-      --env PGPASSWORD=password \
-      -- psql -h db.example.com -c "SELECT 1"
+      --env DOCKER_USER=username \
+      --env DOCKER_PASS=password \
+      -- sh -c 'echo "$DOCKER_PASS" | docker login registry.example.com -u "$DOCKER_USER" --password-stdin'
 ```
 
 **Fetch by vault item ID** — replace `--domain` with `--id`:
