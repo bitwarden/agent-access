@@ -36,9 +36,6 @@ pub trait SessionStore: Send + Sync {
     /// Update only the `last_connected_at` timestamp for an existing session.
     async fn update(&mut self, update: SessionUpdate) -> Result<(), ClientError>;
 
-    /// Remove a session by fingerprint.
-    async fn remove(&mut self, fingerprint: &IdentityFingerprint) -> Result<(), ClientError>;
-
     /// List all cached sessions.
     async fn list(&self) -> Vec<SessionInfo>;
 }

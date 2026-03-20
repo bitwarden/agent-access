@@ -42,13 +42,6 @@ impl SessionStore for SharedSessionStore {
         self.0.lock().await.update(update).await
     }
 
-    async fn remove(
-        &mut self,
-        fingerprint: &IdentityFingerprint,
-    ) -> Result<(), ap_client::ClientError> {
-        self.0.lock().await.remove(fingerprint).await
-    }
-
     async fn list(&self) -> Vec<SessionInfo> {
         self.0.lock().await.list().await
     }

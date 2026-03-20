@@ -245,17 +245,6 @@ impl SessionStore for FileSessionCache {
         }
     }
 
-    async fn remove(
-        &mut self,
-        fingerprint: &IdentityFingerprint,
-    ) -> Result<(), ClientError> {
-        self.data
-            .sessions
-            .retain(|s| s.remote_fingerprint != *fingerprint);
-        self.persist()?;
-        Ok(())
-    }
-
     async fn list(&self) -> Vec<SessionInfo> {
         self.data
             .sessions

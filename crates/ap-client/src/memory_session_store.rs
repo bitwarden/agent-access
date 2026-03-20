@@ -52,11 +52,6 @@ impl SessionStore for MemorySessionStore {
         }
     }
 
-    async fn remove(&mut self, fingerprint: &IdentityFingerprint) -> Result<(), ClientError> {
-        self.sessions.remove(fingerprint);
-        Ok(())
-    }
-
     async fn list(&self) -> Vec<SessionInfo> {
         self.sessions.values().cloned().collect()
     }
