@@ -89,6 +89,19 @@ impl PendingPairings {
         self.rendezvous.take()
     }
 
+    /// Look up a PSK pairing by id and return its data.
+    ///
+    /// Reusable pairings are left in the map; ephemeral ones are consumed.
+    fn take_psk(&mut self, id: &PskId) -> Option<(Psk, Option<String>)> {
+        let pairing = self.psk_pairings.get(id)?;
+        let psk = pairing.psk.clone();
+        let name = pairing.connection_name.clone();
+        if !pairing.reusable {
+            self.psk_pairings.remove(id);
+        }
+        Some((psk, name))
+    }
+
     /// Start buffering messages for a source that is awaiting fingerprint verification.
     fn prepare_buffering(&mut self, source: IdentityFingerprint) {
         self.buffered_messages.insert(source, Vec::new());
@@ -676,19 +689,9 @@ impl UserClientInner {
             // Existing/cached session — if the remote sent a psk_id that matches a
             // pending pairing, use it for the handshake. This is required for reusable
             // PSKs where the remote reconnects with the same token.
-            if let Some(id) = &psk_id {
-                if let Some(pairing) = self.pending_pairings.psk_pairings.get(id) {
-                    let psk = pairing.psk.clone();
-                    let name = pairing.connection_name.clone();
-                    if !pairing.reusable {
-                        self.pending_pairings.psk_pairings.remove(id);
-                    }
-                    (Some(psk), name, true)
-                } else {
-                    (None, None, false)
-                }
-            } else {
-                (None, None, false)
+            match psk_id.as_ref().and_then(|id| self.pending_pairings.take_psk(id)) {
+                Some((psk, name)) => (Some(psk), name, true),
+                None => (None, None, false),
             }
         } else {
             // New connection — look up and consume a pending pairing
@@ -697,13 +700,7 @@ impl UserClientInner {
             match &psk_id {
                 Some(id) => {
                     // PSK mode — find matching pairing by psk_id
-                    if let Some(pairing) = self.pending_pairings.psk_pairings.get(id) {
-                        let psk = pairing.psk.clone();
-                        let name = pairing.connection_name.clone();
-                        if !pairing.reusable {
-                            // Ephemeral — consume after cloning
-                            self.pending_pairings.psk_pairings.remove(id);
-                        }
+                    if let Some((psk, name)) = self.pending_pairings.take_psk(id) {
                         (Some(psk), name, true)
                     } else {
                         warn!("No matching PSK pairing for psk_id: {}", id);

@@ -28,6 +28,16 @@ use super::DEFAULT_PROXY_URL;
 /// Slash commands available in idle mode.
 const IDLE_COMMANDS: &[&str] = &["/pair [name]", "/unlock", "/exit"];
 
+/// How new connections are authenticated.
+enum PairingMode {
+    /// Rendezvous code (default) — 9-char alphanumeric code.
+    Rendezvous,
+    /// Ephemeral PSK — single-use, not persisted.
+    EphemeralPsk,
+    /// Reusable PSK — persisted to disk, survives restarts.
+    ReusablePsk,
+}
+
 /// Arguments for the listen command
 #[derive(Args)]
 pub struct ListenArgs {
@@ -55,14 +65,14 @@ impl ListenArgs {
     /// Execute the listen command
     pub async fn run(self, log_rx: Option<super::tui_tracing::LogReceiver>) -> Result<()> {
         let mut provider = crate::providers::create_provider(&self.provider)?;
-        run_user_client_loop(
-            self.proxy_url,
-            self.psk,
-            self.reusable_psk,
-            &mut *provider,
-            log_rx,
-        )
-        .await
+        let pairing_mode = if self.reusable_psk {
+            PairingMode::ReusablePsk
+        } else if self.psk {
+            PairingMode::EphemeralPsk
+        } else {
+            PairingMode::Rendezvous
+        };
+        run_user_client_loop(self.proxy_url, pairing_mode, &mut *provider, log_rx).await
     }
 }
 
@@ -579,8 +589,7 @@ async fn run_event_loop(
 /// Run the user client interactive session
 async fn run_user_client_loop(
     proxy_url: String,
-    psk_mode: bool,
-    reusable_psk_mode: bool,
+    pairing_mode: PairingMode,
     provider: &mut dyn CredentialProvider,
     mut log_rx: Option<super::tui_tracing::LogReceiver>,
 ) -> Result<()> {
@@ -632,7 +641,7 @@ async fn run_user_client_loop(
         // Check for existing stored PSKs before passing ownership to connect().
         let our_fingerprint = identity_provider.fingerprint().await;
         let (psk_store, existing_psk_token): (Option<Box<dyn PskStore>>, Option<String>) =
-            if reusable_psk_mode {
+            if matches!(pairing_mode, PairingMode::ReusablePsk) {
                 let store = crate::storage::FilePskStore::load_or_create("user_client")?;
                 let stored = PskStore::list(&store).await;
                 let token = stored.first().map(|entry| {
@@ -656,7 +665,7 @@ async fn run_user_client_loop(
         let notification_rx = handle.notifications;
         let request_rx = handle.requests;
 
-        if reusable_psk_mode {
+        if matches!(pairing_mode, PairingMode::ReusablePsk) {
             let token = if let Some(token) = existing_psk_token {
                 token
             } else {
@@ -687,7 +696,7 @@ async fn run_user_client_loop(
             ));
         } else if !has_cached {
             let client_connection_name = pending_connection_name.clone();
-            if psk_mode {
+            if matches!(pairing_mode, PairingMode::EphemeralPsk) {
                 let token = client.get_psk_token(client_connection_name, false).await?;
                 app.push_rich(Message::rich(
                     MessageKind::Prompt,
