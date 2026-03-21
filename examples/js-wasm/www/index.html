@@ -120,9 +120,9 @@
       </div>
 
       <!-- Credential output -->
-      <div x-show="credential && credentialEntries().length > 0" x-cloak
+      <div x-show="credentialEntries.length > 0" x-cloak
         class="mt-4 bg-gray-900 text-gray-200 rounded-lg p-4 font-mono text-sm whitespace-pre-wrap">
-        <template x-for="[k, v] in credentialEntries()" :key="k">
+        <template x-for="[k, v] in credentialEntries" :key="k">
           <div><span class="text-cyan-400" x-text="k"></span><span class="text-gray-500">:</span> <span class="text-green-400" x-text="v"></span></div>
         </template>
       </div>

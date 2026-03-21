@@ -17,6 +17,7 @@ window.app = function () {
     token: "",
     domain: "",
     credential: null,
+    credentialEntries: [],
     pairing: false,
     requesting: false,
     log: [],
@@ -37,6 +38,7 @@ window.app = function () {
         last.time = time;
       } else {
         this.log.push({ time, msg, type });
+        if (this.log.length > 100) this.log.splice(0, this.log.length - 100);
       }
       this.$nextTick(() => {
         const el = this.$refs.log;
@@ -118,6 +120,7 @@ window.app = function () {
       client = null;
       this.connected = false;
       this.credential = null;
+      this.credentialEntries = [];
       this.addLog("Disconnected");
     },
 
@@ -127,6 +130,7 @@ window.app = function () {
       this.addLog(`Requesting credential for ${this.domain}...`, "pending");
       try {
         this.credential = await client.getCredential(this.domain.trim());
+        this.credentialEntries = Object.entries(this.credential).filter(([, v]) => v != null);
         this.addLog(`Credential received for ${this.domain}`, "success");
       } catch (e) {
         this.addLog(`Request failed: ${e}`, "error");
@@ -144,11 +148,6 @@ window.app = function () {
         this.addLog(`Failed to clear: ${e}`, "error");
       }
       await this.refreshConnections();
-    },
-
-    credentialEntries() {
-      if (!this.credential) return [];
-      return Object.entries(this.credential).filter(([, v]) => v != null);
     },
 
     saveProxy() {

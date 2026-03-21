@@ -141,8 +141,4 @@ class RemoteAccessClient {
     }
   }
 
-  /** Whether the client is currently connected. */
-  get isConnected() {
-    return this.#inner !== null;
-  }
 }

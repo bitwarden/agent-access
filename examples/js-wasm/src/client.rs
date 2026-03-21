@@ -209,9 +209,4 @@ impl WasmRemoteClient {
         self.inner.take();
     }
 
-    /// Whether the client is connected.
-    #[wasm_bindgen(getter, js_name = "isConnected")]
-    pub fn is_connected(&self) -> bool {
-        self.inner.is_some()
-    }
 }

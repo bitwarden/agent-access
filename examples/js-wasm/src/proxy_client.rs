@@ -57,11 +57,11 @@ impl ProxyClient for WasmProxyClient {
         let (auth_tx, auth_rx) = oneshot::channel::<Result<(), ClientError>>();
         let (incoming_tx, incoming_rx) = mpsc::unbounded_channel::<IncomingMessage>();
 
-        // Use Arc<Mutex<Option<...>>> so closures are Send and can take the sender once
+        // Arc<Mutex<Option>> so closures are Send and can take the sender once.
+        // std::sync::Mutex (not tokio) because these are captured in synchronous JS callbacks.
         let open_tx = Arc::new(Mutex::new(Some(open_tx)));
         let auth_tx = Arc::new(Mutex::new(Some(auth_tx)));
 
-        // --- onopen: signal that the WebSocket is connected ---
         {
             let open_tx = Arc::clone(&open_tx);
             let cb = Closure::once(move |_: JsValue| {
@@ -77,7 +77,7 @@ impl ProxyClient for WasmProxyClient {
             cb.forget();
         }
 
-        // --- onerror (pre-open): fail the open signal ---
+        // onerror before open — signals connection failure
         {
             let open_tx = Arc::clone(&open_tx);
             let cb = Closure::once(move |_: ErrorEvent| {
@@ -95,13 +95,14 @@ impl ProxyClient for WasmProxyClient {
             cb.forget();
         }
 
-        // Wait for the WebSocket to open
         open_rx
             .await
             .map_err(|_| ClientError::ConnectionFailed("Open channel dropped".to_string()))?
             .map_err(|e| ClientError::ConnectionFailed(e.to_string()))?;
 
-        // --- onmessage: handle auth then route messages ---
+        // Clear oneshot handlers now that the connection is open
+        ws.set_onopen(None);
+        ws.set_onerror(None);
         {
             let ws_clone = ws.clone();
             let auth_tx = Arc::clone(&auth_tx);
@@ -218,7 +219,6 @@ impl ProxyClient for WasmProxyClient {
             cb.forget();
         }
 
-        // --- onerror (post-open): just log ---
         {
             let cb = Closure::wrap(Box::new(move |_: ErrorEvent| {
                 tracing::error!("WebSocket error");
@@ -227,7 +227,6 @@ impl ProxyClient for WasmProxyClient {
             cb.forget();
         }
 
-        // --- onclose: log ---
         {
             let cb = Closure::wrap(Box::new(move |event: CloseEvent| {
                 tracing::info!(

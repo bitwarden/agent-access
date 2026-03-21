@@ -151,8 +151,9 @@ impl LocalStorageConnectionStore {
 
         let data = match local_storage().ok().and_then(|s| s.get_item(&storage_key).ok().flatten())
         {
-            Some(json) => serde_json::from_str(&json).unwrap_or(ConnectionCacheData {
-                connections: Vec::new(),
+            Some(json) => serde_json::from_str(&json).unwrap_or_else(|e| {
+                tracing::warn!("Corrupt connection cache in localStorage, resetting: {e}");
+                ConnectionCacheData { connections: Vec::new() }
             }),
             None => ConnectionCacheData {
                 connections: Vec::new(),
