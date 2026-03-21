@@ -9,10 +9,10 @@
 
 # Agent Access
 
-Agent Access allows users to access credentials from their password manager on remote systems, without exposing their entire vault.
-It creates an end-to-end encrypted tunnel between the remote system and the password manager.
+Agent Access allows users to provide credentials from their password manager to remote systems, without exposing their entire vault.
+Agent Access creates an end-to-end encrypted tunnel between a remote system and a credential provider.
 
-Agent Access is an open protocol, CLI tool, and Rust SDK that you can use to implement it directly into agents or custom software. While we at Bitwarden have built it, it's open for any password manager to leverage to further support agentic or automation use cases without exposing your entire vault.
+Agent Access is an open protocol, CLI tool, and Rust SDK that can be implemented directly into agents or custom software. While Agent Access has been built and developed by the team at Bitwarden, it is open for any credential provider to further support agentic or automation use cases.
 
 > [!IMPORTANT]
 > This project is in an **early preview stage**. APIs and protocols are subject to change. We do not recommend inputting sensitive credentials directly into LLMs or AI agents (any unknown software, really).
@@ -88,7 +88,7 @@ client.close()
 
 ## Getting started (Bitwarden CLI)
 
-In this short guide we'll walk you through setting up Agent Access on your local machine and connect it to the bitwarden CLI.
+In this short guide we'll walk you through setting up Agent Access on your local machine and connect it to the Bitwarden CLI.
 
 **Prerequisites**
 
