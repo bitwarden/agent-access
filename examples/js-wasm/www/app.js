@@ -1,8 +1,8 @@
-import { createClient } from "./remote-access.js";
+import { createClient } from "./agent-access.js";
 import Alpine from "alpinejs";
 
 // Kept outside Alpine's reactive scope to avoid Proxy wrapping,
-// which breaks JS private class fields (#inner) in RemoteAccessClient.
+// which breaks JS private class fields (#inner) in AgentAccessClient.
 let client = null;
 
 window.app = function () {

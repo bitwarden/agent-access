@@ -2,7 +2,7 @@
 //!
 //! Exposes individual `RemoteClient` methods to JavaScript. Connection
 //! mode orchestration (PSK vs rendezvous vs cached) lives in the JS
-//! `RemoteAccessClient` class, not here.
+//! `AgentAccessClient` class, not here.
 
 use ap_client::{IdentityFingerprint, PskToken, RemoteClient};
 use wasm_bindgen::prelude::*;
@@ -11,7 +11,7 @@ use crate::proxy_client::WasmProxyClient;
 use crate::storage::{LocalStorageConnectionStore, LocalStorageIdentityProvider};
 use crate::types::{client_error_to_js, JsCredentialData};
 
-/// A remote-access client for the browser.
+/// An Agent Access Remote Client for the browser.
 ///
 /// Usage from JavaScript:
 /// ```js

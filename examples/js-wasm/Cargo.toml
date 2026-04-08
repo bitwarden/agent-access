@@ -1,6 +1,6 @@
 [package]
 name = "bw-remote-wasm"
-description = "WASM bindings for Bitwarden Remote Access"
+description = "WASM bindings for Bitwarden Agent Access"
 version = "0.1.0"
 authors = ["Bitwarden Inc"]
 edition = "2024"

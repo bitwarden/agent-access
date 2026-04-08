@@ -1,10 +1,10 @@
 /**
- * Bitwarden Remote Access — WASM client wrapper.
+ * Bitwarden Agent Access — WASM Remote Client wrapper.
  *
  * Simple API for pairing with a trusted device and requesting credentials.
  *
  * Usage:
- *   import { createClient } from "./remote-access.js";
+ *   import { createClient } from "./agent-access.js";
  *
  *   const client = await createClient("wss://ap.lesspassword.dev");
  *
@@ -59,18 +59,18 @@ function cleanError(e) {
 }
 
 /**
- * Create a remote access client.
+ * Create an Agent Access Remote Client.
  *
  * @param {string} proxyUrl - WebSocket URL of the proxy server
  * @param {string} [identityName="js-wasm-remote"] - Name for the localStorage identity
- * @returns {Promise<RemoteAccessClient>}
+ * @returns {Promise<AgentAccessClient>}
  */
 export async function createClient(proxyUrl, identityName = "js-wasm-remote") {
   await ensureWasm();
-  return new RemoteAccessClient(proxyUrl, identityName);
+  return new AgentAccessClient(proxyUrl, identityName);
 }
 
-class RemoteAccessClient {
+class AgentAccessClient {
   #inner = null;
   #proxyUrl;
   #identityName;

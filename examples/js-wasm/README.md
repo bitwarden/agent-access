@@ -1,13 +1,13 @@
 # JavaScript WASM Example
 
-Browser-based remote access client using WebAssembly. Wraps the Rust `RemoteClient` via `wasm-bindgen`, providing a native JavaScript async API.
+Browser-based Agent Access Remote Client using WebAssembly. Wraps the Rust `RemoteClient` via `wasm-bindgen`, providing a native JavaScript async API.
 
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) (1.85+)
 - [wasm-pack](https://rustwasm.github.io/wasm-pack/installer/)
 - [Node.js](https://nodejs.org/) (18+)
-- A user-client listening (`cargo run --bin aac -- listen`)
+- A listener running on a trusted device (`cargo run --bin aac -- listen`)
 
 ## Build & Run
 
@@ -37,7 +37,7 @@ wasm-pack build --target web --out-dir pkg
 ## Programmatic Usage
 
 ```javascript
-import { createClient } from "./remote-access.js";
+import { createClient } from "./agent-access.js";
 
 const client = await createClient("wss://ap.lesspassword.dev");
 
