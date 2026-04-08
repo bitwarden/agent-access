@@ -37,6 +37,11 @@ async function ensureWasm() {
   }
 }
 
+/** Cheap heuristic matching PskToken::looks_like_psk_token in Rust. */
+function looksLikePskToken(s) {
+  return s.length === 129 && s[64] === "_";
+}
+
 /** Extract a human-readable message from WASM/JS errors. */
 function cleanError(e) {
   if (e instanceof Error) return e.message;
@@ -80,7 +85,21 @@ class RemoteAccessClient {
    * @returns {Promise<string|null>} Handshake fingerprint for rendezvous, null for PSK
    */
   async pair(token) {
-    return this.#connect(token, null);
+    this.disconnect();
+    this.#inner = new WasmRemoteClient(this.#proxyUrl, this.#identityName);
+    try {
+      await this.#inner.connect();
+      if (looksLikePskToken(token)) {
+        await this.#inner.pairWithPsk(token);
+        return null;
+      } else {
+        return await this.#inner.pairWithHandshake(token);
+      }
+    } catch (e) {
+      this.#inner.close();
+      this.#inner = null;
+      throw new Error(cleanError(e));
+    }
   }
 
   /**
@@ -88,14 +107,11 @@ class RemoteAccessClient {
    * @param {string} fingerprint - Hex fingerprint of the cached session
    */
   async reconnect(fingerprint) {
-    return this.#connect(null, fingerprint);
-  }
-
-  async #connect(token, session) {
     this.disconnect();
     this.#inner = new WasmRemoteClient(this.#proxyUrl, this.#identityName);
     try {
-      return await this.#inner.connect(token, session);
+      await this.#inner.connect();
+      await this.#inner.loadCachedConnection(fingerprint);
     } catch (e) {
       this.#inner.close();
       this.#inner = null;
