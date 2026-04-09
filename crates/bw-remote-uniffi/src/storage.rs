@@ -1,10 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-
+use ap_client::{ClientError, ConnectionInfo, ConnectionStore, ConnectionUpdate, IdentityProvider};
 use ap_noise::{MultiDeviceTransport, PersistentTransportState};
 use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair};
-use ap_client::{ClientError, ConnectionInfo, ConnectionStore, ConnectionUpdate, IdentityProvider};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -60,9 +59,7 @@ impl FileIdentityStorage {
             ClientError::IdentityStorageFailed(format!("Failed to read identity file: {e}"))
         })?;
         IdentityKeyPair::from_cose(&cose_bytes).map_err(|_| {
-            ClientError::IdentityStorageFailed(
-                "Failed to parse identity from seed".to_string(),
-            )
+            ClientError::IdentityStorageFailed("Failed to parse identity from seed".to_string())
         })
     }
 
@@ -132,9 +129,7 @@ impl FileSessionCache {
         let bw_remote_dir = home_dir.join(".bw-remote");
         if !bw_remote_dir.exists() {
             fs::create_dir_all(&bw_remote_dir).map_err(|e| {
-                ClientError::ConnectionCache(format!(
-                    "Failed to create .bw-remote directory: {e}"
-                ))
+                ClientError::ConnectionCache(format!("Failed to create .bw-remote directory: {e}"))
             })?;
         }
 
@@ -142,9 +137,8 @@ impl FileSessionCache {
     }
 
     fn load_from_file(path: &Path) -> Result<SessionCacheData, ClientError> {
-        let contents = fs::read_to_string(path).map_err(|e| {
-            ClientError::ConnectionCache(format!("Failed to read cache file: {e}"))
-        })?;
+        let contents = fs::read_to_string(path)
+            .map_err(|e| ClientError::ConnectionCache(format!("Failed to read cache file: {e}")))?;
         let data: SessionCacheData = serde_json::from_str(&contents).map_err(|e| {
             ClientError::ConnectionCache(format!("Failed to parse cache file: {e}"))
         })?;

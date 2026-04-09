@@ -1,8 +1,8 @@
 use std::sync::Mutex;
 
 use ap_client::{
-    ConnectionInfo, CredentialQuery, DefaultProxyClient, IdentityFingerprint,
-    Psk, RemoteClient, RemoteClientHandle,
+    ConnectionInfo, CredentialQuery, DefaultProxyClient, IdentityFingerprint, Psk, RemoteClient,
+    RemoteClientHandle,
 };
 
 use crate::error::RemoteAccessError;
@@ -91,12 +91,8 @@ impl RemoteAccessClient {
         } = self
             .runtime
             .block_on(async {
-                RemoteClient::connect(
-                    Box::new(identity),
-                    Box::new(session_store),
-                    proxy_client,
-                )
-                .await
+                RemoteClient::connect(Box::new(identity), Box::new(session_store), proxy_client)
+                    .await
             })
             .map_err(RemoteAccessError::from)?;
 

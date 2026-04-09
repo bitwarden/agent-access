@@ -29,15 +29,11 @@ impl From<ClientError> for RemoteAccessError {
             ClientError::ProxyAuthFailed(_)
             | ClientError::HandshakeFailed(_)
             | ClientError::NoiseProtocol(_)
-            | ClientError::FingerprintRejected => {
-                RemoteAccessError::HandshakeFailed { message }
-            }
+            | ClientError::FingerprintRejected => RemoteAccessError::HandshakeFailed { message },
 
             ClientError::CredentialRequestFailed(_)
             | ClientError::SecureChannelNotEstablished
-            | ClientError::NotInitialized => {
-                RemoteAccessError::CredentialRequestFailed { message }
-            }
+            | ClientError::NotInitialized => RemoteAccessError::CredentialRequestFailed { message },
 
             ClientError::ConnectionCache(_)
             | ClientError::IdentityStorageFailed(_)
@@ -49,9 +45,7 @@ impl From<ClientError> for RemoteAccessError {
             ClientError::InvalidPairingCode(_)
             | ClientError::InvalidRendezvousCode(_)
             | ClientError::RendezvousResolutionFailed(_)
-            | ClientError::InvalidState { .. } => {
-                RemoteAccessError::InvalidArgument { message }
-            }
+            | ClientError::InvalidState { .. } => RemoteAccessError::InvalidArgument { message },
 
             ClientError::Timeout(_) => RemoteAccessError::Timeout { message },
         }

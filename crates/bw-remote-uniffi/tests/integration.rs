@@ -7,8 +7,7 @@ use std::net::SocketAddr;
 
 use ap_client::{
     CredentialData, CredentialRequestReply, DefaultProxyClient, FingerprintVerificationReply,
-    MemoryConnectionStore, MemoryIdentityProvider, UserClient, UserClientHandle,
-    UserClientRequest,
+    MemoryConnectionStore, MemoryIdentityProvider, UserClient, UserClientHandle, UserClientRequest,
 };
 use bw_remote_uniffi::RemoteAccessClient;
 use tokio::time::Duration;
@@ -76,8 +75,7 @@ async fn test_uniffi_psk_pairing_and_credential_request() {
 
             // 2. Set up UserClient (the "trusted device" side)
             let user_identity = MemoryIdentityProvider::new();
-            let user_proxy =
-                Box::new(DefaultProxyClient::from_url(format!("ws://{addr}")));
+            let user_proxy = Box::new(DefaultProxyClient::from_url(format!("ws://{addr}")));
             let user_session_store = MemoryConnectionStore::new();
 
             let UserClientHandle {
@@ -196,8 +194,7 @@ async fn test_uniffi_rendezvous_pairing_and_credential_request() {
 
             // 2. Set up UserClient with rendezvous mode
             let user_identity = MemoryIdentityProvider::new();
-            let user_proxy =
-                Box::new(DefaultProxyClient::from_url(format!("ws://{addr}")));
+            let user_proxy = Box::new(DefaultProxyClient::from_url(format!("ws://{addr}")));
             let user_session_store = MemoryConnectionStore::new();
 
             let UserClientHandle {
@@ -315,8 +312,7 @@ async fn test_uniffi_connect_and_request_convenience() {
             let addr = start_test_server().await;
 
             let user_identity = MemoryIdentityProvider::new();
-            let user_proxy =
-                Box::new(DefaultProxyClient::from_url(format!("ws://{addr}")));
+            let user_proxy = Box::new(DefaultProxyClient::from_url(format!("ws://{addr}")));
             let user_session_store = MemoryConnectionStore::new();
 
             let UserClientHandle {
@@ -418,8 +414,7 @@ async fn test_double_connect_replaces_previous() {
 
             for _i in 0..2 {
                 let user_identity = MemoryIdentityProvider::new();
-                let user_proxy =
-                    Box::new(DefaultProxyClient::from_url(format!("ws://{addr}")));
+                let user_proxy = Box::new(DefaultProxyClient::from_url(format!("ws://{addr}")));
                 let user_session_store = MemoryConnectionStore::new();
 
                 let UserClientHandle {
