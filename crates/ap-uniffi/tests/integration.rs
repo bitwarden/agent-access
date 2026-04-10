@@ -1,20 +1,100 @@
-//! Integration tests for bw-remote-uniffi
+//! Integration tests for ap-uniffi
 //!
 //! Tests the UniFFI wrapper against a real proxy server, exercising the full
 //! protocol stack: proxy connection, PSK pairing, credential exchange.
 
 use std::net::SocketAddr;
+use std::sync::Mutex;
 
 use ap_client::{
     CredentialData, CredentialRequestReply, DefaultProxyClient, FingerprintVerificationReply,
     MemoryConnectionStore, MemoryIdentityProvider, UserClient, UserClientHandle, UserClientRequest,
 };
-use bw_remote_uniffi::{
-    CredentialProvider, FfiCredentialData, RemoteAccessClient, UserAccessClient,
-    looks_like_psk_token,
+use ap_uniffi::{
+    ConnectionStorage, CredentialProvider, FfiCredentialData, FfiStoredConnection, IdentityStorage,
+    RemoteAccessClient, RemoteAccessError, UserAccessClient, looks_like_psk_token,
 };
 use tokio::time::Duration;
 use zeroize::Zeroizing;
+
+// ============================================================================
+// Test Storage Implementations
+// ============================================================================
+
+struct MemoryIdentityStorage {
+    data: Mutex<Option<Vec<u8>>>,
+}
+
+impl MemoryIdentityStorage {
+    fn new() -> Self {
+        Self {
+            data: Mutex::new(None),
+        }
+    }
+}
+
+impl IdentityStorage for MemoryIdentityStorage {
+    fn load_identity(&self) -> Option<Vec<u8>> {
+        self.data.lock().expect("identity lock").clone()
+    }
+
+    fn save_identity(&self, identity_bytes: Vec<u8>) -> Result<(), RemoteAccessError> {
+        *self.data.lock().expect("identity lock") = Some(identity_bytes);
+        Ok(())
+    }
+}
+
+struct MemoryConnectionStorage {
+    data: Mutex<Vec<FfiStoredConnection>>,
+}
+
+impl MemoryConnectionStorage {
+    fn new() -> Self {
+        Self {
+            data: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+impl ConnectionStorage for MemoryConnectionStorage {
+    fn get(&self, fingerprint_hex: String) -> Option<FfiStoredConnection> {
+        self.data
+            .lock()
+            .expect("connection lock")
+            .iter()
+            .find(|c| c.fingerprint == fingerprint_hex)
+            .cloned()
+    }
+
+    fn save(&self, connection: FfiStoredConnection) -> Result<(), RemoteAccessError> {
+        let mut data = self.data.lock().expect("connection lock");
+        if let Some(existing) = data
+            .iter_mut()
+            .find(|c| c.fingerprint == connection.fingerprint)
+        {
+            *existing = connection;
+        } else {
+            data.push(connection);
+        }
+        Ok(())
+    }
+
+    fn update(
+        &self,
+        fingerprint_hex: String,
+        last_connected_at: u64,
+    ) -> Result<(), RemoteAccessError> {
+        let mut data = self.data.lock().expect("connection lock");
+        if let Some(conn) = data.iter_mut().find(|c| c.fingerprint == fingerprint_hex) {
+            conn.last_connected_at = last_connected_at;
+        }
+        Ok(())
+    }
+
+    fn list(&self) -> Vec<FfiStoredConnection> {
+        self.data.lock().expect("connection lock").clone()
+    }
+}
 
 // ============================================================================
 // Test Infrastructure
@@ -124,16 +204,23 @@ async fn setup_user_client_psk(addr: SocketAddr) -> (String, Vec<tokio::task::Jo
     (psk_token, vec![notif_task, cred_task, _keepalive])
 }
 
+fn make_remote_client(proxy_url: String) -> RemoteAccessClient {
+    RemoteAccessClient::new(
+        proxy_url,
+        Box::new(MemoryIdentityStorage::new()),
+        Box::new(MemoryConnectionStorage::new()),
+        None,
+    )
+    .expect("should create client")
+}
+
 // ============================================================================
 // RemoteAccessClient Tests
 // ============================================================================
 
 #[test]
 fn connect_to_nonexistent_proxy_fails() {
-    let client =
-        RemoteAccessClient::new("ws://127.0.0.1:1".to_string(), "test-int".to_string(), None)
-            .expect("should create client");
-
+    let client = make_remote_client("ws://127.0.0.1:1".to_string());
     let result = client.connect();
     assert!(result.is_err());
 }
@@ -149,8 +236,7 @@ async fn test_psk_pairing_and_credential_request() {
 
             let proxy_url = format!("ws://{addr}");
             let result = tokio::task::spawn_blocking(move || {
-                let client = RemoteAccessClient::new(proxy_url, "test-psk".to_string(), None)
-                    .expect("should create client");
+                let client = make_remote_client(proxy_url);
 
                 client.connect().expect("connect should succeed");
                 client
@@ -241,8 +327,7 @@ async fn test_rendezvous_pairing_and_credential_request() {
             let proxy_url = format!("ws://{addr}");
             let code_str = code.to_string();
             let result = tokio::task::spawn_blocking(move || {
-                let client = RemoteAccessClient::new(proxy_url, "test-rdv".to_string(), None)
-                    .expect("should create client");
+                let client = make_remote_client(proxy_url);
 
                 client.connect().expect("connect should succeed");
                 let fp = client
@@ -270,14 +355,7 @@ async fn test_rendezvous_pairing_and_credential_request() {
 
 #[test]
 fn connect_no_token_no_sessions_gives_error() {
-    let client = RemoteAccessClient::new(
-        "ws://127.0.0.1:1".to_string(),
-        "test-nosession".to_string(),
-        None,
-    )
-    .expect("should create client");
-
-    // connect() to a non-existent proxy should fail
+    let client = make_remote_client("ws://127.0.0.1:1".to_string());
     let result = client.connect();
     assert!(result.is_err());
 }
@@ -329,7 +407,8 @@ async fn test_user_access_client_with_credential_provider() {
             let psk_token = tokio::task::spawn_blocking(move || {
                 let user = UserAccessClient::new(
                     proxy_url_clone,
-                    "test-user-cb".to_string(),
+                    Box::new(MemoryIdentityStorage::new()),
+                    Box::new(MemoryConnectionStorage::new()),
                     Box::new(TestProvider),
                     None,
                 )
@@ -345,8 +424,7 @@ async fn test_user_access_client_with_credential_provider() {
             .expect("user setup should not panic");
 
             let result = tokio::task::spawn_blocking(move || {
-                let client = RemoteAccessClient::new(proxy_url, "test-remote-cb".to_string(), None)
-                    .expect("should create remote client");
+                let client = make_remote_client(proxy_url);
 
                 client.connect().expect("connect should succeed");
                 client

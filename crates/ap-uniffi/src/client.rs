@@ -7,8 +7,9 @@ use ap_client::{
 use tokio::sync::mpsc;
 
 use crate::EventHandler;
+use crate::adapters::{CallbackConnectionStore, CallbackIdentityProvider};
+use crate::callbacks::{ConnectionStorage, IdentityStorage};
 use crate::error::RemoteAccessError;
-use crate::storage::{FileIdentityStorage, FileSessionCache};
 use crate::types::{FfiConnectionInfo, FfiCredentialData, FfiEvent};
 
 /// A remote-access client for requesting credentials from a trusted peer.
@@ -24,8 +25,9 @@ pub struct RemoteAccessClient {
     runtime: tokio::runtime::Runtime,
     inner: Mutex<Option<RemoteClient>>,
     event_handler: Option<Arc<dyn EventHandler>>,
+    identity_storage: Arc<dyn IdentityStorage>,
+    connection_storage: Arc<dyn ConnectionStorage>,
     proxy_url: String,
-    identity_name: String,
 }
 
 #[uniffi::export]
@@ -33,12 +35,14 @@ impl RemoteAccessClient {
     /// Create a new RemoteAccessClient.
     ///
     /// * `proxy_url` — WebSocket URL of the proxy server (e.g. "ws://localhost:8080").
-    /// * `identity_name` — Name for the identity keypair file.
+    /// * `identity_storage` — Callback for persistent identity keypair storage.
+    /// * `connection_storage` — Callback for persistent connection cache storage.
     /// * `event_handler` — Optional callback for receiving status notifications.
     #[uniffi::constructor]
     pub fn new(
         proxy_url: String,
-        identity_name: String,
+        identity_storage: Box<dyn IdentityStorage>,
+        connection_storage: Box<dyn ConnectionStorage>,
         event_handler: Option<Box<dyn EventHandler>>,
     ) -> Result<Self, RemoteAccessError> {
         crate::init_tracing();
@@ -52,8 +56,9 @@ impl RemoteAccessClient {
             runtime,
             inner: Mutex::new(None),
             event_handler: event_handler.map(Arc::from),
+            identity_storage: Arc::from(identity_storage),
+            connection_storage: Arc::from(connection_storage),
             proxy_url,
-            identity_name,
         })
     }
 
@@ -67,11 +72,10 @@ impl RemoteAccessClient {
             *inner = None;
         }
 
-        let identity = FileIdentityStorage::load_or_generate(&self.identity_name)
+        let identity = CallbackIdentityProvider::from_storage(self.identity_storage.as_ref())
             .map_err(RemoteAccessError::from)?;
 
-        let session_store = FileSessionCache::load_or_create(&self.identity_name)
-            .map_err(RemoteAccessError::from)?;
+        let session_store = CallbackConnectionStore::new(Arc::clone(&self.connection_storage));
 
         let proxy_client = Box::new(DefaultProxyClient::from_url(self.proxy_url.clone()));
 
@@ -315,12 +319,69 @@ fn spawn_remote_notification_forwarder(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::callbacks::FfiStoredConnection;
+    use std::sync::Mutex as StdMutex;
+
+    struct MemoryIdentityStorage {
+        data: StdMutex<Option<Vec<u8>>>,
+    }
+
+    impl MemoryIdentityStorage {
+        fn new() -> Self {
+            Self {
+                data: StdMutex::new(None),
+            }
+        }
+    }
+
+    impl IdentityStorage for MemoryIdentityStorage {
+        fn load_identity(&self) -> Option<Vec<u8>> {
+            self.data.lock().expect("identity storage lock").clone()
+        }
+
+        fn save_identity(&self, identity_bytes: Vec<u8>) -> Result<(), RemoteAccessError> {
+            *self.data.lock().expect("identity storage lock") = Some(identity_bytes);
+            Ok(())
+        }
+    }
+
+    struct MemoryConnectionStorage;
+
+    impl ConnectionStorage for MemoryConnectionStorage {
+        fn get(&self, _fingerprint_hex: String) -> Option<FfiStoredConnection> {
+            None
+        }
+        fn save(&self, _connection: FfiStoredConnection) -> Result<(), RemoteAccessError> {
+            Ok(())
+        }
+        fn update(
+            &self,
+            _fingerprint_hex: String,
+            _last_connected_at: u64,
+        ) -> Result<(), RemoteAccessError> {
+            Ok(())
+        }
+        fn list(&self) -> Vec<FfiStoredConnection> {
+            Vec::new()
+        }
+    }
+
+    fn make_client() -> RemoteAccessClient {
+        RemoteAccessClient::new(
+            "ws://localhost:9999".to_string(),
+            Box::new(MemoryIdentityStorage::new()),
+            Box::new(MemoryConnectionStorage),
+            None,
+        )
+        .expect("should create client")
+    }
 
     #[test]
     fn client_new_succeeds() {
         let client = RemoteAccessClient::new(
             "ws://localhost:9999".to_string(),
-            "test-unit".to_string(),
+            Box::new(MemoryIdentityStorage::new()),
+            Box::new(MemoryConnectionStorage),
             None,
         );
         assert!(client.is_ok());
@@ -328,12 +389,7 @@ mod tests {
 
     #[test]
     fn client_request_credential_fails_before_connect() {
-        let client = RemoteAccessClient::new(
-            "ws://localhost:9999".to_string(),
-            "test-unit".to_string(),
-            None,
-        )
-        .expect("should create client");
+        let client = make_client();
         let result = client.request_credential("example.com".to_string());
         assert!(matches!(
             result,
@@ -343,23 +399,13 @@ mod tests {
 
     #[test]
     fn client_close_is_safe_before_connect() {
-        let client = RemoteAccessClient::new(
-            "ws://localhost:9999".to_string(),
-            "test-unit".to_string(),
-            None,
-        )
-        .expect("should create client");
+        let client = make_client();
         client.close();
     }
 
     #[test]
     fn pair_methods_fail_before_connect() {
-        let client = RemoteAccessClient::new(
-            "ws://localhost:9999".to_string(),
-            "test-unit".to_string(),
-            None,
-        )
-        .expect("should create client");
+        let client = make_client();
 
         assert!(
             client

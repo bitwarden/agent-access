@@ -1,19 +1,19 @@
 uniffi::setup_scaffolding!();
 
+mod adapters;
 mod callbacks;
 mod client;
 mod error;
-mod storage;
 mod types;
 mod user_client;
 
-pub use callbacks::{CredentialProvider, EventHandler};
+pub use callbacks::{
+    ConnectionStorage, CredentialProvider, EventHandler, FfiStoredConnection, IdentityStorage,
+};
 pub use client::RemoteAccessClient;
 pub use error::RemoteAccessError;
 pub use types::{FfiConnectionInfo, FfiCredentialData, FfiEvent};
 pub use user_client::UserAccessClient;
-
-use storage::FileSessionCache;
 
 /// Initialize tracing subscriber (called once per process, subsequent calls are no-ops).
 pub(crate) fn init_tracing() {
@@ -35,31 +35,4 @@ pub(crate) fn init_tracing() {
 #[uniffi::export]
 pub fn looks_like_psk_token(token: String) -> bool {
     ap_client::PskToken::looks_like_psk_token(&token)
-}
-
-/// List all cached connections for a given identity.
-///
-/// Reads the session cache file directly — no proxy connection needed.
-#[uniffi::export]
-pub fn list_connections(identity_name: String) -> Vec<FfiConnectionInfo> {
-    let cache = match FileSessionCache::load_or_create(&identity_name) {
-        Ok(cache) => cache,
-        Err(_) => return Vec::new(),
-    };
-
-    cache
-        .list_sync()
-        .into_iter()
-        .map(FfiConnectionInfo::from)
-        .collect()
-}
-
-/// Clear all cached connections for a given identity.
-///
-/// Removes all entries from the session cache file.
-#[uniffi::export]
-pub fn clear_connections(identity_name: String) -> Result<(), RemoteAccessError> {
-    let mut cache =
-        FileSessionCache::load_or_create(&identity_name).map_err(RemoteAccessError::from)?;
-    cache.clear_sync().map_err(RemoteAccessError::from)
 }

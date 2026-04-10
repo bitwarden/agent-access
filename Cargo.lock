@@ -229,6 +229,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "ap-uniffi"
+version = "0.1.0"
+dependencies = [
+ "ap-client",
+ "ap-noise",
+ "ap-proxy",
+ "ap-proxy-client",
+ "ap-proxy-protocol",
+ "async-trait",
+ "hex",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uniffi",
+ "zeroize",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -369,28 +390,6 @@ name = "bumpalo"
 version = "3.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d20789868f4b01b2f2caec9f5c4e0213b41e3e5702a50157d699ae31ced2fcb"
-
-[[package]]
-name = "bw-remote-uniffi"
-version = "0.1.0"
-dependencies = [
- "ap-client",
- "ap-noise",
- "ap-proxy",
- "ap-proxy-client",
- "ap-proxy-protocol",
- "async-trait",
- "dirs",
- "hex",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uniffi",
- "zeroize",
-]
 
 [[package]]
 name = "byteorder"

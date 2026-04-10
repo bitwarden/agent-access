@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 
-use crate::callbacks::{CredentialProvider, EventHandler};
+use crate::adapters::{CallbackConnectionStore, CallbackIdentityProvider};
+use crate::callbacks::{ConnectionStorage, CredentialProvider, EventHandler, IdentityStorage};
 use crate::error::RemoteAccessError;
-use crate::storage::{FileIdentityStorage, FileSessionCache};
 use crate::types::FfiEvent;
 use ap_client::{
     CredentialData, CredentialRequestReply, DefaultProxyClient, FingerprintVerificationReply,
@@ -21,8 +21,9 @@ pub struct UserAccessClient {
     inner: Mutex<Option<UserClient>>,
     handler: Arc<dyn CredentialProvider>,
     event_handler: Option<Arc<dyn EventHandler>>,
+    identity_storage: Arc<dyn IdentityStorage>,
+    connection_storage: Arc<dyn ConnectionStorage>,
     proxy_url: String,
-    identity_name: String,
 }
 
 #[uniffi::export]
@@ -30,13 +31,15 @@ impl UserAccessClient {
     /// Create a new UserAccessClient.
     ///
     /// * `proxy_url` — WebSocket URL of the proxy server.
-    /// * `identity_name` — Name for the identity keypair file.
+    /// * `identity_storage` — Callback for persistent identity keypair storage.
+    /// * `connection_storage` — Callback for persistent connection cache storage.
     /// * `handler` — Callback for credential requests and fingerprint verification.
     /// * `event_handler` — Optional callback for status notifications.
     #[uniffi::constructor]
     pub fn new(
         proxy_url: String,
-        identity_name: String,
+        identity_storage: Box<dyn IdentityStorage>,
+        connection_storage: Box<dyn ConnectionStorage>,
         handler: Box<dyn CredentialProvider>,
         event_handler: Option<Box<dyn EventHandler>>,
     ) -> Result<Self, RemoteAccessError> {
@@ -52,8 +55,9 @@ impl UserAccessClient {
             inner: Mutex::new(None),
             handler: Arc::from(handler),
             event_handler: event_handler.map(Arc::from),
+            identity_storage: Arc::from(identity_storage),
+            connection_storage: Arc::from(connection_storage),
             proxy_url,
-            identity_name,
         })
     }
 
@@ -67,11 +71,10 @@ impl UserAccessClient {
             *inner = None;
         }
 
-        let identity = FileIdentityStorage::load_or_generate(&self.identity_name)
+        let identity = CallbackIdentityProvider::from_storage(self.identity_storage.as_ref())
             .map_err(RemoteAccessError::from)?;
 
-        let session_store = FileSessionCache::load_or_create(&self.identity_name)
-            .map_err(RemoteAccessError::from)?;
+        let session_store = CallbackConnectionStore::new(Arc::clone(&self.connection_storage));
 
         let proxy_client = Box::new(DefaultProxyClient::from_url(self.proxy_url.clone()));
 
