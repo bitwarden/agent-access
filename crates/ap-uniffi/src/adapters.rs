@@ -96,8 +96,7 @@ impl ConnectionStore for CallbackConnectionStore {
     async fn get(&self, fingerprint: &IdentityFingerprint) -> Option<ConnectionInfo> {
         self.storage
             .get(fingerprint.to_hex())
-            .as_ref()
-            .and_then(stored_to_info)
+            .and_then(|stored| stored_to_info(&stored))
     }
 
     async fn save(&mut self, connection: ConnectionInfo) -> Result<(), ClientError> {
@@ -116,8 +115,8 @@ impl ConnectionStore for CallbackConnectionStore {
     async fn list(&self) -> Vec<ConnectionInfo> {
         self.storage
             .list()
-            .iter()
-            .filter_map(stored_to_info)
+            .into_iter()
+            .filter_map(|stored| stored_to_info(&stored))
             .collect()
     }
 }

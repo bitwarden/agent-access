@@ -20,9 +20,6 @@ ap-proxy-client = { path = "../ap-proxy-client", default-features = false, featu
 ap-proxy-protocol = { path = "../ap-proxy-protocol" }
 ap-noise = { path = "../ap-noise" }
 async-trait = "0.1"
-hex = "0.4"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
 thiserror = "1.0"
 tokio = { version = "1.36.0", features = ["rt-multi-thread", "sync", "macros"] }
 tracing = "0.1"

@@ -40,15 +40,11 @@ Start a proxy and a listener first (see the main project README), then:
 # Connect with a PSK token
 python3 test.py --token <PSK_TOKEN> --domain github.com
 
-# Reuse a cached session
-python3 test.py --domain github.com
+# Connect with a rendezvous code
+python3 connect_request.py --token ABC-DEF-GHI --domain example.com
 
-# Full options
-python3 connect_request.py \
-  --proxy wss://your-proxy.example.com \
-  --token <PSK_TOKEN> \
-  --domain example.com \
-  --identity my-keypair-name
+# Custom proxy
+python3 connect_request.py --proxy wss://your-proxy.example.com --token <PSK_TOKEN> --domain example.com
 ```
 
 ### Token formats
@@ -57,11 +53,10 @@ python3 connect_request.py \
 |--------|---------|------|
 | Rendezvous code | `ABC-DEF-GHI` | Discovers peer via proxy |
 | PSK token | `<64hex>_<64hex>` | Pre-shared key (no rendezvous) |
-| _(omitted)_ | | Uses cached session |
 
-### Identity keypair
+### Storage
 
-The `--identity` flag controls which keypair file is used at `~/.access-protocol/<name>.key`. Each identity name gets its own keypair and session cache. Default: `uniffi-remote`.
+These examples use in-memory storage (`storage.py`) — identity and connections are ephemeral. Real applications should implement `IdentityStorage` and `ConnectionStorage` with persistent backends (file, keychain, database).
 
 ## Generating bindings for other languages
 
@@ -89,6 +84,7 @@ cargo run --bin uniffi-bindgen generate \
 | File | Description |
 |------|-------------|
 | `test.py` | Quick test script with CLI args |
-| `connect_request.py` | Full example with all connection modes |
+| `connect_request.py` | Full example with connect + credential request |
+| `storage.py` | In-memory storage implementations (shared by examples) |
 | `ap_uniffi.py` | _(generated)_ Python bindings — do not edit |
 | `libap_uniffi.dylib` | _(symlink)_ Native library — do not commit |
