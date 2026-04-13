@@ -11,7 +11,7 @@ func main() -> Int32 {
 
     var token: String?
     var domain: String?
-    var proxyUrl = "ws://localhost:8080"
+    var proxyUrl = "wss://ap.lesspassword.dev"
 
     var i = 1
     while i < args.count {

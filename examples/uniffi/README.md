@@ -13,9 +13,7 @@ cargo build -p ap-uniffi
 ### 2. Generate Python bindings
 
 ```bash
-cargo run --bin uniffi-bindgen generate \
-  --library target/debug/libap_uniffi.dylib \
-  --language python --out-dir examples/uniffi/
+cargo run --bin uniffi-bindgen generate --library target/debug/libap_uniffi.dylib --language python --out-dir examples/uniffi/
 ```
 
 This produces `ap_uniffi.py` in this directory.
@@ -64,19 +62,13 @@ The same native library supports Kotlin, Swift, and Ruby:
 
 ```bash
 # Kotlin
-cargo run --bin uniffi-bindgen generate \
-  --library target/debug/libap_uniffi.dylib \
-  --language kotlin --out-dir bindings/kotlin/
+cargo run --bin uniffi-bindgen generate --library target/debug/libap_uniffi.dylib --language kotlin --out-dir bindings/kotlin/
 
 # Swift
-cargo run --bin uniffi-bindgen generate \
-  --library target/debug/libap_uniffi.dylib \
-  --language swift --out-dir bindings/swift/
+cargo run --bin uniffi-bindgen generate --library target/debug/libap_uniffi.dylib --language swift --out-dir bindings/swift/
 
 # Ruby
-cargo run --bin uniffi-bindgen generate \
-  --library target/debug/libap_uniffi.dylib \
-  --language ruby --out-dir bindings/ruby/
+cargo run --bin uniffi-bindgen generate --library target/debug/libap_uniffi.dylib --language ruby --out-dir bindings/ruby/
 ```
 
 ## Files

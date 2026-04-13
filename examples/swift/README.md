@@ -18,9 +18,7 @@ cargo build -p ap-uniffi
 ### 2. Generate Swift bindings
 
 ```bash
-cargo run --bin uniffi-bindgen generate \
-  --library target/debug/libap_uniffi.dylib \
-  --language swift --out-dir examples/swift/generated/
+cargo run --bin uniffi-bindgen generate --library target/debug/libap_uniffi.dylib --language swift --out-dir examples/swift/generated/
 ```
 
 ### 3. Copy generated files into the package
@@ -34,9 +32,7 @@ cp examples/swift/generated/ap_uniffiFFI.h examples/swift/Sources/CApUniffi/incl
 
 ```bash
 cd examples/swift
-DYLD_LIBRARY_PATH=../../target/debug swift run ApUniffiExample \
-  --token <PSK_TOKEN_OR_RENDEZVOUS_CODE> \
-  --domain example.com
+DYLD_LIBRARY_PATH=../../target/debug swift run ApUniffiExample --token <PSK_TOKEN_OR_RENDEZVOUS_CODE> --domain example.com
 ```
 
 ## Usage
@@ -45,16 +41,13 @@ Start a proxy and a listener first (see the main project README), then:
 
 ```bash
 # With PSK token
-DYLD_LIBRARY_PATH=../../target/debug swift run ApUniffiExample \
-  --token <64hex_psk>_<64hex_fingerprint> --domain github.com
+DYLD_LIBRARY_PATH=../../target/debug swift run ApUniffiExample --token <64hex_psk>_<64hex_fingerprint> --domain github.com
 
 # With rendezvous code
-DYLD_LIBRARY_PATH=../../target/debug swift run ApUniffiExample \
-  --token ABC-DEF-GHI --domain example.com
+DYLD_LIBRARY_PATH=../../target/debug swift run ApUniffiExample --token ABC-DEF-GHI --domain example.com
 
 # Custom proxy
-DYLD_LIBRARY_PATH=../../target/debug swift run ApUniffiExample \
-  --proxy wss://your-proxy.example.com --token <TOKEN> --domain example.com
+DYLD_LIBRARY_PATH=../../target/debug swift run ApUniffiExample --proxy wss://your-proxy.example.com --token <TOKEN> --domain example.com
 ```
 
 ## Storage
