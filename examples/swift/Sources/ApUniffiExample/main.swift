@@ -1,14 +1,14 @@
 import ApUniffi
 import Foundation
 
-func main() -> Int32 {
+struct Arguments {
+    let token: String
+    let domain: String
+    let proxyUrl: String
+}
+
+func parseArguments() -> Arguments? {
     let args = CommandLine.arguments
-
-    guard args.count >= 3 else {
-        fputs("Usage: ApUniffiExample --token <TOKEN> --domain <DOMAIN> [--proxy <URL>]\n", stderr)
-        return 1
-    }
-
     var token: String?
     var domain: String?
     var proxyUrl = "wss://ap.lesspassword.dev"
@@ -21,7 +21,7 @@ func main() -> Int32 {
             i += 1
             guard i < args.count else {
                 fputs("\(flag) requires a value\n", stderr)
-                return 1
+                return nil
             }
             switch flag {
             case "--token": token = args[i]
@@ -31,19 +31,27 @@ func main() -> Int32 {
             }
         default:
             fputs("Unknown argument: \(args[i])\n", stderr)
-            return 1
+            return nil
         }
         i += 1
     }
 
     guard let token = token, let domain = domain else {
-        fputs("Both --token and --domain are required\n", stderr)
+        fputs("Usage: ApUniffiExample --token <TOKEN> --domain <DOMAIN> [--proxy <URL>]\n", stderr)
+        return nil
+    }
+
+    return Arguments(token: token, domain: domain, proxyUrl: proxyUrl)
+}
+
+func main() -> Int32 {
+    guard let args = parseArguments() else {
         return 1
     }
 
     do {
         let client = try RemoteAccessClient(
-            proxyUrl: proxyUrl,
+            proxyUrl: args.proxyUrl,
             identityStorage: MemoryIdentityStorage(),
             connectionStorage: MemoryConnectionStorage(),
             eventHandler: nil
@@ -51,14 +59,14 @@ func main() -> Int32 {
 
         try client.connect()
 
-        if looksLikePskToken(token: token) {
-            try client.pairWithPsk(pskToken: token)
+        if looksLikePskToken(token: args.token) {
+            try client.pairWithPsk(pskToken: args.token)
         } else {
-            let fp = try client.pairWithHandshake(code: token)
+            let fp = try client.pairWithHandshake(code: args.token)
             fputs("Handshake fingerprint: \(fp)\n", stderr)
         }
 
-        let cred = try client.requestCredential(domain: domain)
+        let cred = try client.requestCredential(domain: args.domain)
         client.close()
 
         if let username = cred.username { print("Username: \(username)") }
