@@ -50,7 +50,7 @@ func main() async -> Int32 {
     }
 
     do {
-        let client = try RemoteAccessClient(
+        let client = try RemoteClient(
             proxyUrl: args.proxyUrl,
             identityStorage: MemoryIdentityStorage(),
             connectionStorage: MemoryConnectionStorage(),

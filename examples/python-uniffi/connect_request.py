@@ -26,7 +26,7 @@ import asyncio
 import sys
 
 from ap_uniffi import (
-    RemoteAccessClient,
+    RemoteClient,
     looks_like_psk_token,
 )
 from storage import MemoryConnectionStorage, MemoryIdentityStorage
@@ -42,7 +42,7 @@ async def main() -> int:
     args = parser.parse_args()
 
     try:
-        client = RemoteAccessClient(
+        client = RemoteClient(
             proxy_url=args.proxy,
             identity_storage=MemoryIdentityStorage(),
             connection_storage=MemoryConnectionStorage(),

@@ -11,10 +11,10 @@ pub use callbacks::{
     ConnectionStorage, CredentialProvider, EventHandler, FfiStoredConnection, FingerprintVerifier,
     IdentityStorage,
 };
-pub use client::RemoteAccessClient;
-pub use error::RemoteAccessError;
+pub use client::RemoteClient;
+pub use error::ClientError;
 pub use types::{FfiConnectionInfo, FfiCredentialData, FfiEvent};
-pub use user_client::UserAccessClient;
+pub use user_client::UserClient;
 
 use std::sync::OnceLock;
 

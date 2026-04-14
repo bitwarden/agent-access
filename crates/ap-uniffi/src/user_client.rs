@@ -4,11 +4,11 @@ use crate::adapters::{CallbackConnectionStore, CallbackIdentityProvider};
 use crate::callbacks::{
     ConnectionStorage, CredentialProvider, EventHandler, FingerprintVerifier, IdentityStorage,
 };
-use crate::error::RemoteAccessError;
+use crate::error::ClientError;
 use crate::types::FfiEvent;
 use ap_client::{
     CredentialData, CredentialRequestReply, DefaultProxyClient, FingerprintVerificationReply,
-    UserClient, UserClientHandle, UserClientNotification, UserClientRequest,
+    UserClientHandle, UserClientNotification, UserClientRequest,
 };
 use tokio::sync::mpsc;
 
@@ -18,8 +18,8 @@ use tokio::sync::mpsc;
 /// Credential requests are dispatched to `CredentialProvider`; fingerprint
 /// verifications to the optional `FingerprintVerifier`.
 #[derive(uniffi::Object)]
-pub struct UserAccessClient {
-    inner: Mutex<Option<UserClient>>,
+pub struct UserClient {
+    inner: Mutex<Option<ap_client::UserClient>>,
     handler: Arc<dyn CredentialProvider>,
     fingerprint_verifier: Option<Arc<dyn FingerprintVerifier>>,
     event_handler: Option<Arc<dyn EventHandler>>,
@@ -29,8 +29,8 @@ pub struct UserAccessClient {
 }
 
 #[uniffi::export(async_runtime = "tokio")]
-impl UserAccessClient {
-    /// Create a new UserAccessClient.
+impl UserClient {
+    /// Create a new UserClient.
     ///
     /// * `proxy_url` — WebSocket URL of the proxy server.
     /// * `identity_storage` — Callback for persistent identity keypair storage.
@@ -50,7 +50,7 @@ impl UserAccessClient {
         handler: Box<dyn CredentialProvider>,
         fingerprint_verifier: Option<Box<dyn FingerprintVerifier>>,
         event_handler: Option<Box<dyn EventHandler>>,
-    ) -> Result<Self, RemoteAccessError> {
+    ) -> Result<Self, ClientError> {
         crate::init_tracing();
 
         Ok(Self {
@@ -68,13 +68,13 @@ impl UserAccessClient {
     ///
     /// Spawns a background event loop that dispatches credential requests and
     /// fingerprint verifications to the `CredentialProvider` callback.
-    pub async fn connect(&self) -> Result<(), RemoteAccessError> {
+    pub async fn connect(&self) -> Result<(), ClientError> {
         if let Ok(mut inner) = self.inner.lock() {
             *inner = None;
         }
 
         let identity = CallbackIdentityProvider::from_storage(self.identity_storage.as_ref())
-            .map_err(RemoteAccessError::from)?;
+            .map_err(ClientError::from)?;
 
         let session_store = CallbackConnectionStore::new(Arc::clone(&self.connection_storage));
 
@@ -84,7 +84,7 @@ impl UserAccessClient {
             client,
             notifications,
             requests,
-        } = UserClient::connect(
+        } = ap_client::UserClient::connect(
             Box::new(identity),
             Box::new(session_store),
             proxy_client,
@@ -92,7 +92,7 @@ impl UserAccessClient {
             None, // psk_store
         )
         .await
-        .map_err(RemoteAccessError::from)?;
+        .map_err(ClientError::from)?;
 
         // Spawn request handler
         spawn_request_handler(
@@ -109,7 +109,7 @@ impl UserAccessClient {
         let mut inner = self
             .inner
             .lock()
-            .map_err(|_| RemoteAccessError::SessionError {
+            .map_err(|_| ClientError::SessionError {
                 message: "Failed to acquire client lock".to_string(),
             })?;
         *inner = Some(client);
@@ -122,25 +122,25 @@ impl UserAccessClient {
     /// * `reusable` — If true, the token can be used multiple times.
     ///
     /// Returns the PSK token string (`<64-hex-psk>_<64-hex-fingerprint>`).
-    pub async fn get_psk_token(&self, reusable: bool) -> Result<String, RemoteAccessError> {
+    pub async fn get_psk_token(&self, reusable: bool) -> Result<String, ClientError> {
         let client = self.get_client()?;
 
         client
             .get_psk_token(None, reusable)
             .await
-            .map_err(RemoteAccessError::from)
+            .map_err(ClientError::from)
     }
 
     /// Generate a rendezvous code for pairing.
     ///
     /// Returns the rendezvous code string (e.g. "ABC-DEF-GHI").
-    pub async fn get_rendezvous_token(&self) -> Result<String, RemoteAccessError> {
+    pub async fn get_rendezvous_token(&self) -> Result<String, ClientError> {
         let client = self.get_client()?;
 
         let code = client
             .get_rendezvous_token(None)
             .await
-            .map_err(RemoteAccessError::from)?;
+            .map_err(ClientError::from)?;
 
         Ok(code.to_string())
     }
@@ -153,24 +153,24 @@ impl UserAccessClient {
     }
 }
 
-impl UserAccessClient {
-    fn get_client(&self) -> Result<UserClient, RemoteAccessError> {
+impl UserClient {
+    fn get_client(&self) -> Result<ap_client::UserClient, ClientError> {
         let inner = self
             .inner
             .lock()
-            .map_err(|_| RemoteAccessError::SessionError {
+            .map_err(|_| ClientError::SessionError {
                 message: "Failed to acquire client lock".to_string(),
             })?;
         inner
             .as_ref()
             .cloned()
-            .ok_or(RemoteAccessError::ConnectionFailed {
+            .ok_or(ClientError::ConnectionFailed {
                 message: "Not connected — call connect() first".to_string(),
             })
     }
 }
 
-impl Drop for UserAccessClient {
+impl Drop for UserClient {
     fn drop(&mut self) {
         self.close();
     }

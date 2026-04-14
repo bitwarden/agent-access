@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use ap_client::{
-    CredentialQuery, DefaultProxyClient, IdentityFingerprint, PskToken, RemoteClient,
+    CredentialQuery, DefaultProxyClient, IdentityFingerprint, PskToken,
     RemoteClientHandle, RemoteClientNotification,
 };
 use tokio::sync::mpsc;
@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use crate::EventHandler;
 use crate::adapters::{CallbackConnectionStore, CallbackIdentityProvider};
 use crate::callbacks::{ConnectionStorage, IdentityStorage};
-use crate::error::RemoteAccessError;
+use crate::error::ClientError;
 use crate::types::{FfiConnectionInfo, FfiCredentialData, FfiEvent};
 
 /// A remote-access client for requesting credentials from a trusted peer.
@@ -21,8 +21,8 @@ use crate::types::{FfiConnectionInfo, FfiCredentialData, FfiEvent};
 /// Implements `Drop` to ensure the underlying connection is closed if the
 /// caller forgets to call `close()`.
 #[derive(uniffi::Object)]
-pub struct RemoteAccessClient {
-    inner: Mutex<Option<RemoteClient>>,
+pub struct RemoteClient {
+    inner: Mutex<Option<ap_client::RemoteClient>>,
     event_handler: Option<Arc<dyn EventHandler>>,
     identity_storage: Arc<dyn IdentityStorage>,
     connection_storage: Arc<dyn ConnectionStorage>,
@@ -30,8 +30,8 @@ pub struct RemoteAccessClient {
 }
 
 #[uniffi::export(async_runtime = "tokio")]
-impl RemoteAccessClient {
-    /// Create a new RemoteAccessClient.
+impl RemoteClient {
+    /// Create a new RemoteClient.
     ///
     /// * `proxy_url` — WebSocket URL of the proxy server (e.g. "ws://localhost:8080").
     /// * `identity_storage` — Callback for persistent identity keypair storage.
@@ -43,7 +43,7 @@ impl RemoteAccessClient {
         identity_storage: Box<dyn IdentityStorage>,
         connection_storage: Box<dyn ConnectionStorage>,
         event_handler: Option<Box<dyn EventHandler>>,
-    ) -> Result<Self, RemoteAccessError> {
+    ) -> Result<Self, ClientError> {
         crate::init_tracing();
 
         Ok(Self {
@@ -59,13 +59,13 @@ impl RemoteAccessClient {
     ///
     /// After this, call one of the pairing methods to establish a secure channel:
     /// `pair_with_handshake()`, `pair_with_psk()`, or `load_existing_connection()`.
-    pub async fn connect(&self) -> Result<(), RemoteAccessError> {
+    pub async fn connect(&self) -> Result<(), ClientError> {
         if let Ok(mut inner) = self.inner.lock() {
             *inner = None;
         }
 
         let identity = CallbackIdentityProvider::from_storage(self.identity_storage.as_ref())
-            .map_err(RemoteAccessError::from)?;
+            .map_err(ClientError::from)?;
 
         let session_store = CallbackConnectionStore::new(Arc::clone(&self.connection_storage));
 
@@ -75,9 +75,9 @@ impl RemoteAccessClient {
             client,
             notifications,
             requests: _requests,
-        } = RemoteClient::connect(Box::new(identity), Box::new(session_store), proxy_client)
+        } = ap_client::RemoteClient::connect(Box::new(identity), Box::new(session_store), proxy_client)
             .await
-            .map_err(RemoteAccessError::from)?;
+            .map_err(ClientError::from)?;
 
         // Forward notifications to event handler if provided
         if let Some(handler) = &self.event_handler {
@@ -87,7 +87,7 @@ impl RemoteAccessClient {
         let mut inner = self
             .inner
             .lock()
-            .map_err(|_| RemoteAccessError::SessionError {
+            .map_err(|_| ClientError::SessionError {
                 message: "Failed to acquire client lock".to_string(),
             })?;
         *inner = Some(client);
@@ -101,13 +101,13 @@ impl RemoteAccessClient {
     ///
     /// Returns the 6-char handshake fingerprint as a hex string for out-of-band
     /// verification. No fingerprint verification is performed (headless mode).
-    pub async fn pair_with_handshake(&self, code: String) -> Result<String, RemoteAccessError> {
+    pub async fn pair_with_handshake(&self, code: String) -> Result<String, ClientError> {
         let client = self.get_client()?;
 
         let fp = client
             .pair_with_handshake(code, false)
             .await
-            .map_err(RemoteAccessError::from)?;
+            .map_err(ClientError::from)?;
 
         Ok(fp.to_hex())
     }
@@ -115,11 +115,11 @@ impl RemoteAccessClient {
     /// Pair with a new device using a PSK token.
     ///
     /// * `psk_token` — PSK token string (`<64-hex-psk>_<64-hex-fingerprint>`).
-    pub async fn pair_with_psk(&self, psk_token: String) -> Result<(), RemoteAccessError> {
+    pub async fn pair_with_psk(&self, psk_token: String) -> Result<(), ClientError> {
         let client = self.get_client()?;
 
         let parsed =
-            PskToken::parse(&psk_token).map_err(|e| RemoteAccessError::InvalidArgument {
+            PskToken::parse(&psk_token).map_err(|e| ClientError::InvalidArgument {
                 message: format!("Invalid PSK token: {e}"),
             })?;
         let (psk, fingerprint) = parsed.into_parts();
@@ -127,7 +127,7 @@ impl RemoteAccessClient {
         client
             .pair_with_psk(psk, fingerprint)
             .await
-            .map_err(RemoteAccessError::from)?;
+            .map_err(ClientError::from)?;
 
         Ok(())
     }
@@ -138,11 +138,11 @@ impl RemoteAccessClient {
     pub async fn load_existing_connection(
         &self,
         fingerprint_hex: String,
-    ) -> Result<(), RemoteAccessError> {
+    ) -> Result<(), ClientError> {
         let client = self.get_client()?;
 
         let fingerprint = IdentityFingerprint::from_hex(&fingerprint_hex).map_err(|e| {
-            RemoteAccessError::InvalidArgument {
+            ClientError::InvalidArgument {
                 message: format!("Invalid fingerprint: {e}"),
             }
         })?;
@@ -150,7 +150,7 @@ impl RemoteAccessClient {
         client
             .load_cached_connection(fingerprint)
             .await
-            .map_err(RemoteAccessError::from)?;
+            .map_err(ClientError::from)?;
 
         Ok(())
     }
@@ -161,10 +161,10 @@ impl RemoteAccessClient {
     pub async fn request_credential(
         &self,
         domain: String,
-    ) -> Result<FfiCredentialData, RemoteAccessError> {
+    ) -> Result<FfiCredentialData, ClientError> {
         let client = self
             .get_client()
-            .map_err(|_| RemoteAccessError::CredentialRequestFailed {
+            .map_err(|_| ClientError::CredentialRequestFailed {
                 message: "Not connected — call connect() first".to_string(),
             })?;
 
@@ -172,7 +172,7 @@ impl RemoteAccessClient {
         let cred = client
             .request_credential(&query, None)
             .await
-            .map_err(RemoteAccessError::from)?;
+            .map_err(ClientError::from)?;
 
         Ok(FfiCredentialData::from(cred))
     }
@@ -201,24 +201,24 @@ impl RemoteAccessClient {
     }
 }
 
-impl RemoteAccessClient {
-    fn get_client(&self) -> Result<RemoteClient, RemoteAccessError> {
+impl RemoteClient {
+    fn get_client(&self) -> Result<ap_client::RemoteClient, ClientError> {
         let inner = self
             .inner
             .lock()
-            .map_err(|_| RemoteAccessError::SessionError {
+            .map_err(|_| ClientError::SessionError {
                 message: "Failed to acquire client lock".to_string(),
             })?;
         inner
             .as_ref()
             .cloned()
-            .ok_or(RemoteAccessError::ConnectionFailed {
+            .ok_or(ClientError::ConnectionFailed {
                 message: "Not connected — call connect() first".to_string(),
             })
     }
 }
 
-impl Drop for RemoteAccessClient {
+impl Drop for RemoteClient {
     fn drop(&mut self) {
         self.close();
     }
@@ -312,7 +312,7 @@ mod tests {
             self.data.lock().expect("identity storage lock").clone()
         }
 
-        fn save_identity(&self, identity_bytes: Vec<u8>) -> Result<(), RemoteAccessError> {
+        fn save_identity(&self, identity_bytes: Vec<u8>) -> Result<(), ClientError> {
             *self.data.lock().expect("identity storage lock") = Some(identity_bytes);
             Ok(())
         }
@@ -324,14 +324,14 @@ mod tests {
         fn get(&self, _fingerprint_hex: String) -> Option<FfiStoredConnection> {
             None
         }
-        fn save(&self, _connection: FfiStoredConnection) -> Result<(), RemoteAccessError> {
+        fn save(&self, _connection: FfiStoredConnection) -> Result<(), ClientError> {
             Ok(())
         }
         fn update(
             &self,
             _fingerprint_hex: String,
             _last_connected_at: u64,
-        ) -> Result<(), RemoteAccessError> {
+        ) -> Result<(), ClientError> {
             Ok(())
         }
         fn list(&self) -> Vec<FfiStoredConnection> {
@@ -339,8 +339,8 @@ mod tests {
         }
     }
 
-    fn make_client() -> RemoteAccessClient {
-        RemoteAccessClient::new(
+    fn make_client() -> RemoteClient {
+        RemoteClient::new(
             "ws://localhost:9999".to_string(),
             Box::new(MemoryIdentityStorage::new()),
             Box::new(MemoryConnectionStorage),
@@ -351,7 +351,7 @@ mod tests {
 
     #[test]
     fn client_new_succeeds() {
-        let client = RemoteAccessClient::new(
+        let client = RemoteClient::new(
             "ws://localhost:9999".to_string(),
             Box::new(MemoryIdentityStorage::new()),
             Box::new(MemoryConnectionStorage),
@@ -366,7 +366,7 @@ mod tests {
         let result = client.request_credential("example.com".to_string()).await;
         assert!(matches!(
             result,
-            Err(RemoteAccessError::CredentialRequestFailed { .. })
+            Err(ClientError::CredentialRequestFailed { .. })
         ));
     }
 

@@ -1,4 +1,4 @@
-use crate::error::RemoteAccessError;
+use crate::error::ClientError;
 use crate::types::{FfiCredentialData, FfiEvent};
 
 /// Callback interface for handling credential requests from remote devices.
@@ -24,7 +24,7 @@ pub trait CredentialProvider: Send + Sync {
 
 /// Callback interface for verifying handshake fingerprints on rendezvous connections.
 ///
-/// Only needed for `UserAccessClient` when accepting rendezvous (non-PSK) pairings.
+/// Only needed for `UserClient` when accepting rendezvous (non-PSK) pairings.
 /// PSK connections are pre-authenticated and skip fingerprint verification.
 #[uniffi::export(callback_interface)]
 pub trait FingerprintVerifier: Send + Sync {
@@ -58,7 +58,7 @@ pub trait IdentityStorage: Send + Sync {
     fn load_identity(&self) -> Option<Vec<u8>>;
 
     /// Save identity bytes for later retrieval.
-    fn save_identity(&self, identity_bytes: Vec<u8>) -> Result<(), RemoteAccessError>;
+    fn save_identity(&self, identity_bytes: Vec<u8>) -> Result<(), ClientError>;
 }
 
 /// Storage record for a cached connection (FFI-safe).
@@ -88,14 +88,14 @@ pub trait ConnectionStorage: Send + Sync {
     fn get(&self, fingerprint_hex: String) -> Option<FfiStoredConnection>;
 
     /// Save a connection (insert or update).
-    fn save(&self, connection: FfiStoredConnection) -> Result<(), RemoteAccessError>;
+    fn save(&self, connection: FfiStoredConnection) -> Result<(), ClientError>;
 
     /// Update the last_connected_at timestamp for an existing connection.
     fn update(
         &self,
         fingerprint_hex: String,
         last_connected_at: u64,
-    ) -> Result<(), RemoteAccessError>;
+    ) -> Result<(), ClientError>;
 
     /// List all cached connections.
     fn list(&self) -> Vec<FfiStoredConnection>;

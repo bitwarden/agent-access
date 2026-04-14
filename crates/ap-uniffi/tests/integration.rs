@@ -12,7 +12,7 @@ use ap_client::{
 };
 use ap_uniffi::{
     ConnectionStorage, CredentialProvider, FfiCredentialData, FfiStoredConnection, IdentityStorage,
-    RemoteAccessClient, RemoteAccessError, UserAccessClient, looks_like_psk_token,
+    ClientError, RemoteClient, UserClient as UniffiUserClient, looks_like_psk_token,
 };
 use tokio::time::Duration;
 use zeroize::Zeroizing;
@@ -38,7 +38,7 @@ impl IdentityStorage for MemoryIdentityStorage {
         self.data.lock().expect("identity lock").clone()
     }
 
-    fn save_identity(&self, identity_bytes: Vec<u8>) -> Result<(), RemoteAccessError> {
+    fn save_identity(&self, identity_bytes: Vec<u8>) -> Result<(), ClientError> {
         *self.data.lock().expect("identity lock") = Some(identity_bytes);
         Ok(())
     }
@@ -66,7 +66,7 @@ impl ConnectionStorage for MemoryConnectionStorage {
             .cloned()
     }
 
-    fn save(&self, connection: FfiStoredConnection) -> Result<(), RemoteAccessError> {
+    fn save(&self, connection: FfiStoredConnection) -> Result<(), ClientError> {
         let mut data = self.data.lock().expect("connection lock");
         if let Some(existing) = data
             .iter_mut()
@@ -83,7 +83,7 @@ impl ConnectionStorage for MemoryConnectionStorage {
         &self,
         fingerprint_hex: String,
         last_connected_at: u64,
-    ) -> Result<(), RemoteAccessError> {
+    ) -> Result<(), ClientError> {
         let mut data = self.data.lock().expect("connection lock");
         if let Some(conn) = data.iter_mut().find(|c| c.fingerprint == fingerprint_hex) {
             conn.last_connected_at = last_connected_at;
@@ -202,8 +202,8 @@ async fn setup_user_client_psk(addr: SocketAddr) -> (String, Vec<tokio::task::Jo
     (psk_token, vec![notif_task, cred_task, keepalive])
 }
 
-fn make_remote_client(proxy_url: String) -> RemoteAccessClient {
-    RemoteAccessClient::new(
+fn make_remote_client(proxy_url: String) -> RemoteClient {
+    RemoteClient::new(
         proxy_url,
         Box::new(MemoryIdentityStorage::new()),
         Box::new(MemoryConnectionStorage::new()),
@@ -213,7 +213,7 @@ fn make_remote_client(proxy_url: String) -> RemoteAccessClient {
 }
 
 // ============================================================================
-// RemoteAccessClient Tests
+// RemoteClient Tests
 // ============================================================================
 
 #[tokio::test]
@@ -350,10 +350,10 @@ fn looks_like_psk_token_works() {
 }
 
 // ============================================================================
-// UserAccessClient Tests
+// UniffiUserClient Tests
 // ============================================================================
 
-/// Test UserAccessClient with CredentialProvider callback.
+/// Test UniffiUserClient with CredentialProvider callback.
 #[tokio::test]
 async fn test_user_access_client_with_credential_provider() {
     /// Simple test credential provider.
@@ -373,7 +373,7 @@ async fn test_user_access_client_with_credential_provider() {
     let addr = start_test_server().await;
     let proxy_url = format!("ws://{addr}");
 
-    let user = UserAccessClient::new(
+    let user = UniffiUserClient::new(
         proxy_url.clone(),
         Box::new(MemoryIdentityStorage::new()),
         Box::new(MemoryConnectionStorage::new()),

@@ -1,9 +1,7 @@
-use ap_client::ClientError;
-
 /// FFI-friendly error enum that maps the internal ClientError
 /// into 6 categories suitable for cross-language consumption.
 #[derive(Debug, thiserror::Error, uniffi::Error)]
-pub enum RemoteAccessError {
+pub enum ClientError {
     #[error("Connection failed: {message}")]
     ConnectionFailed { message: String },
     #[error("Handshake failed: {message}")]
@@ -18,36 +16,41 @@ pub enum RemoteAccessError {
     Timeout { message: String },
 }
 
-impl From<ClientError> for RemoteAccessError {
-    fn from(err: ClientError) -> Self {
+impl From<ap_client::ClientError> for ClientError {
+    fn from(err: ap_client::ClientError) -> Self {
         let message = err.to_string();
         match err {
-            ClientError::ConnectionFailed(_) | ClientError::WebSocket(_) => {
-                RemoteAccessError::ConnectionFailed { message }
+            ap_client::ClientError::ConnectionFailed(_)
+            | ap_client::ClientError::WebSocket(_) => ClientError::ConnectionFailed { message },
+
+            ap_client::ClientError::ProxyAuthFailed(_)
+            | ap_client::ClientError::HandshakeFailed(_)
+            | ap_client::ClientError::NoiseProtocol(_)
+            | ap_client::ClientError::FingerprintRejected => {
+                ClientError::HandshakeFailed { message }
             }
 
-            ClientError::ProxyAuthFailed(_)
-            | ClientError::HandshakeFailed(_)
-            | ClientError::NoiseProtocol(_)
-            | ClientError::FingerprintRejected => RemoteAccessError::HandshakeFailed { message },
+            ap_client::ClientError::CredentialRequestFailed(_)
+            | ap_client::ClientError::SecureChannelNotEstablished
+            | ap_client::ClientError::NotInitialized => {
+                ClientError::CredentialRequestFailed { message }
+            }
 
-            ClientError::CredentialRequestFailed(_)
-            | ClientError::SecureChannelNotEstablished
-            | ClientError::NotInitialized => RemoteAccessError::CredentialRequestFailed { message },
+            ap_client::ClientError::ConnectionCache(_)
+            | ap_client::ClientError::IdentityStorageFailed(_)
+            | ap_client::ClientError::KeypairStorage(_)
+            | ap_client::ClientError::ConnectionNotFound
+            | ap_client::ClientError::Serialization(_)
+            | ap_client::ClientError::ChannelClosed => ClientError::SessionError { message },
 
-            ClientError::ConnectionCache(_)
-            | ClientError::IdentityStorageFailed(_)
-            | ClientError::KeypairStorage(_)
-            | ClientError::ConnectionNotFound
-            | ClientError::Serialization(_)
-            | ClientError::ChannelClosed => RemoteAccessError::SessionError { message },
+            ap_client::ClientError::InvalidPairingCode(_)
+            | ap_client::ClientError::InvalidRendezvousCode(_)
+            | ap_client::ClientError::RendezvousResolutionFailed(_)
+            | ap_client::ClientError::InvalidState { .. } => {
+                ClientError::InvalidArgument { message }
+            }
 
-            ClientError::InvalidPairingCode(_)
-            | ClientError::InvalidRendezvousCode(_)
-            | ClientError::RendezvousResolutionFailed(_)
-            | ClientError::InvalidState { .. } => RemoteAccessError::InvalidArgument { message },
-
-            ClientError::Timeout(_) => RemoteAccessError::Timeout { message },
+            ap_client::ClientError::Timeout(_) => ClientError::Timeout { message },
         }
     }
 }
@@ -58,31 +61,31 @@ mod tests {
 
     #[test]
     fn connection_failed_maps_correctly() {
-        let err = ClientError::ConnectionFailed("refused".to_string());
-        let mapped = RemoteAccessError::from(err);
-        assert!(matches!(mapped, RemoteAccessError::ConnectionFailed { .. }));
+        let err = ap_client::ClientError::ConnectionFailed("refused".to_string());
+        let mapped = ClientError::from(err);
+        assert!(matches!(mapped, ClientError::ConnectionFailed { .. }));
         assert!(mapped.to_string().contains("refused"));
     }
 
     #[test]
     fn websocket_error_maps_to_connection_failed() {
-        let err = ClientError::WebSocket("closed".to_string());
-        let mapped = RemoteAccessError::from(err);
-        assert!(matches!(mapped, RemoteAccessError::ConnectionFailed { .. }));
+        let err = ap_client::ClientError::WebSocket("closed".to_string());
+        let mapped = ClientError::from(err);
+        assert!(matches!(mapped, ClientError::ConnectionFailed { .. }));
     }
 
     #[test]
     fn handshake_errors_map_correctly() {
         let cases = vec![
-            ClientError::ProxyAuthFailed("bad auth".to_string()),
-            ClientError::HandshakeFailed("noise error".to_string()),
-            ClientError::NoiseProtocol("decrypt failed".to_string()),
-            ClientError::FingerprintRejected,
+            ap_client::ClientError::ProxyAuthFailed("bad auth".to_string()),
+            ap_client::ClientError::HandshakeFailed("noise error".to_string()),
+            ap_client::ClientError::NoiseProtocol("decrypt failed".to_string()),
+            ap_client::ClientError::FingerprintRejected,
         ];
         for err in cases {
-            let mapped = RemoteAccessError::from(err);
+            let mapped = ClientError::from(err);
             assert!(
-                matches!(mapped, RemoteAccessError::HandshakeFailed { .. }),
+                matches!(mapped, ClientError::HandshakeFailed { .. }),
                 "Expected HandshakeFailed, got: {mapped:?}"
             );
         }
@@ -91,14 +94,14 @@ mod tests {
     #[test]
     fn credential_errors_map_correctly() {
         let cases = vec![
-            ClientError::CredentialRequestFailed("denied".to_string()),
-            ClientError::SecureChannelNotEstablished,
-            ClientError::NotInitialized,
+            ap_client::ClientError::CredentialRequestFailed("denied".to_string()),
+            ap_client::ClientError::SecureChannelNotEstablished,
+            ap_client::ClientError::NotInitialized,
         ];
         for err in cases {
-            let mapped = RemoteAccessError::from(err);
+            let mapped = ClientError::from(err);
             assert!(
-                matches!(mapped, RemoteAccessError::CredentialRequestFailed { .. }),
+                matches!(mapped, ClientError::CredentialRequestFailed { .. }),
                 "Expected CredentialRequestFailed, got: {mapped:?}"
             );
         }
@@ -107,17 +110,17 @@ mod tests {
     #[test]
     fn session_errors_map_correctly() {
         let cases = vec![
-            ClientError::ConnectionCache("corrupt".to_string()),
-            ClientError::IdentityStorageFailed("missing".to_string()),
-            ClientError::KeypairStorage("bad key".to_string()),
-            ClientError::ConnectionNotFound,
-            ClientError::Serialization("invalid json".to_string()),
-            ClientError::ChannelClosed,
+            ap_client::ClientError::ConnectionCache("corrupt".to_string()),
+            ap_client::ClientError::IdentityStorageFailed("missing".to_string()),
+            ap_client::ClientError::KeypairStorage("bad key".to_string()),
+            ap_client::ClientError::ConnectionNotFound,
+            ap_client::ClientError::Serialization("invalid json".to_string()),
+            ap_client::ClientError::ChannelClosed,
         ];
         for err in cases {
-            let mapped = RemoteAccessError::from(err);
+            let mapped = ClientError::from(err);
             assert!(
-                matches!(mapped, RemoteAccessError::SessionError { .. }),
+                matches!(mapped, ClientError::SessionError { .. }),
                 "Expected SessionError, got: {mapped:?}"
             );
         }
@@ -126,18 +129,18 @@ mod tests {
     #[test]
     fn invalid_argument_errors_map_correctly() {
         let cases = vec![
-            ClientError::InvalidPairingCode("bad code".to_string()),
-            ClientError::InvalidRendezvousCode("too short".to_string()),
-            ClientError::RendezvousResolutionFailed("not found".to_string()),
-            ClientError::InvalidState {
+            ap_client::ClientError::InvalidPairingCode("bad code".to_string()),
+            ap_client::ClientError::InvalidRendezvousCode("too short".to_string()),
+            ap_client::ClientError::RendezvousResolutionFailed("not found".to_string()),
+            ap_client::ClientError::InvalidState {
                 expected: "Ready".to_string(),
                 current: "Init".to_string(),
             },
         ];
         for err in cases {
-            let mapped = RemoteAccessError::from(err);
+            let mapped = ClientError::from(err);
             assert!(
-                matches!(mapped, RemoteAccessError::InvalidArgument { .. }),
+                matches!(mapped, ClientError::InvalidArgument { .. }),
                 "Expected InvalidArgument, got: {mapped:?}"
             );
         }
@@ -145,19 +148,19 @@ mod tests {
 
     #[test]
     fn timeout_maps_correctly() {
-        let err = ClientError::Timeout("5s elapsed".to_string());
-        let mapped = RemoteAccessError::from(err);
-        assert!(matches!(mapped, RemoteAccessError::Timeout { .. }));
+        let err = ap_client::ClientError::Timeout("5s elapsed".to_string());
+        let mapped = ClientError::from(err);
+        assert!(matches!(mapped, ClientError::Timeout { .. }));
         assert!(mapped.to_string().contains("5s elapsed"));
     }
 
     #[test]
     fn invalid_state_preserves_fields_in_message() {
-        let err = ClientError::InvalidState {
+        let err = ap_client::ClientError::InvalidState {
             expected: "Connected".to_string(),
             current: "Disconnected".to_string(),
         };
-        let mapped = RemoteAccessError::from(err);
+        let mapped = ClientError::from(err);
         let msg = mapped.to_string();
         assert!(msg.contains("Connected"));
         assert!(msg.contains("Disconnected"));
