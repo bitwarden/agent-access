@@ -20,8 +20,15 @@ pub trait CredentialProvider: Send + Sync {
         query_value: String,
         remote_fingerprint: String,
     ) -> Option<FfiCredentialData>;
+}
 
-    /// Handle fingerprint verification for a new rendezvous connection.
+/// Callback interface for verifying handshake fingerprints on rendezvous connections.
+///
+/// Only needed for `UserAccessClient` when accepting rendezvous (non-PSK) pairings.
+/// PSK connections are pre-authenticated and skip fingerprint verification.
+#[uniffi::export(callback_interface)]
+pub trait FingerprintVerifier: Send + Sync {
+    /// Verify a handshake fingerprint for a new rendezvous connection.
     ///
     /// * `fingerprint` — The 6-character hex handshake fingerprint.
     /// * `remote_identity` — Hex-encoded identity fingerprint of the remote device.

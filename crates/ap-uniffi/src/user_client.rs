@@ -1,7 +1,9 @@
 use std::sync::{Arc, Mutex};
 
 use crate::adapters::{CallbackConnectionStore, CallbackIdentityProvider};
-use crate::callbacks::{ConnectionStorage, CredentialProvider, EventHandler, IdentityStorage};
+use crate::callbacks::{
+    ConnectionStorage, CredentialProvider, EventHandler, FingerprintVerifier, IdentityStorage,
+};
 use crate::error::RemoteAccessError;
 use crate::types::FfiEvent;
 use ap_client::{
@@ -13,12 +15,13 @@ use tokio::sync::mpsc;
 /// A user-client (trusted device) that listens for incoming credential requests.
 ///
 /// Wraps `ap_client::UserClient` behind an async FFI-safe API.
-/// Credential requests and fingerprint verifications are dispatched to the
-/// `CredentialProvider` callback supplied at construction.
+/// Credential requests are dispatched to `CredentialProvider`; fingerprint
+/// verifications to the optional `FingerprintVerifier`.
 #[derive(uniffi::Object)]
 pub struct UserAccessClient {
     inner: Mutex<Option<UserClient>>,
     handler: Arc<dyn CredentialProvider>,
+    fingerprint_verifier: Option<Arc<dyn FingerprintVerifier>>,
     event_handler: Option<Arc<dyn EventHandler>>,
     identity_storage: Arc<dyn IdentityStorage>,
     connection_storage: Arc<dyn ConnectionStorage>,
@@ -32,7 +35,9 @@ impl UserAccessClient {
     /// * `proxy_url` — WebSocket URL of the proxy server.
     /// * `identity_storage` — Callback for persistent identity keypair storage.
     /// * `connection_storage` — Callback for persistent connection cache storage.
-    /// * `handler` — Callback for credential requests and fingerprint verification.
+    /// * `handler` — Callback for credential requests.
+    /// * `fingerprint_verifier` — Optional callback for verifying handshake fingerprints
+    ///   on rendezvous connections. If `None`, rendezvous fingerprints are auto-accepted.
     /// * `event_handler` — Optional callback for status notifications.
     #[uniffi::constructor]
     pub fn new(
@@ -40,6 +45,7 @@ impl UserAccessClient {
         identity_storage: Box<dyn IdentityStorage>,
         connection_storage: Box<dyn ConnectionStorage>,
         handler: Box<dyn CredentialProvider>,
+        fingerprint_verifier: Option<Box<dyn FingerprintVerifier>>,
         event_handler: Option<Box<dyn EventHandler>>,
     ) -> Result<Self, RemoteAccessError> {
         crate::init_tracing();
@@ -47,6 +53,7 @@ impl UserAccessClient {
         Ok(Self {
             inner: Mutex::new(None),
             handler: Arc::from(handler),
+            fingerprint_verifier: fingerprint_verifier.map(Arc::from),
             event_handler: event_handler.map(Arc::from),
             identity_storage: Arc::from(identity_storage),
             connection_storage: Arc::from(connection_storage),
@@ -85,7 +92,11 @@ impl UserAccessClient {
         .map_err(RemoteAccessError::from)?;
 
         // Spawn request handler
-        spawn_request_handler(requests, Arc::clone(&self.handler));
+        spawn_request_handler(
+            requests,
+            Arc::clone(&self.handler),
+            self.fingerprint_verifier.as_ref().map(Arc::clone),
+        );
 
         // Forward notifications to event handler if provided
         if let Some(handler) = &self.event_handler {
@@ -162,10 +173,11 @@ impl Drop for UserAccessClient {
     }
 }
 
-/// Spawn a task that drains `UserClientRequest`s and dispatches to the callback.
+/// Spawn a task that drains `UserClientRequest`s and dispatches to the callbacks.
 fn spawn_request_handler(
     mut requests: mpsc::Receiver<UserClientRequest>,
     handler: Arc<dyn CredentialProvider>,
+    verifier: Option<Arc<dyn FingerprintVerifier>>,
 ) {
     crate::runtime().spawn(async move {
         while let Some(request) = requests.recv().await {
@@ -215,21 +227,25 @@ fn spawn_request_handler(
                     identity,
                     reply,
                 } => {
-                    let remote_fp = identity.to_hex();
-                    let handler = Arc::clone(&handler);
-                    let fp = fingerprint.clone();
+                    let approved = if let Some(verifier) = &verifier {
+                        let remote_fp = identity.to_hex();
+                        let verifier = Arc::clone(verifier);
+                        let fp = fingerprint.clone();
 
-                    let result = tokio::task::spawn_blocking(move || {
-                        handler.verify_fingerprint(fp, remote_fp)
-                    })
-                    .await;
-
-                    let approved = match result {
-                        Ok(v) => v,
-                        Err(e) => {
-                            tracing::warn!("verify_fingerprint callback panicked: {e}");
-                            false
+                        match tokio::task::spawn_blocking(move || {
+                            verifier.verify_fingerprint(fp, remote_fp)
+                        })
+                        .await
+                        {
+                            Ok(v) => v,
+                            Err(e) => {
+                                tracing::warn!("verify_fingerprint callback panicked: {e}");
+                                false
+                            }
                         }
+                    } else {
+                        // No verifier provided — auto-accept
+                        true
                     };
                     let _ = reply.send(FingerprintVerificationReply {
                         approved,

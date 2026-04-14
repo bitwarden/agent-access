@@ -368,10 +368,6 @@ async fn test_user_access_client_with_credential_provider() {
         ) -> Option<FfiCredentialData> {
             Some(test_ffi_credential())
         }
-
-        fn verify_fingerprint(&self, _fingerprint: String, _remote_identity: String) -> bool {
-            true
-        }
     }
 
     let addr = start_test_server().await;
@@ -382,7 +378,8 @@ async fn test_user_access_client_with_credential_provider() {
         Box::new(MemoryIdentityStorage::new()),
         Box::new(MemoryConnectionStorage::new()),
         Box::new(TestProvider),
-        None,
+        None, // fingerprint_verifier
+        None, // event_handler
     )
     .expect("should create user client");
     user.connect().await.expect("user connect should succeed");

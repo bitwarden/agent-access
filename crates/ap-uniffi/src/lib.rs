@@ -8,7 +8,8 @@ mod types;
 mod user_client;
 
 pub use callbacks::{
-    ConnectionStorage, CredentialProvider, EventHandler, FfiStoredConnection, IdentityStorage,
+    ConnectionStorage, CredentialProvider, EventHandler, FfiStoredConnection, FingerprintVerifier,
+    IdentityStorage,
 };
 pub use client::RemoteAccessClient;
 pub use error::RemoteAccessError;
