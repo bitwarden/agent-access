@@ -22,6 +22,7 @@ Setup:
 """
 
 import argparse
+import asyncio
 import sys
 
 from ap_uniffi import (
@@ -77,5 +78,4 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
-    import asyncio
     sys.exit(asyncio.run(main()))
