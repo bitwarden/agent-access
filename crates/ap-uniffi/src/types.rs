@@ -162,6 +162,15 @@ pub enum FfiEvent {
     },
 }
 
+/// How a connection was established between devices.
+#[derive(Clone, uniffi::Enum)]
+pub enum FfiConnectionType {
+    /// Paired using a rendezvous code exchanged out-of-band.
+    Rendezvous,
+    /// Paired using a pre-shared key (PSK) token.
+    Psk,
+}
+
 /// Audit event emitted by the UserClient for security-relevant actions.
 ///
 /// All identity fingerprints are hex-encoded strings.
@@ -171,8 +180,7 @@ pub enum FfiAuditEvent {
     ConnectionEstablished {
         remote_identity: String,
         remote_name: Option<String>,
-        /// "rendezvous" or "psk"
-        connection_type: String,
+        connection_type: FfiConnectionType,
     },
     /// A previously-paired device reconnected and refreshed transport keys.
     SessionRefreshed { remote_identity: String },

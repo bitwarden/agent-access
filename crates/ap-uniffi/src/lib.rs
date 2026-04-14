@@ -14,7 +14,8 @@ pub use callbacks::{
 pub use error::ClientError;
 pub use remote_client::RemoteClient;
 pub use types::{
-    FfiAuditEvent, FfiConnectionInfo, FfiCredentialData, FfiCredentialQuery, FfiEvent, FfiPskEntry,
+    FfiAuditEvent, FfiConnectionInfo, FfiConnectionType, FfiCredentialData, FfiCredentialQuery,
+    FfiEvent, FfiPskEntry,
 };
 pub use user_client::UserClient;
 

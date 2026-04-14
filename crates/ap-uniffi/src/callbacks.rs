@@ -29,10 +29,12 @@ pub trait FingerprintVerifier: Send + Sync {
     /// Verify a handshake fingerprint for a new rendezvous connection.
     ///
     /// * `fingerprint` — The 6-character hex handshake fingerprint.
-    /// * `remote_identity` — Hex-encoded identity fingerprint of the remote device.
+    /// * `remote_identity` — Hex-encoded identity fingerprint of the remote device,
+    ///   or `None` when called from a RemoteClient (which doesn't know the peer's
+    ///   identity at verification time).
     ///
     /// Return `true` to accept, `false` to reject.
-    fn verify_fingerprint(&self, fingerprint: String, remote_identity: String) -> bool;
+    fn verify_fingerprint(&self, fingerprint: String, remote_identity: Option<String>) -> bool;
 }
 
 /// Callback interface for receiving status notifications.

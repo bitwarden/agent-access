@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use crate::callbacks::{
     AuditLogger, ConnectionStorage, FfiStoredConnection, IdentityStorage, PskStorage,
 };
-use crate::types::{FfiAuditEvent, FfiCredentialQuery, FfiPskEntry};
+use crate::types::{FfiAuditEvent, FfiConnectionType, FfiCredentialQuery, FfiPskEntry};
 
 // ---------------------------------------------------------------------------
 // IdentityStorage → IdentityProvider
@@ -23,12 +23,17 @@ pub struct CallbackIdentityProvider {
     keypair: IdentityKeyPair,
 }
 
-impl CallbackIdentityProvider {
-    /// Returns the hex-encoded identity fingerprint of the resolved keypair.
-    pub(crate) fn fingerprint_hex(&self) -> String {
-        self.keypair.identity().fingerprint().to_hex()
-    }
+/// Resolve the identity fingerprint from storage without constructing a full provider.
+///
+/// Loads (or generates) the identity keypair and returns its hex-encoded fingerprint.
+pub(crate) fn resolve_identity_fingerprint(
+    storage: &dyn IdentityStorage,
+) -> Result<String, ClientError> {
+    let provider = CallbackIdentityProvider::from_storage(storage)?;
+    Ok(provider.keypair.identity().fingerprint().to_hex())
+}
 
+impl CallbackIdentityProvider {
     pub fn from_storage(storage: &dyn IdentityStorage) -> Result<Self, ClientError> {
         let keypair = if let Some(bytes) = storage.load_identity() {
             IdentityKeyPair::from_cose(&bytes).map_err(|_| {
@@ -183,8 +188,8 @@ impl AuditLog for CallbackAuditLog {
                 remote_identity: remote_identity.to_hex(),
                 remote_name: remote_name.map(|s| s.to_string()),
                 connection_type: match connection_type {
-                    AuditConnectionType::Rendezvous => "rendezvous".to_string(),
-                    AuditConnectionType::Psk => "psk".to_string(),
+                    AuditConnectionType::Rendezvous => FfiConnectionType::Rendezvous,
+                    AuditConnectionType::Psk => FfiConnectionType::Psk,
                 },
             },
             AuditEvent::SessionRefreshed { remote_identity } => FfiAuditEvent::SessionRefreshed {

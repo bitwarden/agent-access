@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::adapters::{
     CallbackAuditLog, CallbackConnectionStore, CallbackIdentityProvider, CallbackPskStore,
+    resolve_identity_fingerprint,
 };
 use crate::callbacks::{
     AuditLogger, ConnectionStorage, CredentialProvider, EventHandler, FingerprintVerifier,
@@ -79,7 +80,6 @@ impl UserClient {
     /// Spawns a background event loop that dispatches credential requests and
     /// fingerprint verifications to the `CredentialProvider` callback.
     pub async fn connect(&self) -> Result<(), ClientError> {
-        // Clear any previous connection
         *self.inner.lock().await = None;
 
         let identity = CallbackIdentityProvider::from_storage(self.identity_storage.as_ref())
@@ -171,9 +171,7 @@ impl UserClient {
     /// session lookup, and PSK token construction. Not to be confused with the
     /// 6-character handshake fingerprint used for MITM verification.
     pub fn get_identity_fingerprint(&self) -> Result<String, ClientError> {
-        let identity = CallbackIdentityProvider::from_storage(self.identity_storage.as_ref())
-            .map_err(ClientError::from)?;
-        Ok(identity.fingerprint_hex())
+        resolve_identity_fingerprint(self.identity_storage.as_ref()).map_err(ClientError::from)
     }
 
     /// Close the connection and release resources.
@@ -263,7 +261,7 @@ fn spawn_request_handler(
                         let fp = fingerprint.clone();
 
                         match tokio::task::spawn_blocking(move || {
-                            verifier.verify_fingerprint(fp, remote_fp)
+                            verifier.verify_fingerprint(fp, Some(remote_fp))
                         })
                         .await
                         {

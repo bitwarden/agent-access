@@ -8,7 +8,9 @@ use ap_client::{
 use tokio::sync::{Mutex, mpsc};
 
 use crate::EventHandler;
-use crate::adapters::{CallbackConnectionStore, CallbackIdentityProvider};
+use crate::adapters::{
+    CallbackConnectionStore, CallbackIdentityProvider, resolve_identity_fingerprint,
+};
 use crate::callbacks::{ConnectionStorage, FingerprintVerifier, IdentityStorage};
 use crate::error::ClientError;
 use crate::types::{FfiConnectionInfo, FfiCredentialData, FfiCredentialQuery, FfiEvent};
@@ -68,7 +70,6 @@ impl RemoteClient {
     /// After this, call one of the pairing methods to establish a secure channel:
     /// `pair_with_handshake()`, `pair_with_psk()`, or `load_existing_connection()`.
     pub async fn connect(&self) -> Result<(), ClientError> {
-        // Clear any previous connection
         *self.inner.lock().await = None;
 
         let identity = CallbackIdentityProvider::from_storage(self.identity_storage.as_ref())
@@ -211,9 +212,7 @@ impl RemoteClient {
     /// session lookup, and PSK token construction. Not to be confused with the
     /// 6-character handshake fingerprint used for MITM verification.
     pub fn get_identity_fingerprint(&self) -> Result<String, ClientError> {
-        let identity = CallbackIdentityProvider::from_storage(self.identity_storage.as_ref())
-            .map_err(ClientError::from)?;
-        Ok(identity.fingerprint_hex())
+        resolve_identity_fingerprint(self.identity_storage.as_ref()).map_err(ClientError::from)
     }
 
     /// Close the connection and release resources.
@@ -326,9 +325,7 @@ fn spawn_remote_request_handler(
                         let fp = fingerprint.clone();
 
                         match tokio::task::spawn_blocking(move || {
-                            // RemoteClient verification doesn't have the peer's
-                            // identity fingerprint — pass empty string.
-                            verifier.verify_fingerprint(fp, String::new())
+                            verifier.verify_fingerprint(fp, None)
                         })
                         .await
                         {
