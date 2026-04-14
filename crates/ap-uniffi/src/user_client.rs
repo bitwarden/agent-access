@@ -177,6 +177,9 @@ impl Drop for UserClient {
 }
 
 /// Spawn a task that drains `UserClientRequest`s and dispatches to the callbacks.
+///
+/// Exits when the request channel closes (inner client dropped via `close()`).
+/// No `JoinHandle` tracked — cleanup is driven by channel closure.
 fn spawn_request_handler(
     mut requests: mpsc::Receiver<UserClientRequest>,
     handler: Arc<dyn CredentialProvider>,
@@ -261,6 +264,9 @@ fn spawn_request_handler(
 }
 
 /// Spawn a task that forwards `UserClientNotification`s to an `EventHandler`.
+///
+/// Exits when the notification channel closes (inner client dropped via `close()`).
+/// No `JoinHandle` tracked — cleanup is driven by channel closure.
 fn spawn_user_notification_forwarder(
     mut rx: mpsc::Receiver<UserClientNotification>,
     handler: Arc<dyn EventHandler>,

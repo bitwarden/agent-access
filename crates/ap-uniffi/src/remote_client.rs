@@ -225,6 +225,10 @@ impl Drop for RemoteClient {
 }
 
 /// Spawn a task that forwards `RemoteClientNotification`s to an `EventHandler`.
+///
+/// The task exits naturally when the notification channel closes, which happens
+/// when the inner `ap_client::RemoteClient` is dropped via `close()`. No
+/// `JoinHandle` is tracked because cleanup is driven by channel closure.
 fn spawn_remote_notification_forwarder(
     mut rx: mpsc::Receiver<RemoteClientNotification>,
     handler: Arc<dyn EventHandler>,

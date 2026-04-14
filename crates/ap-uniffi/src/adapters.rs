@@ -60,11 +60,27 @@ impl CallbackConnectionStore {
 }
 
 fn stored_to_info(stored: &FfiStoredConnection) -> Option<ConnectionInfo> {
-    let fingerprint = IdentityFingerprint::from_hex(&stored.fingerprint).ok()?;
+    let fingerprint = match IdentityFingerprint::from_hex(&stored.fingerprint) {
+        Ok(fp) => fp,
+        Err(e) => {
+            tracing::warn!(
+                "Skipping connection with invalid fingerprint '{}': {e}",
+                stored.fingerprint
+            );
+            return None;
+        }
+    };
     let transport_state = stored.transport_state.as_ref().and_then(|bytes| {
-        PersistentTransportState::from_bytes(bytes)
-            .ok()
-            .map(MultiDeviceTransport::from)
+        match PersistentTransportState::from_bytes(bytes) {
+            Ok(state) => Some(MultiDeviceTransport::from(state)),
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to restore transport state for {}: {e}",
+                    stored.fingerprint
+                );
+                None
+            }
+        }
     });
 
     Some(ConnectionInfo {
@@ -77,10 +93,18 @@ fn stored_to_info(stored: &FfiStoredConnection) -> Option<ConnectionInfo> {
 }
 
 fn info_to_stored(info: &ConnectionInfo) -> FfiStoredConnection {
-    let transport_state = info
-        .transport_state
-        .as_ref()
-        .and_then(|t| PersistentTransportState::from(t).to_bytes().ok());
+    let transport_state = info.transport_state.as_ref().and_then(|t| {
+        match PersistentTransportState::from(t).to_bytes() {
+            Ok(bytes) => Some(bytes),
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to serialize transport state for {}: {e}",
+                    info.fingerprint.to_hex()
+                );
+                None
+            }
+        }
+    });
 
     FfiStoredConnection {
         fingerprint: info.fingerprint.to_hex(),
