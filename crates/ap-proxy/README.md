@@ -2,6 +2,9 @@
 
 A WebSocket proxy server for `aac` (ap-cli) that routes messages between authenticated clients without access to message contents.
 
+> [!IMPORTANT]
+> This proxy is not hardened for production. There are known reliability & safety improvements to be made.  
+
 For the client library, see [`ap-proxy-client`](../ap-proxy-client/).
 For shared protocol types, see [`ap-proxy-protocol`](../ap-proxy-protocol/).
 
