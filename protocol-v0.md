@@ -7,7 +7,7 @@ Status: draft.
 
 Authors:
 * Anders Åberg, Bitwarden <aaberg@bitwarden.com>
-* Bernd Schoolman, Bitwarden
+* Bernd Schoolmann, Bitwarden
 
 ## Bird's-eye View
 
