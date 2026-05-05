@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 /// A temporary rendezvous code for peer discovery.
 ///
 /// Rendezvous codes are short, human-readable identifiers (format: "ABC-DEF-GHI") that
-/// temporarily map to a client's identity on the proxy server.
+/// temporarily map to a client's identity on the relay server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RendezvousCode {
     code: String,
@@ -42,7 +42,7 @@ impl RendezvousCode {
     /// # Examples
     ///
     /// ```
-    /// use ap_proxy_protocol::RendezvousCode;
+    /// use ap_relay_protocol::RendezvousCode;
     ///
     /// let code1 = RendezvousCode::new();
     /// let code2 = RendezvousCode::new();
@@ -59,7 +59,7 @@ impl RendezvousCode {
         let mut rng = rand::thread_rng();
 
         // The code has an alphabet of size 36. With 9 characters, that's
-        // 36^9 = 101,559,956,668,416 possible codes. The codes are short-lived, and the connections to the proxy are rate-limited,
+        // 36^9 = 101,559,956,668,416 possible codes. The codes are short-lived, and the connections to the relay are rate-limited,
         // which is why this is considered sufficient.
         let code = Alphanumeric.sample_string(&mut rng, 9);
         let code = code.to_ascii_uppercase();
@@ -84,7 +84,7 @@ impl RendezvousCode {
     /// # Examples
     ///
     /// ```
-    /// use ap_proxy_protocol::RendezvousCode;
+    /// use ap_relay_protocol::RendezvousCode;
     ///
     /// let code = RendezvousCode::from_string("ABC-DEF-GHI".to_string());
     /// assert_eq!(code.as_str(), "ABC-DEF-GHI");
@@ -101,7 +101,7 @@ impl RendezvousCode {
     /// # Examples
     ///
     /// ```
-    /// use ap_proxy_protocol::RendezvousCode;
+    /// use ap_relay_protocol::RendezvousCode;
     ///
     /// let code = RendezvousCode::new();
     /// println!("Your code: {}", code.as_str());

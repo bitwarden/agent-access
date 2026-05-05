@@ -1,4 +1,4 @@
 mod client;
-mod proxy_client;
+mod relay_client;
 mod storage;
 mod types;

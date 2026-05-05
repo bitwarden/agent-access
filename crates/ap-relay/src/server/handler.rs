@@ -1,9 +1,9 @@
-use ap_proxy_protocol::{Challenge, IdentityFingerprint, Messages, ProxyError, RendezvousCode};
+use ap_relay_protocol::{Challenge, IdentityFingerprint, Messages, RelayError, RendezvousCode};
 
-use crate::{connection::AuthenticatedConnection, server::proxy_server::ServerState};
+use crate::{connection::AuthenticatedConnection, server::relay_server::ServerState};
 
-fn ws_err(e: tokio_tungstenite::tungstenite::Error) -> ProxyError {
-    ProxyError::WebSocket(e.to_string())
+fn ws_err(e: tokio_tungstenite::tungstenite::Error) -> RelayError {
+    RelayError::WebSocket(e.to_string())
 }
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
@@ -35,7 +35,7 @@ impl ConnectionHandler {
         }
     }
 
-    pub async fn handle(self) -> Result<(), ProxyError> {
+    pub async fn handle(self) -> Result<(), RelayError> {
         let conn_id = self.conn_id;
         let state = self.state;
 
@@ -54,7 +54,7 @@ impl ConnectionHandler {
         let challenge = Challenge::new();
         let challenge_msg = serde_json::to_string(&Messages::AuthChallenge(challenge.clone()))?;
         if tx.send(Message::Text(challenge_msg)).is_err() {
-            return Err(ProxyError::ConnectionClosed);
+            return Err(RelayError::ConnectionClosed);
         }
 
         tracing::debug!("Connection #{}: Sent auth challenge", conn_id);
@@ -64,19 +64,19 @@ impl ConnectionHandler {
         {
             Ok(Some(Ok(Message::Text(text)))) => text,
             Ok(Some(Ok(_))) => {
-                return Err(ProxyError::InvalidMessage(
+                return Err(RelayError::InvalidMessage(
                     "Expected text message for auth".to_string(),
                 ));
             }
             Ok(Some(Err(e))) => return Err(ws_err(e)),
-            Ok(None) => return Err(ProxyError::ConnectionClosed),
-            Err(_) => return Err(ProxyError::AuthenticationTimeout),
+            Ok(None) => return Err(RelayError::ConnectionClosed),
+            Err(_) => return Err(RelayError::AuthenticationTimeout),
         };
 
         let (identity, fingerprint) = match serde_json::from_str::<Messages>(&auth_response)? {
             Messages::AuthResponse(identity, response) => {
                 if !response.verify(&challenge, &identity) {
-                    return Err(ProxyError::AuthenticationFailed(
+                    return Err(RelayError::AuthenticationFailed(
                         "Invalid signature".to_string(),
                     ));
                 }
@@ -89,7 +89,7 @@ impl ConnectionHandler {
                 (identity, fingerprint)
             }
             _ => {
-                return Err(ProxyError::AuthenticationFailed(
+                return Err(RelayError::AuthenticationFailed(
                     "Expected AuthResponse".to_string(),
                 ));
             }
@@ -139,7 +139,7 @@ impl ConnectionHandler {
         ws_read: &mut futures_util::stream::SplitStream<WebSocketStream<TcpStream>>,
         fingerprint: IdentityFingerprint,
         conn_id: u64,
-    ) -> Result<(), ProxyError> {
+    ) -> Result<(), RelayError> {
         let inactivity_deadline = tokio::time::sleep(CLIENT_INACTIVITY_TIMEOUT);
         tokio::pin!(inactivity_deadline);
 
@@ -204,7 +204,7 @@ impl ConnectionHandler {
 
                     // Store mapping in rendezvous_map
                     {
-                        use crate::server::proxy_server::RendezvousEntry;
+                        use crate::server::relay_server::RendezvousEntry;
                         let entry = RendezvousEntry {
                             fingerprint,
                             created_at: SystemTime::now(),

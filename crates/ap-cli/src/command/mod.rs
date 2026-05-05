@@ -26,7 +26,7 @@ pub use connections::ConnectionsArgs;
 pub use listen::ListenArgs;
 pub use run::RunArgs;
 
-const DEFAULT_PROXY_URL: &str = "wss://ap.lesspassword.dev";
+const DEFAULT_RELAY_URL: &str = "wss://ap.lesspassword.dev";
 
 /// Build a version string like "0.3.0 (abc1234)" when GIT_HASH is set by CI,
 /// or just "0.3.0" for local dev builds.
@@ -96,9 +96,9 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
 
-    /// Proxy server URL
-    #[arg(long, default_value = DEFAULT_PROXY_URL, global = true)]
-    pub proxy_url: String,
+    /// Relay server URL
+    #[arg(long, default_value = DEFAULT_RELAY_URL, global = true)]
+    pub relay_url: String,
 
     /// Token (rendezvous code or PSK token)
     #[arg(long, env = "AAC_TOKEN")]
@@ -135,7 +135,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Connect to proxy and request credentials
+    /// Connect to relay and request credentials
     Connect(ConnectArgs),
     /// Listen for remote client connections (user-client mode)
     Listen(ListenArgs),
@@ -159,7 +159,7 @@ pub async fn process_command(cli: Cli, log_rx: Option<LogReceiver>) -> Result<()
         {
             // Single-shot / shorthand connect with top-level args
             let args = ConnectArgs {
-                proxy_url: cli.proxy_url,
+                relay_url: cli.relay_url,
                 token: cli.token,
                 session: cli.session,
                 ephemeral_connection: cli.ephemeral_connection,

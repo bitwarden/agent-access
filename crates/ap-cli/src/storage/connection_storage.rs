@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use ap_client::{ClientError, ConnectionInfo, ConnectionStore, ConnectionUpdate};
 use ap_noise::{MultiDeviceTransport, PersistentTransportState};
-use ap_proxy_protocol::IdentityFingerprint;
+use ap_relay_protocol::IdentityFingerprint;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tracing::debug;

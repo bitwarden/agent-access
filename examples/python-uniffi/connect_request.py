@@ -37,14 +37,14 @@ async def main() -> int:
     parser = argparse.ArgumentParser(
         description="Request a credential via Agent Access (UniFFI bindings)"
     )
-    parser.add_argument("--proxy", default="wss://ap.lesspassword.dev", help="Proxy server URL")
+    parser.add_argument("--relay", default="wss://ap.lesspassword.dev", help="Relay server URL")
     parser.add_argument("--token", required=True, help="Rendezvous code or PSK token")
     parser.add_argument("--domain", required=True, help="Domain to request credentials for")
     args = parser.parse_args()
 
     try:
         client = RemoteClient(
-            proxy_url=args.proxy,
+            relay_url=args.relay,
             identity_storage=MemoryIdentityStorage(),
             connection_storage=MemoryConnectionStorage(),
             event_handler=None,

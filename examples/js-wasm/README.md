@@ -23,7 +23,7 @@ npm run dev
 Then in a separate terminal, start a listener:
 
 ```bash
-cargo run --bin aac -- listen --proxy wss://ap.lesspassword.dev
+cargo run --bin aac -- listen --relay wss://ap.lesspassword.dev
 ```
 
 Open the URL shown by Vite (default http://localhost:5173), paste the rendezvous code, click **Connect**, enter a domain, and click **Request Credential**.
@@ -57,7 +57,7 @@ client.disconnect();
 
 ## API
 
-### `await createClient(proxyUrl, identityName?)`
+### `await createClient(relayUrl, identityName?)`
 
 Create a client. Identity and sessions are persisted in `localStorage`.
 

@@ -52,13 +52,13 @@ Uses the cached connection from step 2. Approve the request on the listen side.
 from bw_remote_rs import RemoteClient
 
 # Pair (clears previous connection)
-client = RemoteClient(proxy_url="wss://ap.lesspassword.dev")
+client = RemoteClient(relay_url="wss://ap.lesspassword.dev")
 client.clear_connections()
 client.connect(token="ABC-DEF-GHI")
 client.close()
 
 # Later — request a credential using cached connection
-client = RemoteClient(proxy_url="wss://ap.lesspassword.dev")
+client = RemoteClient(relay_url="wss://ap.lesspassword.dev")
 client.connect()
 cred = client.request_credential("example.com")
 print(f"Username: {cred.username}")
@@ -79,4 +79,4 @@ The API is **synchronous** — all async Rust operations are handled internally.
 | `src/storage.rs` | `FileIdentityStorage` + `FileConnectionCache` — file-based identity and connection persistence |
 | `src/types.rs` | `PyCredentialData` + `RemoteAccessError` — Python-facing types |
 
-All crypto, handshake, and transport logic is delegated to the workspace crates (`bw-noise-protocol`, `bw-rat-client`, `bw-proxy-client`).
+All crypto, handshake, and transport logic is delegated to the workspace crates (`ap-noise`, `ap-client`, `ap-relay-client`).

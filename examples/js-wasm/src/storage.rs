@@ -7,7 +7,7 @@
 use ap_client::error::ClientError;
 use ap_client::{ConnectionInfo, ConnectionStore, ConnectionUpdate, IdentityProvider};
 use ap_noise::{MultiDeviceTransport, PersistentTransportState};
-use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair};
+use ap_relay_protocol::{IdentityFingerprint, IdentityKeyPair};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;

@@ -1,18 +1,18 @@
 # Agent Access SDK - Claude Code Configuration
 
-Rust workspace implementing secure peer-to-peer credential sharing over a WebSocket proxy with end-to-end encryption via the Noise Protocol (NNpsk2 pattern). The proxy server is zero-knowledge and cannot decrypt traffic.
+Rust workspace implementing secure peer-to-peer credential sharing over a WebSocket relay with end-to-end encryption via the Noise Protocol (NNpsk2 pattern). The relay server is zero-knowledge and cannot decrypt traffic.
 
 ## Overview
 
 ### What This Project Does
-- Enables secure, encrypted credential retrieval between a trusted device (UserClient) and an untrusted device (RemoteClient) through a zero-knowledge WebSocket relay proxy
-- Ships two binaries: `aac` (CLI for credential operations) and `ap-proxy` (WebSocket relay server)
+- Enables secure, encrypted credential retrieval between a trusted device (UserClient) and an untrusted device (RemoteClient) through a zero-knowledge WebSocket relay
+- Ships two binaries: `aac` (CLI for credential operations) and `ap-relay` (WebSocket relay server)
 - Consumed as a library (`ap-client`) by integrators building custom credential-sharing workflows
 
 ### Key Concepts
-- **Zero-knowledge proxy** — the relay server authenticates clients by identity fingerprint but never sees plaintext credentials
+- **Zero-knowledge relay** — the relay server authenticates clients by identity fingerprint but never sees plaintext credentials
 - **Noise NNpsk2** — a Noise Protocol pattern providing encryption with optional pre-shared key authentication; the "NN" means neither side presents a static key during the handshake, and "psk2" injects a PSK after the second message
-- **IdentityFingerprint** — SHA256 hash of a client's public key (32 bytes / 64 hex chars), used as a stable addressing identifier in the proxy
+- **IdentityFingerprint** — SHA256 hash of a client's public key (32 bytes / 64 hex chars), used as a stable addressing identifier in the relay
 - **HandshakeFingerprint** — 6-character hex string derived from transport keys (`SHA256(r2i_key || i2r_key)[0..3]`), used for out-of-band MITM verification
 - **Rendezvous code** — 9-character alphanumeric code (format `ABC-DEF-GHI`, 36^9 entropy) with 5-minute TTL for initial pairing
 - **PSK token** — `<64-hex-psk>_<64-hex-fingerprint>` (129 chars) for pre-authenticated pairing without rendezvous
@@ -38,12 +38,12 @@ Rust workspace implementing secure peer-to-peer credential sharing over a WebSoc
    |+transport|  XChaCha20-Poly1305     |+transport)|
    +----+-----+                         +-----+----+
         |                                      |
-   ap-proxy-client                      ap-proxy-client
+   ap-relay-client                      ap-relay-client
         |         WebSocket (JSON)             |
         +--------------+  +--------------------+
                        v  v
                 +--------------+
-                |   ap-proxy   |  Zero-knowledge relay
+                |   ap-relay   |  Zero-knowledge relay
                 |  (WebSocket  |  Auth + Rendezvous +
                 |   server)    |  Message routing
                 +--------------+
@@ -78,7 +78,7 @@ crates/
 │       │   ├── remote_client.rs  # RemoteClient + notifications/requests
 │       │   └── user_client.rs    # UserClient + notifications/requests
 │       ├── traits.rs        # SessionStore, IdentityProvider, AuditLog
-│       ├── proxy.rs         # ProxyClient trait
+│       ├── relay.rs         # RelayClient trait
 │       ├── types.rs         # CredentialData, ConnectionMode, PskToken, etc.
 │       ├── memory_session_store.rs
 │       ├── error.rs         # ClientError
@@ -94,27 +94,27 @@ crates/
 │       ├── psk.rs           # Psk, PskId generation
 │       ├── symmetric_key.rs # SymmetricKey (ZeroizeOnDrop)
 │       └── error.rs         # NoiseProtocolError
-├── ap-proxy/                # WebSocket proxy server binary + library
+├── ap-relay/                # WebSocket relay server binary + library
 │   └── src/
 │       ├── main.rs
 │       ├── lib.rs
 │       ├── server/
-│       │   ├── proxy_server.rs  # ProxyServer::run()
+│       │   ├── relay_server.rs  # RelayServer::run()
 │       │   ├── handler.rs       # Per-connection auth + message routing
 │       │   └── mod.rs
 │       └── connection.rs
-├── ap-proxy-client/         # WebSocket client for proxy protocol
+├── ap-relay-client/         # WebSocket client for relay protocol
 │   └── src/
 │       ├── lib.rs
-│       ├── protocol_client.rs  # ProxyProtocolClient (WebSocket impl)
+│       ├── protocol_client.rs  # RelayProtocolClient (WebSocket impl)
 │       └── config.rs           # IncomingMessage enum
-├── ap-proxy-protocol/       # Shared wire protocol types
+├── ap-relay-protocol/       # Shared wire protocol types
 │   └── src/
 │       ├── lib.rs
 │       ├── messages.rs      # Messages enum (AuthChallenge, Send, etc.)
 │       ├── auth.rs          # IdentityKeyPair, Identity, Challenge, etc.
 │       ├── rendezvous.rs    # RendezvousCode
-│       └── error.rs         # ProxyError
+│       └── error.rs         # RelayError
 ├── ap-error/                # FlatError trait
 │   └── src/
 │       ├── lib.rs
@@ -139,22 +139,22 @@ ap-cli (binary: aac)
   └── ap-client (protocol client library)
         ├── ap-noise (Noise handshake + encrypted transport)
         │     └── ap-error / ap-error-macro (error infrastructure)
-        ├── ap-proxy-client (WebSocket client)
-        │     └── ap-proxy-protocol (wire protocol types)
-        └── ap-proxy-protocol
+        ├── ap-relay-client (WebSocket client)
+        │     └── ap-relay-protocol (wire protocol types)
+        └── ap-relay-protocol
 ```
 
 - **ap-noise** — Noise NNpsk2 handshake, `MultiDeviceTransport` for encrypted messaging, XChaCha20-Poly1305 transport encryption, session state persistence for resumption.
-- **ap-proxy** — WebSocket proxy server (`ap-proxy` binary). Three-phase protocol: authentication, rendezvous, messaging. Default listen address: `ws://localhost:8080`.
-- **ap-proxy-client** — `ProxyProtocolClient` WebSocket client library for connecting to the proxy.
-- **ap-proxy-protocol** — Shared wire protocol types (`Messages`, `Challenge`, `Identity`, `RendezvousCode`, etc.).
-- **ap-client** — `RemoteClient` (untrusted device requesting credentials) and `UserClient` (trusted device serving credentials). Uses trait abstractions (`SessionStore`, `IdentityProvider`, `ProxyClient`) and async event/response channels.
+- **ap-relay** — WebSocket relay server (`ap-relay` binary). Three-phase protocol: authentication, rendezvous, messaging. Default listen address: `ws://localhost:8080`.
+- **ap-relay-client** — `RelayProtocolClient` WebSocket client library for connecting to the relay.
+- **ap-relay-protocol** — Shared wire protocol types (`Messages`, `Challenge`, `Identity`, `RendezvousCode`, etc.).
+- **ap-client** — `RemoteClient` (untrusted device requesting credentials) and `UserClient` (trusted device serving credentials). Uses trait abstractions (`SessionStore`, `IdentityProvider`, `RelayClient`) and async event/response channels.
 - **ap-cli** (`aac` binary) — CLI driver with interactive TUI (ratatui + crossterm) and non-interactive single-shot mode. Subcommands: `connect`, `listen`, `connections` (with `clear`/`list`), `run`. Integrates with `bw` CLI for credential lookup via `bw get item`.
 - **ap-error / ap-error-macro** — Error handling utilities ported from Bitwarden's `sdk-internal`. Provides the `FlatError` trait and `#[ap_error(flat)]` proc macro.
 
 ### Key Principles
-1. **Zero-knowledge relay** — the proxy authenticates identities but never sees plaintext; all credential data is encrypted end-to-end via Noise
-2. **Trait-based abstractions** — `SessionStore`, `IdentityProvider`, `ProxyClient`, and `AuditLog` decouple protocol logic from storage, transport, and auditing implementations
+1. **Zero-knowledge relay** — the relay authenticates identities but never sees plaintext; all credential data is encrypted end-to-end via Noise
+2. **Trait-based abstractions** — `SessionStore`, `IdentityProvider`, `RelayClient`, and `AuditLog` decouple protocol logic from storage, transport, and auditing implementations
 3. **Event-response channels** — clients emit `Notification` events (fire-and-forget via `mpsc`) and `Request` events (requiring a `oneshot::Sender` reply), keeping the protocol loop decoupled from UI/business logic
 
 ### Core Patterns
@@ -163,7 +163,7 @@ ap-cli (binary: aac)
 
 **Purpose**: Decouple protocol logic from storage, identity, and transport implementations so consumers can plug in their own backends.
 
-**Key traits** (`crates/ap-client/src/traits.rs` and `crates/ap-client/src/proxy.rs`):
+**Key traits** (`crates/ap-client/src/traits.rs` and `crates/ap-client/src/relay.rs`):
 
 ```rust
 #[async_trait]
@@ -181,7 +181,7 @@ pub trait IdentityProvider: Send + Sync {
 }
 
 #[async_trait]
-pub trait ProxyClient: Send + Sync {
+pub trait RelayClient: Send + Sync {
     async fn connect(&mut self, identity: IdentityKeyPair)
         -> Result<mpsc::UnboundedReceiver<IncomingMessage>, ClientError>;
     async fn request_rendezvous(&self) -> Result<(), ClientError>;
@@ -197,7 +197,7 @@ pub trait AuditLog: Send + Sync {
 }
 ```
 
-**Built-in implementations**: `MemorySessionStore`, `MemoryIdentityProvider`, `NoOpAuditLog` (all in `ap-client`); `ProxyProtocolClient` (in `ap-proxy-client`).
+**Built-in implementations**: `MemorySessionStore`, `MemoryIdentityProvider`, `NoOpAuditLog` (all in `ap-client`); `RelayProtocolClient` (in `ap-relay-client`).
 
 #### Event-Response Channel Pattern
 
@@ -229,7 +229,7 @@ pub enum UserClientRequest {
 
 **Usage**: The caller spawns a task to drain `notifications` and `requests`, replying via the `oneshot::Sender` on each request.
 
-#### Three-Phase Proxy Protocol
+#### Three-Phase Relay Protocol
 
 1. **Authentication**: Server sends `AuthChallenge` (32-byte nonce) -> client replies with `AuthResponse` (COSE_Sign1 signature + COSE public key identity) -> server verifies and registers connection by `IdentityFingerprint`. 5-second timeout.
 2. **Rendezvous** (optional, new connections only): Client sends `GetRendezvous` -> server generates 9-char code (5-minute TTL, single-use) -> discovering client sends `GetIdentity(code)` -> server returns target's `IdentityInfo`.
@@ -247,12 +247,12 @@ Noise handshake and encrypted credential payloads are layered on top as `Protoco
 cargo build                        # Build all crates (debug)
 cargo build --release              # Build all crates (release)
 cargo run --bin aac                # Run the CLI application
-cargo run --bin ap-proxy           # Run the WebSocket proxy server
+cargo run --bin ap-relay           # Run the WebSocket relay server
 ```
 
 ### Adding a New Client Trait Implementation
 
-The most common development task is implementing a new `SessionStore`, `IdentityProvider`, or `ProxyClient` for a new platform or backend.
+The most common development task is implementing a new `SessionStore`, `IdentityProvider`, or `RelayClient` for a new platform or backend.
 
 **1. Implement the trait** (e.g., `my_session_store.rs`)
 ```rust
@@ -275,11 +275,11 @@ impl SessionStore for MySessionStore {
 let handle = RemoteClient::connect(
     Box::new(my_identity_provider),
     Box::new(my_session_store),
-    Box::new(ProxyProtocolClient::new(proxy_url)),
+    Box::new(RelayProtocolClient::new(relay_url)),
 ).await?;
 ```
 
-**3. Write tests** — see the mock proxy pattern in `crates/ap-client/tests/pairing.rs`
+**3. Write tests** — see the mock relay pattern in `crates/ap-client/tests/pairing.rs`
 
 ### Adding a New CLI Subcommand
 
@@ -364,7 +364,7 @@ pub enum ConnectionMode {
 
 ### Demo Flow
 
-1. Start proxy: `cargo run --bin ap-proxy`
+1. Start relay: `cargo run --bin ap-relay`
 2. Start user-client: `cargo run --bin aac -- listen`
 3. Copy the pairing token (9-char code, e.g. `ABC-DEF-GHI`) from step 2, connect: `cargo run --bin aac -- connect --token <CODE>`
 4. Type domains on the connect side to request credentials; approve on the listen side
@@ -422,7 +422,7 @@ pub struct SessionInfo {
 ### Wire Protocol Messages
 
 ```rust
-// Proxy protocol (crates/ap-proxy-protocol/src/messages.rs)
+// Relay protocol (crates/ap-relay-protocol/src/messages.rs)
 pub enum Messages {
     AuthChallenge(Challenge),
     AuthResponse(Identity, ChallengeResponse),
@@ -446,7 +446,7 @@ enum ProtocolMessage {
 
 | Layer | Format |
 |-------|--------|
-| Proxy wire protocol | JSON (WebSocket text frames) |
+| Relay wire protocol | JSON (WebSocket text frames) |
 | Identity key files (`~/.access-protocol/*.key`) | CBOR via COSE |
 | Session cache (`~/.access-protocol/session_cache_*.json`) | JSON |
 | Transport state (inside session cache) | CBOR byte array |
@@ -480,10 +480,10 @@ Storage directory: `~/.access-protocol/`
 |-----------|-----------|---------|----------|
 | `InitiatorHandshake` / `ResponderHandshake` | Noise NNpsk2 (Curve25519 or ML-KEM-768) | Key agreement | `ap-noise/src/handshake.rs` |
 | `MultiDeviceTransport` | XChaCha20-Poly1305 (random nonce) | Transport encryption | `ap-noise/src/transport.rs` |
-| `IdentityKeyPair` | Ed25519 or ML-DSA-65 | Identity signing | `ap-proxy-protocol/src/auth.rs` |
-| `Challenge::sign()` | COSE_Sign1 | Proxy authentication | `ap-proxy-protocol/src/auth.rs` |
+| `IdentityKeyPair` | Ed25519 or ML-DSA-65 | Identity signing | `ap-relay-protocol/src/auth.rs` |
+| `Challenge::sign()` | COSE_Sign1 | Relay authentication | `ap-relay-protocol/src/auth.rs` |
 | `HandshakeFingerprint` | SHA256 (first 3 bytes) | MITM verification | `ap-noise/src/handshake.rs` |
-| `IdentityFingerprint` | SHA256 (full 32 bytes) | Client addressing | `ap-proxy-protocol/src/auth.rs` |
+| `IdentityFingerprint` | SHA256 (full 32 bytes) | Client addressing | `ap-relay-protocol/src/auth.rs` |
 | `Psk::id()` | SHA256 (first 8 bytes) | Non-secret PSK lookup | `ap-noise/src/psk.rs` |
 
 ### Transport Security Constants
@@ -493,27 +493,27 @@ const REKEY_INTERVAL: u64 = 86400;        // 24 hours — automatic re-key inter
 const MAX_REKEY_GAP: u64 = 1024;          // Max chain counter gap before Desynchronized error
 const MAX_MESSAGE_AGE: u64 = 86400;       // 1 day — reject older messages
 const CLOCK_SKEW_TOLERANCE: u64 = 60;     // 1 minute — future message tolerance
-const CLIENT_INACTIVITY_TIMEOUT: Duration = Duration::from_secs(120); // Proxy disconnects idle clients
+const CLIENT_INACTIVITY_TIMEOUT: Duration = Duration::from_secs(120); // Relay disconnects idle clients
 ```
 
 ### Environment Configuration
 
 | Variable | Required | Description | Default |
 |----------|----------|-------------|---------|
-| `BIND_ADDR` | No | Proxy server bind address | `127.0.0.1:8080` |
-| `RUST_LOG` | No | Tracing log filter | Proxy: `INFO`, CLI: `WARN` |
+| `BIND_ADDR` | No | Relay server bind address | `127.0.0.1:8080` |
+| `RUST_LOG` | No | Tracing log filter | Relay: `INFO`, CLI: `WARN` |
 | `LLM` | No | Disables color output (set by agents) | unset |
 | `NO_COLOR` | No | Disables color output (standard) | unset |
 | `GIT_HASH` | No | Injected by CI for version string | unset |
 
 ### Feature Flags
 
-- `experimental-post-quantum-crypto` — Enables ML-KEM-768 key exchange and ML-DSA-65 signatures. **On by default** in `ap-proxy` and `ap-proxy-client`; off by default in `ap-noise`. When enabled, `IdentityKeyPair::generate()` uses ML-DSA-65 instead of Ed25519, and the default ciphersuite becomes `PQNNpsk2_Kyber768_XChaCha20Poly1305`.
-- `native-websocket` — Enables tokio-tungstenite WebSocket transport in `ap-proxy-client`. **On by default**. Disable for WASM targets.
+- `experimental-post-quantum-crypto` — Enables ML-KEM-768 key exchange and ML-DSA-65 signatures. **On by default** in `ap-relay` and `ap-relay-client`; off by default in `ap-noise`. When enabled, `IdentityKeyPair::generate()` uses ML-DSA-65 instead of Ed25519, and the default ciphersuite becomes `PQNNpsk2_Kyber768_XChaCha20Poly1305`.
+- `native-websocket` — Enables tokio-tungstenite WebSocket transport in `ap-relay-client`. **On by default**. Disable for WASM targets.
 
 ### Authentication & Authorization
 
-- **Proxy authentication**: challenge-response using COSE_Sign1 signatures over a 32-byte random nonce. The server verifies the signature and registers the connection by `IdentityFingerprint`.
+- **Relay authentication**: challenge-response using COSE_Sign1 signatures over a 32-byte random nonce. The server verifies the signature and registers the connection by `IdentityFingerprint`.
 - **Peer authentication (PSK mode)**: both sides prove knowledge of a pre-shared key during the Noise handshake. No additional verification needed.
 - **Peer authentication (Rendezvous mode)**: no pre-shared secret; users must verify the 6-character `HandshakeFingerprint` out-of-band to prevent MITM.
 - **No stored credentials on disk without encryption** — identity keypairs are COSE-encoded but not encrypted at rest (relies on filesystem permissions).
@@ -526,11 +526,11 @@ const CLIENT_INACTIVITY_TIMEOUT: Duration = Duration::from_secs(120); // Proxy d
 
 ```
 crates/ap-client/tests/
-├── pairing.rs             # Mock-proxy integration tests (PSK, rendezvous, reconnect, backpressure)
-└── websocket_proxy.rs     # Real-proxy E2E tests (credential exchange, multi-device, persistence)
+├── pairing.rs             # Mock-relay integration tests (PSK, rendezvous, reconnect, backpressure)
+└── websocket_relay.rs     # Real-relay E2E tests (credential exchange, multi-device, persistence)
 
-crates/ap-proxy/tests/
-└── client_integration.rs  # Proxy protocol tests (auth, messaging, broadcast, cleanup)
+crates/ap-relay/tests/
+└── client_integration.rs  # Relay protocol tests (auth, messaging, broadcast, cleanup)
 
 # Unit tests are embedded in source files via #[cfg(test)] modules throughout all crates
 ```
@@ -539,7 +539,7 @@ crates/ap-proxy/tests/
 
 ```bash
 cargo test                         # Run all tests
-cargo test -p ap-proxy             # Run proxy tests only
+cargo test -p ap-relay             # Run relay tests only
 cargo test -p ap-client            # Run client tests only
 cargo test --test pairing          # Run a specific integration test
 cargo test --test client_integration
@@ -547,36 +547,36 @@ cargo test --test client_integration
 
 ### Writing Tests
 
-**Mock Proxy Pattern** (for unit/integration tests without a real server):
+**Mock Relay Pattern** (for unit/integration tests without a real server):
 
 ```rust
 // Create paired mock proxies that relay messages to each other
-let (user_proxy, remote_proxy) = create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
+let (user_relay, remote_relay) = create_mock_relay_pair(user_fingerprint, remote_fingerprint);
 
 let UserClientHandle { client, notifications, requests } = UserClient::connect(
     Box::new(MemoryIdentityProvider::new()),
     Box::new(MemorySessionStore::new()),
-    Box::new(user_proxy),
+    Box::new(user_relay),
     None,
 ).await?;
 ```
 
-See `crates/ap-client/tests/pairing.rs` for the full `MockProxyClient` and `create_mock_proxy_pair()` implementations.
+See `crates/ap-client/tests/pairing.rs` for the full `MockRelayClient` and `create_mock_relay_pair()` implementations.
 
-**Real Proxy E2E Pattern** (for full-stack tests):
+**Real Relay E2E Pattern** (for full-stack tests):
 
 ```rust
-// Start an ephemeral proxy on a random port
+// Start an ephemeral relay on a random port
 async fn start_test_server() -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("should bind");
     let addr = listener.local_addr().expect("should get addr");
-    let server = ProxyServer::new(addr);
+    let server = RelayServer::new(addr);
     tokio::spawn(async move { server.run_with_listener(listener).await.ok() });
     addr
 }
 ```
 
-See `crates/ap-client/tests/websocket_proxy.rs` for full examples.
+See `crates/ap-client/tests/websocket_relay.rs` for full examples.
 
 **Key testing conventions:**
 - Always wrap async operations in `tokio::time::timeout()` to prevent hanging tests
@@ -586,7 +586,7 @@ See `crates/ap-client/tests/websocket_proxy.rs` for full examples.
 
 ### Test Environment
 
-- **Dev dependencies**: `ap-proxy` (for `ProxyServer` in E2E tests), `tokio` with `rt-multi-thread`, `macros`, `time`, `test-util`
+- **Dev dependencies**: `ap-relay` (for `RelayServer` in E2E tests), `tokio` with `rt-multi-thread`, `macros`, `time`, `test-util`
 - **No external services required** — all tests are self-contained
 - **No test fixtures on disk** — credentials and sessions are created in-memory per test
 
@@ -604,7 +604,7 @@ See `crates/ap-client/tests/websocket_proxy.rs` for full examples.
 - `snake_case` for: variables, functions, modules, file names
 - `PascalCase` for: types, traits, enum variants
 - `SCREAMING_SNAKE_CASE` for: constants
-- Binary names: `aac` (CLI), `ap-proxy` (server)
+- Binary names: `aac` (CLI), `ap-relay` (server)
 - Crate names: `ap-` prefix for all workspace crates
 
 ### Rust Conventions
@@ -687,7 +687,7 @@ Workspace version managed in root `Cargo.toml`: currently **0.7.0**.
 ### Publishing
 
 Crates are published to crates.io in dependency order via CI (`release.yml`, triggered by `v*` tags):
-1. `ap-error-macro` -> 2. `ap-error` -> 3. `ap-noise` -> 4. `ap-proxy-protocol` -> 5. `ap-proxy-client` -> 6. `ap-proxy` -> 7. `ap-client` -> 8. `ap-cli`
+1. `ap-error-macro` -> 2. `ap-error` -> 3. `ap-noise` -> 4. `ap-relay-protocol` -> 5. `ap-relay-client` -> 6. `ap-relay` -> 7. `ap-client` -> 8. `ap-cli`
 
 ---
 
@@ -721,9 +721,9 @@ Crates are published to crates.io in dependency order via CI (`release.yml`, tri
 
 ### Debug Tips
 
-- Set `RUST_LOG=debug` (or `--verbose` on the CLI) to see Noise handshake steps and proxy protocol messages
+- Set `RUST_LOG=debug` (or `--verbose` on the CLI) to see Noise handshake steps and relay protocol messages
 - `RUST_LOG=ap_noise=trace` for transport-level encrypt/decrypt traces
-- The proxy logs authenticated identity fingerprints at INFO level — use this to verify connections
+- The relay logs authenticated identity fingerprints at INFO level — use this to verify connections
 - Use `aac connections list` to inspect cached sessions and their transport state
 
 ---

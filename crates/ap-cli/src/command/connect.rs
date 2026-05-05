@@ -1,10 +1,10 @@
 //! Connect command implementation
 //!
-//! Handles the interactive session for connecting to a proxy
+//! Handles the interactive session for connecting to a relay
 //! and requesting credentials over a secure Noise Protocol channel.
 
 use ap_client::{
-    ClientError, ConnectionInfo, ConnectionMode, ConnectionStore, DefaultProxyClient,
+    ClientError, ConnectionInfo, ConnectionMode, ConnectionStore, DefaultRelayClient,
     IdentityFingerprint, IdentityProvider, Psk, PskToken, RemoteClient,
     RemoteClientFingerprintReply, RemoteClientNotification, RemoteClientRequest,
 };
@@ -27,7 +27,7 @@ use super::util::{format_connect_notification, format_relative_time};
 use crate::storage::{FileConnectionCache, FileIdentityStorage};
 use ap_client::MemoryConnectionStore;
 
-use super::DEFAULT_PROXY_URL;
+use super::DEFAULT_RELAY_URL;
 
 /// Arguments for the connect command
 #[derive(Args)]
@@ -44,9 +44,9 @@ AUTOMATION / AGENT / LLM USE:
   --output json returns structured JSON to stdout (status to stderr).
   Exit codes: 0=success, 1=error, 2=connection failed, 3=auth failed, 4=not found, 5=fingerprint mismatch")]
 pub struct ConnectArgs {
-    /// Proxy server URL
-    #[arg(long, default_value = DEFAULT_PROXY_URL)]
-    pub proxy_url: String,
+    /// Relay server URL
+    #[arg(long, default_value = DEFAULT_RELAY_URL)]
+    pub relay_url: String,
 
     /// Token (rendezvous code or PSK token)
     #[arg(long, env = "AAC_TOKEN", conflicts_with = "session")]
@@ -92,7 +92,7 @@ impl ConnectArgs {
 
         if let Some(query) = query {
             run_single_shot(
-                self.proxy_url,
+                self.relay_url,
                 self.token,
                 self.session,
                 self.ephemeral_connection,
@@ -103,7 +103,7 @@ impl ConnectArgs {
             .await
         } else {
             run_interactive_session(
-                self.proxy_url,
+                self.relay_url,
                 self.token,
                 self.session,
                 self.ephemeral_connection,
@@ -241,7 +241,7 @@ fn spawn_pairing(
 
 /// Run an interactive session for requesting credentials
 async fn run_interactive_session(
-    proxy_url: String,
+    relay_url: String,
     token: Option<String>,
     session_fingerprint: Option<String>,
     ephemeral_connection: bool,
@@ -278,7 +278,7 @@ async fn run_interactive_session(
     // otherwise they are consumed when the user picks a session or enters a token.
     let mut deferred_identity: Option<Box<dyn IdentityProvider>> = Some(identity_provider);
     let mut deferred_connection_store: Option<Box<dyn ConnectionStore>> = Some(connection_store);
-    let deferred_proxy_url = proxy_url;
+    let deferred_relay_url = relay_url;
 
     let mut notification_rx: Option<mpsc::Receiver<RemoteClientNotification>> = None;
     let mut request_rx: Option<mpsc::Receiver<RemoteClientRequest>> = None;
@@ -300,7 +300,7 @@ async fn run_interactive_session(
             deferred_connection_store
                 .take()
                 .expect("connection store consumed twice"),
-            &deferred_proxy_url,
+            &deferred_relay_url,
         )
         .await
         {
@@ -384,7 +384,7 @@ async fn run_interactive_session(
                                         match start_connection(
                                             deferred_identity.take().expect("identity consumed twice"),
                                             deferred_connection_store.take().expect("connection store consumed twice"),
-                                            &deferred_proxy_url,
+                                            &deferred_relay_url,
                                         ).await {
                                             Ok((nrx, rrx, c)) => {
                                                 pairing_task = Some(spawn_pairing(&c, &mode, verify_fingerprint));
@@ -436,7 +436,7 @@ async fn run_interactive_session(
                                             match start_connection(
                                                 deferred_identity.take().expect("identity consumed twice"),
                                                 deferred_connection_store.take().expect("connection store consumed twice"),
-                                                &deferred_proxy_url,
+                                                &deferred_relay_url,
                                             ).await {
                                                 Ok((nrx, rrx, c)) => {
                                                     pairing_task = Some(spawn_pairing(&c, &mode, verify_fingerprint));
@@ -703,12 +703,12 @@ async fn run_interactive_session(
 /// This is the agent/LLM-friendly code path. It never initializes ratatui,
 /// prints structured output to stdout, status to stderr, and exits with a
 /// well-defined exit code.
-/// Connect to the proxy, fetch a single credential, and return it.
+/// Connect to the relay, fetch a single credential, and return it.
 ///
 /// Shared by `run_single_shot` and the `run` subcommand. Returns the
 /// credential on success, or an error that the caller can format/handle.
 pub(super) async fn fetch_credential(
-    proxy_url: &str,
+    relay_url: &str,
     token: Option<&str>,
     session_fingerprint: Option<&str>,
     ephemeral_connection: bool,
@@ -727,10 +727,10 @@ pub(super) async fn fetch_credential(
     let cached_connections = connection_store.list().await;
     let mode = resolve_connection_mode(token, session_fingerprint, &cached_connections)?;
 
-    info!("Connecting to proxy...");
+    info!("Connecting to relay...");
 
     let (mut notification_rx, _request_rx, client) =
-        start_connection(identity_provider, connection_store, proxy_url).await?;
+        start_connection(identity_provider, connection_store, relay_url).await?;
 
     // Drain notifications in background (prevents channel backpressure)
     tokio::spawn(async move { while notification_rx.recv().await.is_some() {} });
@@ -775,7 +775,7 @@ pub(super) async fn fetch_credential(
 }
 
 async fn run_single_shot(
-    proxy_url: String,
+    relay_url: String,
     token: Option<String>,
     session_fingerprint: Option<String>,
     ephemeral_connection: bool,
@@ -787,7 +787,7 @@ async fn run_single_shot(
 
     let credential_timeout = timeout_secs.map(std::time::Duration::from_secs);
     match fetch_credential(
-        &proxy_url,
+        &relay_url,
         token.as_deref(),
         session_fingerprint.as_deref(),
         ephemeral_connection,
@@ -819,24 +819,24 @@ async fn run_single_shot(
     }
 }
 
-/// Connect to the proxy and return the notification/request channels + client handle.
+/// Connect to the relay and return the notification/request channels + client handle.
 ///
 /// Does NOT start pairing — the caller drives pairing as a concurrent task
 /// so fingerprint verification requests can be handled without deadlocking.
 async fn start_connection(
     identity_provider: Box<dyn IdentityProvider>,
     connection_store: Box<dyn ConnectionStore>,
-    proxy_url: &str,
+    relay_url: &str,
 ) -> Result<(
     mpsc::Receiver<RemoteClientNotification>,
     mpsc::Receiver<RemoteClientRequest>,
     RemoteClient,
 )> {
-    let proxy_client = Box::new(DefaultProxyClient::from_url(proxy_url.to_string()));
+    let relay_client = Box::new(DefaultRelayClient::from_url(relay_url.to_string()));
 
-    let handle = RemoteClient::connect(identity_provider, connection_store, proxy_client)
+    let handle = RemoteClient::connect(identity_provider, connection_store, relay_client)
         .await
-        .map_err(|e| color_eyre::eyre::eyre!("Connection to proxy failed: {}", e))?;
+        .map_err(|e| color_eyre::eyre::eyre!("Connection to relay failed: {}", e))?;
 
     Ok((handle.notifications, handle.requests, handle.client))
 }

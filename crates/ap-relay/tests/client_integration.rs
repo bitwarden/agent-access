@@ -1,5 +1,5 @@
-use ap_proxy::server::ProxyServer;
-use ap_proxy_client::{IdentityKeyPair, IncomingMessage, ProxyProtocolClient};
+use ap_relay::server::RelayServer;
+use ap_relay_client::{IdentityKeyPair, IncomingMessage, RelayProtocolClient};
 use std::net::SocketAddr;
 
 /// Small delay to allow the server to finish registering a connection after
@@ -14,7 +14,7 @@ async fn start_test_server() -> SocketAddr {
         .expect("should bind to localhost");
     let addr = listener.local_addr().expect("should get local address");
 
-    let server = ProxyServer::new(addr);
+    let server = RelayServer::new(addr);
     tokio::spawn(async move { server.run_with_listener(listener).await.ok() });
 
     addr
@@ -24,7 +24,7 @@ async fn start_test_server() -> SocketAddr {
 async fn test_client_connect_and_authenticate() {
     let addr = start_test_server().await;
 
-    let mut client = ProxyProtocolClient::from_url(format!("ws://{addr}"));
+    let mut client = RelayProtocolClient::from_url(format!("ws://{addr}"));
     let _incoming = client
         .connect(IdentityKeyPair::generate())
         .await
@@ -43,8 +43,8 @@ async fn test_client_connect_and_authenticate() {
 async fn test_two_clients_messaging() {
     let addr = start_test_server().await;
 
-    let mut client_a = ProxyProtocolClient::from_url(format!("ws://{addr}"));
-    let mut client_b = ProxyProtocolClient::from_url(format!("ws://{addr}"));
+    let mut client_a = RelayProtocolClient::from_url(format!("ws://{addr}"));
+    let mut client_b = RelayProtocolClient::from_url(format!("ws://{addr}"));
 
     let mut incoming_a = client_a
         .connect(IdentityKeyPair::generate())
@@ -129,7 +129,7 @@ async fn test_two_clients_messaging() {
 async fn test_rendezvous_request() {
     let addr = start_test_server().await;
 
-    let mut client = ProxyProtocolClient::from_url(format!("ws://{addr}"));
+    let mut client = RelayProtocolClient::from_url(format!("ws://{addr}"));
     let mut incoming = client
         .connect(IdentityKeyPair::generate())
         .await
@@ -161,7 +161,7 @@ async fn test_rendezvous_request() {
 async fn test_disconnect_cleanup() {
     let addr = start_test_server().await;
 
-    let mut client = ProxyProtocolClient::from_url(format!("ws://{addr}"));
+    let mut client = RelayProtocolClient::from_url(format!("ws://{addr}"));
     client
         .connect(IdentityKeyPair::generate())
         .await
@@ -178,8 +178,8 @@ async fn test_disconnect_cleanup() {
 async fn test_multiple_messages() {
     let addr = start_test_server().await;
 
-    let mut client_a = ProxyProtocolClient::from_url(format!("ws://{addr}"));
-    let mut client_b = ProxyProtocolClient::from_url(format!("ws://{addr}"));
+    let mut client_a = RelayProtocolClient::from_url(format!("ws://{addr}"));
+    let mut client_b = RelayProtocolClient::from_url(format!("ws://{addr}"));
 
     let _incoming_a = client_a
         .connect(IdentityKeyPair::generate())
@@ -242,8 +242,8 @@ async fn test_multiple_clients_same_identity_can_connect() {
     let shared_keypair = IdentityKeyPair::generate();
     let cose_bytes = shared_keypair.to_cose();
 
-    let mut client_a = ProxyProtocolClient::from_url(format!("ws://{addr}"));
-    let mut client_b = ProxyProtocolClient::from_url(format!("ws://{addr}"));
+    let mut client_a = RelayProtocolClient::from_url(format!("ws://{addr}"));
+    let mut client_b = RelayProtocolClient::from_url(format!("ws://{addr}"));
 
     let _incoming_a = client_a
         .connect(IdentityKeyPair::from_cose(&cose_bytes).unwrap())
@@ -281,9 +281,9 @@ async fn test_messages_broadcast_to_all_same_identity_connections() {
     let user_keypair = IdentityKeyPair::generate();
     let user_cose = user_keypair.to_cose();
 
-    let mut user_client_a = ProxyProtocolClient::from_url(format!("ws://{addr}"));
-    let mut user_client_b = ProxyProtocolClient::from_url(format!("ws://{addr}"));
-    let mut sender_client = ProxyProtocolClient::from_url(format!("ws://{addr}"));
+    let mut user_client_a = RelayProtocolClient::from_url(format!("ws://{addr}"));
+    let mut user_client_b = RelayProtocolClient::from_url(format!("ws://{addr}"));
+    let mut sender_client = RelayProtocolClient::from_url(format!("ws://{addr}"));
 
     let mut incoming_user_a = user_client_a
         .connect(IdentityKeyPair::from_cose(&user_cose).unwrap())
@@ -372,9 +372,9 @@ async fn test_cleanup_when_one_connection_disconnects() {
     let user_keypair = IdentityKeyPair::generate();
     let user_cose = user_keypair.to_cose();
 
-    let mut user_client_a = ProxyProtocolClient::from_url(format!("ws://{addr}"));
-    let mut user_client_b = ProxyProtocolClient::from_url(format!("ws://{addr}"));
-    let mut sender_client = ProxyProtocolClient::from_url(format!("ws://{addr}"));
+    let mut user_client_a = RelayProtocolClient::from_url(format!("ws://{addr}"));
+    let mut user_client_b = RelayProtocolClient::from_url(format!("ws://{addr}"));
+    let mut sender_client = RelayProtocolClient::from_url(format!("ws://{addr}"));
 
     let _incoming_user_a = user_client_a
         .connect(IdentityKeyPair::from_cose(&user_cose).unwrap())

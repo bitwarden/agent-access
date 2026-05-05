@@ -14,8 +14,8 @@ path = "src/main.rs"
 
 [dependencies]
 ap-noise = { workspace = true }
-ap-proxy-client = { workspace = true, features = ["native-websocket"] }
-ap-proxy-protocol = { workspace = true }
+ap-relay-client = { workspace = true, features = ["native-websocket"] }
+ap-relay-protocol = { workspace = true }
 ap-client = { workspace = true, features = ["native-websocket"] }
 async-trait = { workspace = true }
 clap = { workspace = true }

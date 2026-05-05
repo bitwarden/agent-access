@@ -1,13 +1,13 @@
-//! Browser WebSocket implementation of the `ProxyClient` trait.
+//! Browser WebSocket implementation of the `RelayClient` trait.
 //!
-//! Uses `web_sys::WebSocket` to communicate with the proxy server,
+//! Uses `web_sys::WebSocket` to communicate with the relay server,
 //! bridging the browser's callback-driven API to the channel-based
-//! `ProxyClient` trait.
+//! `RelayClient` trait.
 
 use ap_client::error::ClientError;
-use ap_client::ProxyClient;
-use ap_proxy_client::IncomingMessage;
-use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair, Messages, RendezvousCode};
+use ap_client::RelayClient;
+use ap_relay_client::IncomingMessage;
+use ap_relay_protocol::{IdentityFingerprint, IdentityKeyPair, Messages, RendezvousCode};
 use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
@@ -15,16 +15,16 @@ use wasm_bindgen::closure::Closure;
 use wasm_bindgen::prelude::*;
 use web_sys::{CloseEvent, ErrorEvent, MessageEvent, WebSocket};
 
-/// A `ProxyClient` implementation using the browser's WebSocket API.
+/// A `RelayClient` implementation using the browser's WebSocket API.
 ///
 /// Closures are registered with `.forget()` (standard WASM practice for event
 /// handlers). The struct only holds `Send + Sync` types.
-pub struct WasmProxyClient {
+pub struct WasmRelayClient {
     url: String,
     ws: Option<WebSocket>,
 }
 
-impl WasmProxyClient {
+impl WasmRelayClient {
     pub fn new(url: String) -> Self {
         Self { url, ws: None }
     }
@@ -43,7 +43,7 @@ impl WasmProxyClient {
 }
 
 #[async_trait]
-impl ProxyClient for WasmProxyClient {
+impl RelayClient for WasmRelayClient {
     async fn connect(
         &mut self,
         identity: IdentityKeyPair,
@@ -117,7 +117,7 @@ impl ProxyClient for WasmProxyClient {
                 let parsed: Messages = match serde_json::from_str(&text) {
                     Ok(m) => m,
                     Err(e) => {
-                        tracing::warn!("Failed to parse proxy message: {e}");
+                        tracing::warn!("Failed to parse relay message: {e}");
                         return;
                     }
                 };

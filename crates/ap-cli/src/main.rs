@@ -1,6 +1,6 @@
 //! aac CLI
 //!
-//! A CLI interface for connecting to a user-client through a proxy
+//! A CLI interface for connecting to a user-client through a relay
 //! to request credentials over a secure Noise Protocol channel.
 
 mod command;
@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
     // Initialize logging with appropriate level
     // - verbose: DEBUG (all messages)
     // - JSON output: WARN (suppress status messages that would pollute structured output)
-    // - default: INFO (show status messages like "Connecting to proxy...")
+    // - default: INFO (show status messages like "Connecting to relay...")
     let log_level = if cli.verbose {
         tracing::Level::DEBUG
     } else if matches!(cli.output, command::output::OutputFormat::Json) {

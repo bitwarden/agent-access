@@ -68,7 +68,7 @@ pub fn format_connect_notification(notification: &RemoteClientNotification) -> O
     match notification {
         RemoteClientNotification::Connecting => Some(Message::rich(
             MessageKind::Status,
-            vec![Span::styled("Connecting to proxy...", text())],
+            vec![Span::styled("Connecting to relay...", text())],
         )),
         RemoteClientNotification::Connected { fingerprint } => {
             let fp_hex = hex::encode(fingerprint.0);
@@ -313,13 +313,13 @@ pub fn format_listen_notification(notification: &UserClientNotification) -> Opti
 
         UserClientNotification::ClientDisconnected {} => Some(Message::new(
             MessageKind::Warning,
-            "Proxy connection lost — attempting to reconnect...",
+            "Relay connection lost — attempting to reconnect...",
         )),
 
         UserClientNotification::Reconnecting { attempt } => Some(Message::rich(
             MessageKind::Status,
             vec![
-                Span::styled("Reconnecting to proxy (attempt ", dim()),
+                Span::styled("Reconnecting to relay (attempt ", dim()),
                 Span::styled(
                     attempt.to_string(),
                     Style::default()
@@ -332,7 +332,7 @@ pub fn format_listen_notification(notification: &UserClientNotification) -> Opti
 
         UserClientNotification::Reconnected {} => Some(Message::new(
             MessageKind::Success,
-            "Reconnected to proxy server",
+            "Reconnected to relay server",
         )),
 
         UserClientNotification::Error { message, context } => {

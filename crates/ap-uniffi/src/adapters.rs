@@ -7,7 +7,7 @@ use ap_client::{
     ConnectionUpdate, IdentityProvider, PskEntry, PskStore,
 };
 use ap_noise::{MultiDeviceTransport, PersistentTransportState, Psk};
-use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair};
+use ap_relay_protocol::{IdentityFingerprint, IdentityKeyPair};
 use async_trait::async_trait;
 
 use crate::callbacks::{

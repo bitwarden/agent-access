@@ -9,7 +9,7 @@
 #
 # Prerequisites:
 #   - `aac` binary on PATH
-#   - A listener running with `aac listen --reusable-psk` on the proxy
+#   - A listener running with `aac listen --reusable-psk` on the relay
 set -euo pipefail
 
 TOKEN="$1"

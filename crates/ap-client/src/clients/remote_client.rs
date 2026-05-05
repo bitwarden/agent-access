@@ -1,13 +1,13 @@
 use std::time::Duration;
 
 use ap_noise::{InitiatorHandshake, MultiDeviceTransport, Psk};
-use ap_proxy_client::IncomingMessage;
-use ap_proxy_protocol::{IdentityFingerprint, RendezvousCode};
+use ap_relay_client::IncomingMessage;
+use ap_relay_protocol::{IdentityFingerprint, RendezvousCode};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use rand::RngCore;
 
 use crate::compat::{now_millis, timeout};
-use crate::proxy::ProxyClient;
+use crate::relay::RelayClient;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, warn};
 
@@ -30,9 +30,9 @@ const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 /// Fire-and-forget status updates emitted by the remote client.
 #[derive(Debug, Clone)]
 pub enum RemoteClientNotification {
-    /// Connecting to the proxy server
+    /// Connecting to the relay server
     Connecting,
-    /// Successfully connected to the proxy
+    /// Successfully connected to the relay
     Connected {
         /// The device's identity fingerprint (hex-encoded)
         fingerprint: IdentityFingerprint,
@@ -166,12 +166,12 @@ enum RemoteClientCommand {
 
 /// A cloneable handle for controlling the remote client.
 ///
-/// Obtained from [`RemoteClient::connect()`], which authenticates with the proxy,
+/// Obtained from [`RemoteClient::connect()`], which authenticates with the relay,
 /// spawns the event loop internally, and returns this handle. All methods
 /// communicate with the event loop through an internal command channel.
 ///
 /// `Clone` and `Send` — share freely across tasks and threads.
-/// Dropping all handles shuts down the event loop and disconnects from the proxy.
+/// Dropping all handles shuts down the event loop and disconnects from the relay.
 /// Handle returned by [`RemoteClient::connect()`] containing the client and its
 /// notification/request channels.
 pub struct RemoteClientHandle {
@@ -186,10 +186,10 @@ pub struct RemoteClient {
 }
 
 impl RemoteClient {
-    /// Connect to the proxy server, spawn the event loop, and return a handle.
+    /// Connect to the relay server, spawn the event loop, and return a handle.
     ///
     /// This is the single entry point. After `connect()` returns, the client is
-    /// authenticated with the proxy and ready for pairing. Use one of the pairing
+    /// authenticated with the relay and ready for pairing. Use one of the pairing
     /// methods to establish a secure channel:
     /// - [`pair_with_handshake()`](Self::pair_with_handshake) for rendezvous-based pairing
     /// - [`pair_with_psk()`](Self::pair_with_psk) for PSK-based pairing
@@ -197,19 +197,19 @@ impl RemoteClient {
     pub async fn connect(
         identity_provider: Box<dyn IdentityProvider>,
         connection_store: Box<dyn ConnectionStore>,
-        mut proxy_client: Box<dyn ProxyClient>,
+        mut relay_client: Box<dyn RelayClient>,
     ) -> Result<RemoteClientHandle, ClientError> {
         let identity_keypair = identity_provider.identity().await;
         let own_fingerprint = identity_keypair.identity().fingerprint();
 
-        debug!("Connecting to proxy with identity {:?}", own_fingerprint);
+        debug!("Connecting to relay with identity {:?}", own_fingerprint);
 
         let (notification_tx, notification_rx) = mpsc::channel(32);
         let (request_tx, request_rx) = mpsc::channel(32);
 
         notify!(notification_tx, RemoteClientNotification::Connecting);
 
-        let incoming_rx = proxy_client.connect(identity_keypair).await?;
+        let incoming_rx = relay_client.connect(identity_keypair).await?;
 
         notify!(
             notification_tx,
@@ -218,7 +218,7 @@ impl RemoteClient {
             }
         );
 
-        debug!("Connected to proxy successfully");
+        debug!("Connected to relay successfully");
 
         // Create command channel
         let (command_tx, command_rx) = mpsc::channel(32);
@@ -226,7 +226,7 @@ impl RemoteClient {
         // Build inner state
         let inner = RemoteClientInner {
             connection_store,
-            proxy_client,
+            relay_client,
             transport: None,
             remote_fingerprint: None,
         };
@@ -367,7 +367,7 @@ impl RemoteClient {
 /// All mutable state for the remote client, owned by the spawned event loop task.
 struct RemoteClientInner {
     connection_store: Box<dyn ConnectionStore>,
-    proxy_client: Box<dyn ProxyClient>,
+    relay_client: Box<dyn RelayClient>,
     transport: Option<MultiDeviceTransport>,
     remote_fingerprint: Option<IdentityFingerprint>,
 }
@@ -390,9 +390,9 @@ impl RemoteClientInner {
                             debug!("Received message while idle");
                         }
                         None => {
-                            // Proxy disconnected
+                            // Relay disconnected
                             notify!(notification_tx, RemoteClientNotification::Disconnected {
-                                reason: Some("Proxy connection closed".to_string()),
+                                reason: Some("Relay connection closed".to_string()),
                             });
                             return;
                         }
@@ -411,7 +411,7 @@ impl RemoteClientInner {
                         None => {
                             // All handles dropped — shut down
                             debug!("All RemoteClient handles dropped, shutting down event loop");
-                            self.proxy_client.disconnect().await.ok();
+                            self.relay_client.disconnect().await.ok();
                             return;
                         }
                     }
@@ -504,7 +504,7 @@ impl RemoteClientInner {
         );
 
         let remote_fingerprint =
-            Self::resolve_rendezvous(self.proxy_client.as_ref(), incoming_rx, &rendezvous_code)
+            Self::resolve_rendezvous(self.relay_client.as_ref(), incoming_rx, &rendezvous_code)
                 .await?;
 
         notify!(
@@ -518,7 +518,7 @@ impl RemoteClientInner {
         notify!(notification_tx, RemoteClientNotification::HandshakeStart);
 
         let (transport, fingerprint_str) = Self::perform_handshake(
-            self.proxy_client.as_ref(),
+            self.relay_client.as_ref(),
             incoming_rx,
             remote_fingerprint,
             None,
@@ -558,7 +558,7 @@ impl RemoteClientInner {
                     );
                 }
                 Ok(Ok(RemoteClientFingerprintReply { approved: false })) => {
-                    self.proxy_client.disconnect().await.ok();
+                    self.relay_client.disconnect().await.ok();
                     notify!(
                         notification_tx,
                         RemoteClientNotification::FingerprintRejected {
@@ -571,7 +571,7 @@ impl RemoteClientInner {
                     return Err(ClientError::ChannelClosed);
                 }
                 Err(_) => {
-                    self.proxy_client.disconnect().await.ok();
+                    self.relay_client.disconnect().await.ok();
                     return Err(ClientError::Timeout(
                         "Fingerprint verification timeout".to_string(),
                     ));
@@ -606,7 +606,7 @@ impl RemoteClientInner {
         notify!(notification_tx, RemoteClientNotification::HandshakeStart);
 
         let (transport, _fingerprint_str) = Self::perform_handshake(
-            self.proxy_client.as_ref(),
+            self.relay_client.as_ref(),
             incoming_rx,
             remote_fingerprint,
             Some(psk),
@@ -759,9 +759,9 @@ impl RemoteClientInner {
             encrypted: encrypted_data,
         };
 
-        // Send via proxy
+        // Send via relay
         let msg_json = serde_json::to_string(&msg)?;
-        self.proxy_client
+        self.relay_client
             .send_to(remote_fingerprint, msg_json.into_bytes())
             .await?;
 
@@ -890,12 +890,12 @@ impl RemoteClientInner {
 
     /// Resolve rendezvous code to identity fingerprint.
     async fn resolve_rendezvous(
-        proxy_client: &dyn ProxyClient,
+        relay_client: &dyn RelayClient,
         incoming_rx: &mut mpsc::UnboundedReceiver<IncomingMessage>,
         rendezvous_code: &str,
     ) -> Result<IdentityFingerprint, ClientError> {
         // Send GetIdentity request
-        proxy_client
+        relay_client
             .request_identity(RendezvousCode::from_string(rendezvous_code.to_string()))
             .await
             .map_err(|e| ClientError::RendezvousResolutionFailed(e.to_string()))?;
@@ -924,7 +924,7 @@ impl RemoteClientInner {
 
     /// Perform Noise handshake as initiator.
     async fn perform_handshake(
-        proxy_client: &dyn ProxyClient,
+        relay_client: &dyn RelayClient,
         incoming_rx: &mut mpsc::UnboundedReceiver<IncomingMessage>,
         remote_fingerprint: IdentityFingerprint,
         psk: Option<Psk>,
@@ -950,7 +950,7 @@ impl RemoteClientInner {
         };
 
         let msg_json = serde_json::to_string(&msg)?;
-        proxy_client
+        relay_client
             .send_to(remote_fingerprint, msg_json.into_bytes())
             .await?;
 

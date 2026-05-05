@@ -1,6 +1,6 @@
-//! Authentication module for the ap-proxy crate. Authentication works by creating a cryptographic
-//! identity - a signature key-pair. The identity is the public key. It is proven to the proxy, by
-//! signing a challenge provided by the proxy using the signature key.
+//! Authentication module for the ap-relay crate. Authentication works by creating a cryptographic
+//! identity - a signature key-pair. The identity is the public key. It is proven to the relay, by
+//! signing a challenge provided by the relay using the signature key.
 
 use coset::{
     CborSerializable, CoseKey, CoseKeyBuilder, CoseSign1, HeaderBuilder, Label,
@@ -13,7 +13,7 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 
-use crate::error::ProxyError;
+use crate::error::RelayError;
 
 /// Signature algorithm selection for key generation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -153,12 +153,12 @@ impl IdentityKeyPair {
     }
 
     /// Deserialize a key pair from COSE key format.
-    pub fn from_cose(cose_bytes: &[u8]) -> Result<Self, ProxyError> {
+    pub fn from_cose(cose_bytes: &[u8]) -> Result<Self, RelayError> {
         let cose_key = CoseKey::from_slice(cose_bytes)
-            .map_err(|_| ProxyError::InvalidMessage("Invalid COSE key encoding".to_string()))?;
+            .map_err(|_| RelayError::InvalidMessage("Invalid COSE key encoding".to_string()))?;
 
         let alg = cose_key.alg.as_ref().ok_or_else(|| {
-            ProxyError::InvalidMessage("Missing algorithm in COSE key".to_string())
+            RelayError::InvalidMessage("Missing algorithm in COSE key".to_string())
         })?;
 
         match alg {
@@ -178,7 +178,7 @@ impl IdentityKeyPair {
                 }
 
                 let seed = seed.ok_or_else(|| {
-                    ProxyError::InvalidMessage(
+                    RelayError::InvalidMessage(
                         "Missing Ed25519 private key seed in COSE key".to_string(),
                     )
                 })?;
@@ -210,7 +210,7 @@ impl IdentityKeyPair {
                 }
 
                 let seed = seed.ok_or_else(|| {
-                    ProxyError::InvalidMessage(
+                    RelayError::InvalidMessage(
                         "Missing ML-DSA-65 private key seed in COSE key".to_string(),
                     )
                 })?;
@@ -224,7 +224,7 @@ impl IdentityKeyPair {
                     public_key: Box::new(public_key.clone()),
                 })
             }
-            _ => Err(ProxyError::InvalidMessage(
+            _ => Err(RelayError::InvalidMessage(
                 "Unsupported algorithm in COSE key".to_string(),
             )),
         }
@@ -233,12 +233,12 @@ impl IdentityKeyPair {
     /// Get the public identity corresponding to this key pair.
     ///
     /// The public [`Identity`] contains only the public key and can be shared freely.
-    /// It is used to verify signatures and identify clients to the proxy.
+    /// It is used to verify signatures and identify clients to the relay.
     ///
     /// # Examples
     ///
     /// ```
-    /// use ap_proxy_protocol::IdentityKeyPair;
+    /// use ap_relay_protocol::IdentityKeyPair;
     ///
     /// let keypair = IdentityKeyPair::generate();
     /// let public_identity = keypair.identity();
@@ -254,12 +254,12 @@ impl IdentityKeyPair {
 /// A public cryptographic identity.
 ///
 /// Contains the COSE-encoded public key that identifies a client. This can be shared freely
-/// and is used by the proxy to verify challenge-response signatures.
+/// and is used by the relay to verify challenge-response signatures.
 ///
 /// # Examples
 ///
 /// ```
-/// use ap_proxy_protocol::IdentityKeyPair;
+/// use ap_relay_protocol::IdentityKeyPair;
 ///
 /// let keypair = IdentityKeyPair::generate();
 /// let identity = keypair.identity();
@@ -369,7 +369,7 @@ impl Identity {
     /// and uniform-length identifier. Fingerprints are used for:
     /// - Identifying clients in message routing
     /// - Displaying identities to users
-    /// - Indexing connections in the proxy server
+    /// - Indexing connections in the relay server
     ///
     /// The fingerprint is deterministic - the same identity always produces
     /// the same fingerprint.
@@ -377,7 +377,7 @@ impl Identity {
     /// # Examples
     ///
     /// ```
-    /// use ap_proxy_protocol::IdentityKeyPair;
+    /// use ap_relay_protocol::IdentityKeyPair;
     ///
     /// let keypair = IdentityKeyPair::generate();
     /// let identity = keypair.identity();
@@ -399,12 +399,12 @@ impl Identity {
 ///
 /// Fingerprints are 32-byte hashes of public keys, providing a uniform-length
 /// identifier that is easier to work with than full public keys. They are used
-/// throughout the proxy protocol for addressing clients.
+/// throughout the relay protocol for addressing clients.
 ///
 /// # Examples
 ///
 /// ```
-/// use ap_proxy_protocol::IdentityKeyPair;
+/// use ap_relay_protocol::IdentityKeyPair;
 /// use std::collections::HashMap;
 ///
 /// let keypair = IdentityKeyPair::generate();
@@ -428,27 +428,27 @@ impl IdentityFingerprint {
     ///
     /// # Errors
     ///
-    /// Returns [`ProxyError::InvalidMessage`] if the string is not exactly 64
+    /// Returns [`RelayError::InvalidMessage`] if the string is not exactly 64
     /// hex characters or contains non-hex characters.
     ///
     /// # Examples
     ///
     /// ```
-    /// use ap_proxy_protocol::IdentityFingerprint;
+    /// use ap_relay_protocol::IdentityFingerprint;
     ///
     /// let hex_str = "a".repeat(64);
     /// let fp = IdentityFingerprint::from_hex(&hex_str).unwrap();
     /// assert_eq!(fp.to_hex(), hex_str);
     /// ```
-    pub fn from_hex(s: &str) -> Result<Self, crate::error::ProxyError> {
+    pub fn from_hex(s: &str) -> Result<Self, crate::error::RelayError> {
         if s.len() != 64 {
-            return Err(crate::error::ProxyError::InvalidMessage(format!(
+            return Err(crate::error::RelayError::InvalidMessage(format!(
                 "Fingerprint hex must be exactly 64 characters, got {}",
                 s.len()
             )));
         }
         let bytes = hex::decode(s).map_err(|e| {
-            crate::error::ProxyError::InvalidMessage(format!("Invalid hex in fingerprint: {e}"))
+            crate::error::RelayError::InvalidMessage(format!("Invalid hex in fingerprint: {e}"))
         })?;
         let mut arr = [0u8; 32];
         arr.copy_from_slice(&bytes);
@@ -461,7 +461,7 @@ impl IdentityFingerprint {
     }
 }
 
-/// A cryptographic challenge issued by the proxy server for authentication.
+/// A cryptographic challenge issued by the relay server for authentication.
 ///
 /// The server sends a random challenge to newly connected clients. Clients must
 /// sign this challenge with their private key to prove their identity without
@@ -480,7 +480,7 @@ impl IdentityFingerprint {
 /// Server-side challenge generation:
 ///
 /// ```
-/// use ap_proxy_protocol::Challenge;
+/// use ap_relay_protocol::Challenge;
 ///
 /// let challenge = Challenge::new();
 /// // Send to client for signing
@@ -489,7 +489,7 @@ impl IdentityFingerprint {
 /// Client-side challenge signing:
 ///
 /// ```
-/// use ap_proxy_protocol::{Challenge, IdentityKeyPair};
+/// use ap_relay_protocol::{Challenge, IdentityKeyPair};
 ///
 /// let keypair = IdentityKeyPair::generate();
 /// # let challenge = Challenge::new();
@@ -514,7 +514,7 @@ impl Challenge {
     /// # Examples
     ///
     /// ```
-    /// use ap_proxy_protocol::Challenge;
+    /// use ap_relay_protocol::Challenge;
     ///
     /// let challenge = Challenge::new();
     /// // Each call produces a different random challenge
@@ -532,7 +532,7 @@ impl Challenge {
     /// # Examples
     ///
     /// ```
-    /// use ap_proxy_protocol::{Challenge, IdentityKeyPair};
+    /// use ap_relay_protocol::{Challenge, IdentityKeyPair};
     ///
     /// let keypair = IdentityKeyPair::generate();
     /// let challenge = Challenge::new();
@@ -606,7 +606,7 @@ impl Challenge {
 /// Create and verify a challenge response:
 ///
 /// ```
-/// use ap_proxy_protocol::{Challenge, IdentityKeyPair};
+/// use ap_relay_protocol::{Challenge, IdentityKeyPair};
 ///
 /// // Client signs challenge
 /// let keypair = IdentityKeyPair::generate();
@@ -643,7 +643,7 @@ impl ChallengeResponse {
     /// # Examples
     ///
     /// ```
-    /// use ap_proxy_protocol::{Challenge, IdentityKeyPair};
+    /// use ap_relay_protocol::{Challenge, IdentityKeyPair};
     ///
     /// let keypair = IdentityKeyPair::generate();
     /// let challenge = Challenge::new();

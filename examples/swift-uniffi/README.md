@@ -37,7 +37,7 @@ DYLD_LIBRARY_PATH=../../target/debug swift run ApUniffiExample --token <PSK_TOKE
 
 ## Usage
 
-Start a proxy and a listener first (see the main project README), then:
+Start a relay and a listener first (see the main project README), then:
 
 ```bash
 # With PSK token
@@ -46,8 +46,8 @@ DYLD_LIBRARY_PATH=../../target/debug swift run ApUniffiExample --token <64hex_ps
 # With rendezvous code
 DYLD_LIBRARY_PATH=../../target/debug swift run ApUniffiExample --token ABC-DEF-GHI --domain example.com
 
-# Custom proxy
-DYLD_LIBRARY_PATH=../../target/debug swift run ApUniffiExample --proxy wss://your-proxy.example.com --token <TOKEN> --domain example.com
+# Custom relay
+DYLD_LIBRARY_PATH=../../target/debug swift run ApUniffiExample --relay wss://your-relay.example.com --token <TOKEN> --domain example.com
 ```
 
 ## Storage

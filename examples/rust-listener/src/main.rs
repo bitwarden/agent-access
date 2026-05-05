@@ -1,6 +1,6 @@
 //! Minimal UserClient (listener) example.
 //!
-//! Connects to a proxy, generates a PSK token, and serves hardcoded
+//! Connects to a relay, generates a PSK token, and serves hardcoded
 //! credentials to any remote client that connects.
 //!
 //! # Usage
@@ -10,14 +10,14 @@
 //! ```
 //!
 //! Copy the printed PSK token and pass it to a RemoteClient (e.g. rust-remote-example).
-//! Set `PROXY_URL` to override the default proxy address (ws://127.0.0.1:8080).
+//! Set `RELAY_URL` to override the default relay address (ws://127.0.0.1:8080).
 
 use ap_client::{
-    CredentialData, CredentialRequestReply, DefaultProxyClient, FingerprintVerificationReply,
+    CredentialData, CredentialRequestReply, DefaultRelayClient, FingerprintVerificationReply,
     MemoryIdentityProvider, MemorySessionStore, UserClient, UserClientRequest,
 };
 
-const DEFAULT_PROXY_URL: &str = "ws://127.0.0.1:8080";
+const DEFAULT_RELAY_URL: &str = "ws://127.0.0.1:8080";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -29,16 +29,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_writer(std::io::stderr)
         .init();
 
-    let proxy_url =
-        std::env::var("PROXY_URL").unwrap_or_else(|_| DEFAULT_PROXY_URL.to_string());
+    let relay_url =
+        std::env::var("RELAY_URL").unwrap_or_else(|_| DEFAULT_RELAY_URL.to_string());
 
     // Ephemeral identity and session store (not persisted)
     let identity = Box::new(MemoryIdentityProvider::new());
     let session_store = Box::new(MemorySessionStore::new());
-    let proxy_client = Box::new(DefaultProxyClient::from_url(proxy_url));
+    let relay_client = Box::new(DefaultRelayClient::from_url(relay_url));
 
-    // Connect to the proxy and start listening
-    let handle = UserClient::connect(identity, session_store, proxy_client, None).await?;
+    // Connect to the relay and start listening
+    let handle = UserClient::connect(identity, session_store, relay_client, None).await?;
     let client = handle.client;
     let mut requests = handle.requests;
 
