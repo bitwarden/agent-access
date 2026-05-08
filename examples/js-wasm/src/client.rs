@@ -148,7 +148,7 @@ impl WasmRemoteClient {
 
         let query = ap_client::CredentialQuery::Domain(domain.to_string());
         let cred = client
-            .request_credential(&query)
+            .request_credential(&query, None)
             .await
             .map_err(client_error_to_js)?;
 
