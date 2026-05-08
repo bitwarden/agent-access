@@ -60,15 +60,16 @@ and verification fails, the connection MUST be rejected (§6.5).
 ## 2. Overview
 
 ```
-   ┌────────────┐  (1) signs token (sub,              ┌──────────────┐
-   │   Vendor   │      session binding)           ───►│ RemoteClient │
-   │            │                                     └──────┬───────┘
-   └────────────┘                                            │ (2) presents token
-          ▲                                          ┌───────▼──────┐
-          └──────── (3) fetch JWKS ──────────────────│  UserClient  │
-                                                     │  (verifies)  │
-                                                     └──────────────┘
-```
+UserClient                              Remote Client                   Vendor
+    |                                         |                           | <Publishes signing public keys>
+    |  <--  establishes Noise tunnel  -->     |                           |
+    |                                         | - requests attestation -> |
+    |                                         | <--- signs attestation--- |
+    |  <------- presents attestation -------- |                           |
+    | -------------------- requests signing public keys --------------->  |
+    | <verifies attestation>                  |                           |
+    |  <----- continues communication ------> |                           |
+  ```
 
 1. Vendor publishes its public verification key set at an HTTPS URL
    on its own origin. Web PKI authenticates the vendor's domain.
