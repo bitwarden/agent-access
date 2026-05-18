@@ -15,6 +15,7 @@ Authors:
 
 Contributors:
 * Ludovic Widmer, Dashlane
+* Nick Steele, OpenAI
 
 ## Introduction
 
