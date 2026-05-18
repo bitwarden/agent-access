@@ -83,6 +83,40 @@ jobs:
       - name: Build
         run: cargo build --workspace
 
+  examples:
+    name: Examples
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install rust
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --version 0.14.0 --locked
+
+      - name: Build rust-listener example
+        run: cargo build --manifest-path examples/rust-listener/Cargo.toml
+
+      - name: Build rust-remote example
+        run: cargo build --manifest-path examples/rust-remote/Cargo.toml
+
+      - name: Build js-wasm example
+        run: wasm-pack build --target web --out-dir pkg examples/js-wasm
+
   test:
     name: Tests
     runs-on: ubuntu-24.04

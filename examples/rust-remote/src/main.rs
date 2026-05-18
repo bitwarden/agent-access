@@ -16,7 +16,7 @@
 //! Set `RELAY_URL` to override the default relay address (ws://127.0.0.1:8080).
 
 use ap_client::{
-    CredentialQuery, DefaultRelayClient, MemoryIdentityProvider, MemorySessionStore, PskToken,
+    CredentialQuery, DefaultRelayClient, MemoryConnectionStore, MemoryIdentityProvider, PskToken,
     RemoteClient,
 };
 
@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Ephemeral identity and session store (not persisted)
     let identity = Box::new(MemoryIdentityProvider::new());
-    let session_store = Box::new(MemorySessionStore::new());
+    let session_store = Box::new(MemoryConnectionStore::new());
     let relay_client = Box::new(DefaultRelayClient::from_url(relay_url));
 
     // Connect to the relay
@@ -76,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("username: {username}");
     }
     if let Some(password) = &credential.password {
-        println!("password: {password}");
+        println!("password: {}", password.as_str());
     }
     if let Some(totp) = &credential.totp {
         println!("totp: {totp}");
