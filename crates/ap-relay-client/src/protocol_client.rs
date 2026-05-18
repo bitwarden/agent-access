@@ -1,5 +1,5 @@
-use ap_proxy_protocol::{
-    IdentityFingerprint, IdentityKeyPair, Messages, ProxyError, RendezvousCode,
+use ap_relay_protocol::{
+    IdentityFingerprint, IdentityKeyPair, Messages, RelayError, RendezvousCode,
 };
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
@@ -14,43 +14,43 @@ const PING_INTERVAL: Duration = Duration::from_secs(30);
 /// Maximum time without a pong before the connection is considered dead.
 const PONG_TIMEOUT: Duration = Duration::from_secs(60);
 
-use super::config::{ClientState, IncomingMessage, ProxyClientConfig};
+use super::config::{ClientState, IncomingMessage, RelayClientConfig};
 
-/// Convert tungstenite errors into ProxyError (replaces the From impl that
-/// was removed from ap-proxy-protocol to keep it free of tungstenite deps).
-fn ws_err(e: tokio_tungstenite::tungstenite::Error) -> ProxyError {
-    ProxyError::WebSocket(e.to_string())
+/// Convert tungstenite errors into RelayError (replaces the From impl that
+/// was removed from ap-relay-protocol to keep it free of tungstenite deps).
+fn ws_err(e: tokio_tungstenite::tungstenite::Error) -> RelayError {
+    RelayError::WebSocket(e.to_string())
 }
 
 type WsStream = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 type WsSink = futures_util::stream::SplitSink<WsStream, Message>;
 type WsSource = futures_util::stream::SplitStream<WsStream>;
 
-/// Client for connecting to and communicating through a ap-proxy server.
+/// Client for connecting to and communicating through a ap-relay server.
 ///
-/// This is the main client API for connecting to a proxy server, authenticating,
+/// This is the main client API for connecting to a relay server, authenticating,
 /// discovering peers via rendezvous codes, and sending messages.
 ///
 /// # Lifecycle
 ///
-/// 1. Create client with [`new()`](ProxyProtocolClient::new)
-/// 2. Connect and authenticate with [`connect()`](ProxyProtocolClient::connect)
+/// 1. Create client with [`new()`](RelayProtocolClient::new)
+/// 2. Connect and authenticate with [`connect()`](RelayProtocolClient::connect)
 /// 3. Perform operations (send messages, request rendezvous codes, etc.)
-/// 4. Disconnect with [`disconnect()`](ProxyProtocolClient::disconnect)
+/// 4. Disconnect with [`disconnect()`](RelayProtocolClient::disconnect)
 ///
 /// # Examples
 ///
 /// Basic usage:
 ///
 /// ```no_run
-/// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage, IdentityKeyPair};
+/// use ap_relay_client::{RelayClientConfig, RelayProtocolClient, IncomingMessage, IdentityKeyPair};
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// // Create and connect
-/// let config = ProxyClientConfig {
-///     proxy_url: "ws://localhost:8080".to_string(),
+/// let config = RelayClientConfig {
+///     relay_url: "ws://localhost:8080".to_string(),
 /// };
-/// let mut client = ProxyProtocolClient::new(config);
+/// let mut client = RelayProtocolClient::new(config);
 /// let mut incoming = client.connect(IdentityKeyPair::generate()).await?;
 ///
 /// // Handle messages
@@ -70,9 +70,9 @@ type WsSource = futures_util::stream::SplitStream<WsStream>;
 /// # Ok(())
 /// # }
 /// ```
-pub struct ProxyProtocolClient {
+pub struct RelayProtocolClient {
     // Configuration
-    config: ProxyClientConfig,
+    config: RelayClientConfig,
     identity: Option<Arc<IdentityKeyPair>>,
 
     // Connection state
@@ -86,23 +86,23 @@ pub struct ProxyProtocolClient {
     write_task_handle: Option<JoinHandle<()>>,
 }
 
-impl ProxyProtocolClient {
-    /// Create a new proxy client with the given configuration.
+impl RelayProtocolClient {
+    /// Create a new relay client with the given configuration.
     ///
-    /// This does not establish a connection - call [`connect()`](ProxyProtocolClient::connect)
+    /// This does not establish a connection - call [`connect()`](RelayProtocolClient::connect)
     /// to connect and authenticate with an identity.
     ///
     /// # Examples
     ///
     /// ```
-    /// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient};
+    /// use ap_relay_client::{RelayClientConfig, RelayProtocolClient};
     ///
-    /// let config = ProxyClientConfig {
-    ///     proxy_url: "ws://localhost:8080".to_string(),
+    /// let config = RelayClientConfig {
+    ///     relay_url: "ws://localhost:8080".to_string(),
     /// };
-    /// let client = ProxyProtocolClient::new(config);
+    /// let client = RelayProtocolClient::new(config);
     /// ```
-    pub fn new(config: ProxyClientConfig) -> Self {
+    pub fn new(config: RelayClientConfig) -> Self {
         Self {
             config,
             identity: None,
@@ -113,14 +113,14 @@ impl ProxyProtocolClient {
         }
     }
 
-    /// Create a new proxy client from just a URL.
+    /// Create a new relay client from just a URL.
     ///
-    /// Convenience constructor equivalent to `new(ProxyClientConfig { proxy_url })`.
-    pub fn from_url(proxy_url: String) -> Self {
-        Self::new(ProxyClientConfig { proxy_url })
+    /// Convenience constructor equivalent to `new(RelayClientConfig { relay_url })`.
+    pub fn from_url(relay_url: String) -> Self {
+        Self::new(RelayClientConfig { relay_url })
     }
 
-    /// Connect to the proxy server and perform authentication.
+    /// Connect to the relay server and perform authentication.
     ///
     /// Establishes a WebSocket connection, completes the challenge-response authentication
     /// using the provided identity, and returns a channel for receiving incoming messages.
@@ -136,25 +136,25 @@ impl ProxyProtocolClient {
     /// # Timeout
     ///
     /// Authentication must complete within 5 seconds or this method returns
-    /// [`ProxyError::AuthenticationTimeout`].
+    /// [`RelayError::AuthenticationTimeout`].
     ///
     /// # Errors
     ///
-    /// - [`ProxyError::AlreadyConnected`] if already connected
-    /// - [`ProxyError::WebSocket`] if connection fails
-    /// - [`ProxyError::AuthenticationFailed`] if signature verification fails
-    /// - [`ProxyError::AuthenticationTimeout`] if authentication takes too long
+    /// - [`RelayError::AlreadyConnected`] if already connected
+    /// - [`RelayError::WebSocket`] if connection fails
+    /// - [`RelayError::AuthenticationFailed`] if signature verification fails
+    /// - [`RelayError::AuthenticationTimeout`] if authentication takes too long
     ///
     /// # Examples
     ///
     /// ```no_run
-    /// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IncomingMessage, IdentityKeyPair};
+    /// use ap_relay_client::{RelayClientConfig, RelayProtocolClient, IncomingMessage, IdentityKeyPair};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let config = ProxyClientConfig {
-    ///     proxy_url: "ws://localhost:8080".to_string(),
+    /// let config = RelayClientConfig {
+    ///     relay_url: "ws://localhost:8080".to_string(),
     /// };
-    /// let mut client = ProxyProtocolClient::new(config);
+    /// let mut client = RelayProtocolClient::new(config);
     ///
     /// // Connect and get incoming message channel
     /// let mut incoming = client.connect(IdentityKeyPair::generate()).await?;
@@ -169,12 +169,12 @@ impl ProxyProtocolClient {
     pub async fn connect(
         &mut self,
         identity: IdentityKeyPair,
-    ) -> Result<mpsc::UnboundedReceiver<IncomingMessage>, ProxyError> {
+    ) -> Result<mpsc::UnboundedReceiver<IncomingMessage>, RelayError> {
         // Check not already connected
         {
             let state = self.state.lock().await;
             if !matches!(*state, ClientState::Disconnected) {
-                return Err(ProxyError::AlreadyConnected);
+                return Err(RelayError::AlreadyConnected);
             }
         }
 
@@ -183,7 +183,7 @@ impl ProxyProtocolClient {
         self.identity = Some(Arc::clone(&identity));
 
         // Connect WebSocket
-        let (ws_stream, _) = connect_async(&self.config.proxy_url)
+        let (ws_stream, _) = connect_async(&self.config.relay_url)
             .await
             .map_err(ws_err)?;
 
@@ -196,7 +196,7 @@ impl ProxyProtocolClient {
         // Create channels
         let (outgoing_tx, outgoing_rx) = mpsc::unbounded_channel::<Message>();
         let (incoming_tx, incoming_rx) = mpsc::unbounded_channel::<IncomingMessage>();
-        let (auth_tx, mut auth_rx) = mpsc::unbounded_channel::<Result<(), ProxyError>>();
+        let (auth_tx, mut auth_rx) = mpsc::unbounded_channel::<Result<(), RelayError>>();
 
         // Shared pong tracker for keep-alive
         let last_pong = Arc::new(Mutex::new(Instant::now()));
@@ -236,7 +236,7 @@ impl ProxyProtocolClient {
                 self.read_task_handle = Some(read_handle);
                 self.write_task_handle = Some(write_handle);
                 self.disconnect().await?;
-                return Err(ProxyError::AuthenticationTimeout);
+                return Err(RelayError::AuthenticationTimeout);
             }
         }
 
@@ -250,35 +250,35 @@ impl ProxyProtocolClient {
 
     /// Send a message to another authenticated client.
     ///
-    /// The message is routed through the proxy server to the destination client.
-    /// The proxy validates the source identity but cannot inspect the payload.
+    /// The message is routed through the relay server to the destination client.
+    /// The relay validates the source identity but cannot inspect the payload.
     ///
     /// # Authentication Required
     ///
     /// This method requires an active authenticated connection. Call
-    /// [`connect()`](ProxyProtocolClient::connect) first.
+    /// [`connect()`](RelayProtocolClient::connect) first.
     ///
     /// # Payload Encryption
     ///
-    /// The proxy does not encrypt message payloads. Clients should implement
+    /// The relay does not encrypt message payloads. Clients should implement
     /// end-to-end encryption (e.g., using the Noise protocol) before calling this method.
     ///
     /// # Errors
     ///
-    /// - [`ProxyError::NotConnected`] if not connected or not authenticated
-    /// - [`ProxyError::DestinationNotFound`] if the destination client is not connected
-    /// - [`ProxyError::Serialization`] if message encoding fails
+    /// - [`RelayError::NotConnected`] if not connected or not authenticated
+    /// - [`RelayError::DestinationNotFound`] if the destination client is not connected
+    /// - [`RelayError::Serialization`] if message encoding fails
     ///
     /// # Examples
     ///
     /// ```no_run
-    /// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IdentityKeyPair};
+    /// use ap_relay_client::{RelayClientConfig, RelayProtocolClient, IdentityKeyPair};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let config = ProxyClientConfig {
-    /// #     proxy_url: "ws://localhost:8080".to_string(),
+    /// # let config = RelayClientConfig {
+    /// #     relay_url: "ws://localhost:8080".to_string(),
     /// # };
-    /// let mut client = ProxyProtocolClient::new(config);
+    /// let mut client = RelayProtocolClient::new(config);
     /// client.connect(IdentityKeyPair::generate()).await?;
     ///
     /// // Get destination fingerprint from rendezvous lookup
@@ -294,12 +294,12 @@ impl ProxyProtocolClient {
         &self,
         destination: IdentityFingerprint,
         payload: Vec<u8>,
-    ) -> Result<(), ProxyError> {
+    ) -> Result<(), RelayError> {
         // Check authenticated
         {
             let state = self.state.lock().await;
             if !matches!(*state, ClientState::Authenticated { .. }) {
-                return Err(ProxyError::NotConnected);
+                return Err(RelayError::NotConnected);
             }
         }
 
@@ -315,10 +315,10 @@ impl ProxyProtocolClient {
         // Send via outgoing_tx channel
         if let Some(tx) = &self.outgoing_tx {
             tx.send(Message::Text(json))
-                .map_err(|_| ProxyError::ChannelSendFailed)?;
+                .map_err(|_| RelayError::ChannelSendFailed)?;
             Ok(())
         } else {
-            Err(ProxyError::NotConnected)
+            Err(RelayError::NotConnected)
         }
     }
 
@@ -326,7 +326,7 @@ impl ProxyProtocolClient {
     ///
     /// The server will generate a temporary code (format: "ABC-DEF-GHI") that maps to your
     /// identity. The code will be delivered via [`IncomingMessage::RendezvousInfo`] on the
-    /// channel returned by [`connect()`](ProxyProtocolClient::connect).
+    /// channel returned by [`connect()`](RelayProtocolClient::connect).
     ///
     /// # Rendezvous Code Properties
     ///
@@ -340,7 +340,7 @@ impl ProxyProtocolClient {
     /// 1. Call this method to request a code
     /// 2. Receive the code via [`IncomingMessage::RendezvousInfo`]
     /// 3. Share the code with a peer (e.g., display as QR code)
-    /// 4. Peer uses [`request_identity()`](ProxyProtocolClient::request_identity) to look up your identity
+    /// 4. Peer uses [`request_identity()`](RelayProtocolClient::request_identity) to look up your identity
     ///
     /// # Authentication Required
     ///
@@ -348,15 +348,15 @@ impl ProxyProtocolClient {
     ///
     /// # Errors
     ///
-    /// - [`ProxyError::NotConnected`] if not connected or not authenticated
+    /// - [`RelayError::NotConnected`] if not connected or not authenticated
     ///
     /// # Examples
     ///
     /// ```no_run
-    /// use ap_proxy_client::{ProxyProtocolClient, IncomingMessage, IdentityKeyPair};
+    /// use ap_relay_client::{RelayProtocolClient, IncomingMessage, IdentityKeyPair};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let mut client = ProxyProtocolClient::from_url("ws://localhost:8080".to_string());
+    /// let mut client = RelayProtocolClient::from_url("ws://localhost:8080".to_string());
     /// let mut incoming = client.connect(IdentityKeyPair::generate()).await?;
     ///
     /// // Request a code
@@ -370,12 +370,12 @@ impl ProxyProtocolClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn request_rendezvous(&self) -> Result<(), ProxyError> {
+    pub async fn request_rendezvous(&self) -> Result<(), RelayError> {
         // Check authenticated
         {
             let state = self.state.lock().await;
             if !matches!(*state, ClientState::Authenticated { .. }) {
-                return Err(ProxyError::NotConnected);
+                return Err(RelayError::NotConnected);
             }
         }
 
@@ -386,10 +386,10 @@ impl ProxyProtocolClient {
         // Send via outgoing_tx channel
         if let Some(tx) = &self.outgoing_tx {
             tx.send(Message::Text(json))
-                .map_err(|_| ProxyError::ChannelSendFailed)?;
+                .map_err(|_| RelayError::ChannelSendFailed)?;
             Ok(())
         } else {
-            Err(ProxyError::NotConnected)
+            Err(RelayError::NotConnected)
         }
     }
 
@@ -410,7 +410,7 @@ impl ProxyProtocolClient {
     ///
     /// # Errors
     ///
-    /// - [`ProxyError::NotConnected`] if not connected or not authenticated
+    /// - [`RelayError::NotConnected`] if not connected or not authenticated
     ///
     /// The server may not respond if the code is invalid, expired, or already used.
     /// Implement a timeout when waiting for the response.
@@ -418,10 +418,10 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```no_run
-    /// use ap_proxy_client::{ProxyProtocolClient, IncomingMessage, IdentityKeyPair, RendezvousCode};
+    /// use ap_relay_client::{RelayProtocolClient, IncomingMessage, IdentityKeyPair, RendezvousCode};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let mut client = ProxyProtocolClient::from_url("ws://localhost:8080".to_string());
+    /// let mut client = RelayProtocolClient::from_url("ws://localhost:8080".to_string());
     /// let mut incoming = client.connect(IdentityKeyPair::generate()).await?;
     ///
     /// // Get code from user (e.g., QR scan, text input)
@@ -450,12 +450,12 @@ impl ProxyProtocolClient {
     pub async fn request_identity(
         &self,
         rendezvous_code: RendezvousCode,
-    ) -> Result<(), ProxyError> {
+    ) -> Result<(), RelayError> {
         // Check authenticated
         {
             let state = self.state.lock().await;
             if !matches!(*state, ClientState::Authenticated { .. }) {
-                return Err(ProxyError::NotConnected);
+                return Err(RelayError::NotConnected);
             }
         }
 
@@ -466,10 +466,10 @@ impl ProxyProtocolClient {
         // Send via outgoing_tx channel
         if let Some(tx) = &self.outgoing_tx {
             tx.send(Message::Text(json))
-                .map_err(|_| ProxyError::ChannelSendFailed)?;
+                .map_err(|_| RelayError::ChannelSendFailed)?;
             Ok(())
         } else {
-            Err(ProxyError::NotConnected)
+            Err(RelayError::NotConnected)
         }
     }
 
@@ -484,13 +484,13 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```no_run
-    /// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IdentityKeyPair};
+    /// use ap_relay_client::{RelayClientConfig, RelayProtocolClient, IdentityKeyPair};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let config = ProxyClientConfig {
-    ///     proxy_url: "ws://localhost:8080".to_string(),
+    /// let config = RelayClientConfig {
+    ///     relay_url: "ws://localhost:8080".to_string(),
     /// };
-    /// let mut client = ProxyProtocolClient::new(config);
+    /// let mut client = RelayProtocolClient::new(config);
     /// client.connect(IdentityKeyPair::generate()).await?;
     /// println!("My fingerprint: {:?}", client.fingerprint());
     /// # Ok(())
@@ -512,13 +512,13 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```no_run
-    /// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IdentityKeyPair};
+    /// use ap_relay_client::{RelayClientConfig, RelayProtocolClient, IdentityKeyPair};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let config = ProxyClientConfig {
-    ///     proxy_url: "ws://localhost:8080".to_string(),
+    /// let config = RelayClientConfig {
+    ///     relay_url: "ws://localhost:8080".to_string(),
     /// };
-    /// let mut client = ProxyProtocolClient::new(config);
+    /// let mut client = RelayProtocolClient::new(config);
     ///
     /// assert!(!client.is_authenticated().await);
     ///
@@ -534,10 +534,10 @@ impl ProxyProtocolClient {
         matches!(*self.state.lock().await, ClientState::Authenticated { .. })
     }
 
-    /// Disconnect from the proxy server and clean up resources.
+    /// Disconnect from the relay server and clean up resources.
     ///
     /// Aborts background tasks, closes the WebSocket connection, and resets state.
-    /// After disconnecting, you can call [`connect()`](ProxyProtocolClient::connect)
+    /// After disconnecting, you can call [`connect()`](RelayProtocolClient::connect)
     /// again to reconnect.
     ///
     /// This method is automatically called when the client is dropped, but calling it
@@ -546,13 +546,13 @@ impl ProxyProtocolClient {
     /// # Examples
     ///
     /// ```no_run
-    /// use ap_proxy_client::{ProxyClientConfig, ProxyProtocolClient, IdentityKeyPair};
+    /// use ap_relay_client::{RelayClientConfig, RelayProtocolClient, IdentityKeyPair};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let config = ProxyClientConfig {
-    /// #     proxy_url: "ws://localhost:8080".to_string(),
+    /// # let config = RelayClientConfig {
+    /// #     relay_url: "ws://localhost:8080".to_string(),
     /// # };
-    /// let mut client = ProxyProtocolClient::new(config);
+    /// let mut client = RelayProtocolClient::new(config);
     /// client.connect(IdentityKeyPair::generate()).await?;
     ///
     /// // Do work...
@@ -562,7 +562,7 @@ impl ProxyProtocolClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn disconnect(&mut self) -> Result<(), ProxyError> {
+    pub async fn disconnect(&mut self) -> Result<(), RelayError> {
         // Abort tasks
         if let Some(handle) = self.read_task_handle.take() {
             handle.abort();
@@ -623,7 +623,7 @@ impl ProxyProtocolClient {
         incoming_tx: mpsc::UnboundedSender<IncomingMessage>,
         identity: Arc<IdentityKeyPair>,
         state: Arc<Mutex<ClientState>>,
-        auth_tx: mpsc::UnboundedSender<Result<(), ProxyError>>,
+        auth_tx: mpsc::UnboundedSender<Result<(), RelayError>>,
         last_pong: Arc<Mutex<Instant>>,
     ) {
         // Handle authentication
@@ -655,20 +655,20 @@ impl ProxyProtocolClient {
         ws_source: &mut WsSource,
         outgoing_tx: &mpsc::UnboundedSender<Message>,
         identity: &Arc<IdentityKeyPair>,
-    ) -> Result<IdentityFingerprint, ProxyError> {
+    ) -> Result<IdentityFingerprint, RelayError> {
         // Receive AuthChallenge
         let challenge_msg = ws_source
             .next()
             .await
-            .ok_or(ProxyError::ConnectionClosed)?
+            .ok_or(RelayError::ConnectionClosed)?
             .map_err(ws_err)?;
 
         let challenge = match challenge_msg {
             Message::Text(text) => match serde_json::from_str::<Messages>(&text)? {
                 Messages::AuthChallenge(c) => c,
-                _ => return Err(ProxyError::InvalidMessage("Expected AuthChallenge".into())),
+                _ => return Err(RelayError::InvalidMessage("Expected AuthChallenge".into())),
             },
-            _ => return Err(ProxyError::InvalidMessage("Expected text message".into())),
+            _ => return Err(RelayError::InvalidMessage("Expected text message".into())),
         };
 
         // Sign challenge
@@ -679,7 +679,7 @@ impl ProxyProtocolClient {
         // Send auth response
         outgoing_tx
             .send(Message::Text(auth_json))
-            .map_err(|_| ProxyError::ChannelSendFailed)?;
+            .map_err(|_| RelayError::ChannelSendFailed)?;
 
         // Authentication complete - server doesn't send confirmation
         Ok(identity.identity().fingerprint())
@@ -690,7 +690,7 @@ impl ProxyProtocolClient {
         mut ws_source: WsSource,
         incoming_tx: mpsc::UnboundedSender<IncomingMessage>,
         last_pong: Arc<Mutex<Instant>>,
-    ) -> Result<(), ProxyError> {
+    ) -> Result<(), RelayError> {
         while let Some(msg_result) = ws_source.next().await {
             let msg = msg_result.map_err(ws_err)?;
 

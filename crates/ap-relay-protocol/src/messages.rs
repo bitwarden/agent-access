@@ -1,4 +1,4 @@
-//! Protocol message types for client-proxy communication.
+//! Protocol message types for client-relay communication.
 //!
 //! This module defines the message types used in the three-phase protocol:
 //!
@@ -26,7 +26,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Protocol messages exchanged between clients and the proxy server.
+/// Protocol messages exchanged between clients and the relay server.
 ///
 /// Messages flow through three distinct phases: authentication, optional rendezvous
 /// for peer discovery, and message routing between authenticated clients.
@@ -73,13 +73,13 @@ pub enum Messages {
         identity: Identity,
     },
 
-    /// A message routed from one client to another through the proxy.
+    /// A message routed from one client to another through the relay.
     ///
     /// When sent by clients, only contains destination and payload. The source is
-    /// automatically set by the proxy based on the authenticated identity.
+    /// automatically set by the relay based on the authenticated identity.
     /// When forwarded to recipients, includes the validated source fingerprint.
     Send {
-        /// The authenticated sender's fingerprint (added by proxy)
+        /// The authenticated sender's fingerprint (added by relay)
         #[serde(skip_serializing_if = "Option::is_none")]
         source: Option<IdentityFingerprint>,
         /// The recipient's fingerprint

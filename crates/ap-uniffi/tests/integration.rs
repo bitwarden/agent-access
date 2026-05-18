@@ -1,13 +1,13 @@
 //! Integration tests for ap-uniffi
 //!
-//! Tests the UniFFI wrapper against a real proxy server, exercising the full
-//! protocol stack: proxy connection, PSK pairing, credential exchange.
+//! Tests the UniFFI wrapper against a real relay server, exercising the full
+//! protocol stack: relay connection, PSK pairing, credential exchange.
 
 use std::net::SocketAddr;
 use std::sync::Mutex;
 
 use ap_client::{
-    CredentialData, CredentialRequestReply, DefaultProxyClient, FingerprintVerificationReply,
+    CredentialData, CredentialRequestReply, DefaultRelayClient, FingerprintVerificationReply,
     MemoryConnectionStore, MemoryIdentityProvider, UserClient, UserClientHandle, UserClientRequest,
 };
 use ap_uniffi::{
@@ -104,7 +104,7 @@ async fn start_test_server() -> SocketAddr {
     let addr = listener.local_addr().expect("should get local address");
     drop(listener);
 
-    let server = ap_proxy::server::ProxyServer::new(addr);
+    let server = ap_relay::server::RelayServer::new(addr);
     tokio::spawn(async move { server.run().await.ok() });
     tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -139,7 +139,7 @@ fn test_ffi_credential() -> FfiCredentialData {
 /// Returns the PSK token string.
 async fn setup_user_client_psk(addr: SocketAddr) -> (String, Vec<tokio::task::JoinHandle<()>>) {
     let user_identity = MemoryIdentityProvider::new();
-    let user_proxy = Box::new(DefaultProxyClient::from_url(format!("ws://{addr}")));
+    let user_relay = Box::new(DefaultRelayClient::from_url(format!("ws://{addr}")));
     let user_session_store = MemoryConnectionStore::new();
 
     let UserClientHandle {
@@ -149,7 +149,7 @@ async fn setup_user_client_psk(addr: SocketAddr) -> (String, Vec<tokio::task::Jo
     } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_session_store),
-        user_proxy,
+        user_relay,
         None,
         None,
     )
@@ -199,9 +199,9 @@ async fn setup_user_client_psk(addr: SocketAddr) -> (String, Vec<tokio::task::Jo
     (psk_token, vec![notif_task, cred_task, keepalive])
 }
 
-fn make_remote_client(proxy_url: String) -> RemoteClient {
+fn make_remote_client(relay_url: String) -> RemoteClient {
     RemoteClient::new(
-        proxy_url,
+        relay_url,
         Box::new(MemoryIdentityStorage::new()),
         Box::new(MemoryConnectionStorage::new()),
         None,
@@ -215,7 +215,7 @@ fn make_remote_client(proxy_url: String) -> RemoteClient {
 // ============================================================================
 
 #[tokio::test]
-async fn connect_to_nonexistent_proxy_fails() {
+async fn connect_to_nonexistent_relay_fails() {
     let client = make_remote_client("ws://127.0.0.1:1".to_string());
     let result = client.connect().await;
     assert!(result.is_err());
@@ -227,8 +227,8 @@ async fn test_psk_pairing_and_credential_request() {
     let addr = start_test_server().await;
     let (psk_token, tasks) = setup_user_client_psk(addr).await;
 
-    let proxy_url = format!("ws://{addr}");
-    let client = make_remote_client(proxy_url);
+    let relay_url = format!("ws://{addr}");
+    let client = make_remote_client(relay_url);
 
     client.connect().await.expect("connect should succeed");
     client
@@ -262,7 +262,7 @@ async fn test_rendezvous_pairing_and_credential_request() {
     let addr = start_test_server().await;
 
     let user_identity = MemoryIdentityProvider::new();
-    let user_proxy = Box::new(DefaultProxyClient::from_url(format!("ws://{addr}")));
+    let user_relay = Box::new(DefaultRelayClient::from_url(format!("ws://{addr}")));
     let user_session_store = MemoryConnectionStore::new();
 
     let UserClientHandle {
@@ -272,7 +272,7 @@ async fn test_rendezvous_pairing_and_credential_request() {
     } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_session_store),
-        user_proxy,
+        user_relay,
         None,
         None,
     )
@@ -313,8 +313,8 @@ async fn test_rendezvous_pairing_and_credential_request() {
         }
     });
 
-    let proxy_url = format!("ws://{addr}");
-    let client = make_remote_client(proxy_url);
+    let relay_url = format!("ws://{addr}");
+    let client = make_remote_client(relay_url);
 
     client.connect().await.expect("connect should succeed");
     let fp = client
@@ -378,10 +378,10 @@ async fn test_user_access_client_with_credential_provider() {
     }
 
     let addr = start_test_server().await;
-    let proxy_url = format!("ws://{addr}");
+    let relay_url = format!("ws://{addr}");
 
     let user = UniffiUserClient::new(
-        proxy_url.clone(),
+        relay_url.clone(),
         Box::new(MemoryIdentityStorage::new()),
         Box::new(MemoryConnectionStorage::new()),
         Box::new(TestProvider),
@@ -397,7 +397,7 @@ async fn test_user_access_client_with_credential_provider() {
         .await
         .expect("should get psk token");
 
-    let client = make_remote_client(proxy_url);
+    let client = make_remote_client(relay_url);
 
     client.connect().await.expect("connect should succeed");
     client

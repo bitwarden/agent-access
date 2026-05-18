@@ -3,7 +3,7 @@
 use std::fmt;
 
 use ap_noise::Psk;
-use ap_proxy_protocol::IdentityFingerprint;
+use ap_relay_protocol::IdentityFingerprint;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 

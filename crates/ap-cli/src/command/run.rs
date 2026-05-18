@@ -9,7 +9,7 @@ use ap_client::CredentialData;
 use clap::Args;
 use color_eyre::eyre::{Result, bail};
 
-use super::DEFAULT_PROXY_URL;
+use super::DEFAULT_RELAY_URL;
 use super::connect::fetch_credential;
 use super::output::{exit_code, exit_code_for_error};
 
@@ -41,9 +41,9 @@ The token can be passed via --token <TOKEN> or the AAC_TOKEN env var.
 
 VALID FIELDS: username, password, totp, uri, notes, domain, credential_id")]
 pub struct RunArgs {
-    /// Proxy server URL
-    #[arg(long, default_value = DEFAULT_PROXY_URL)]
-    pub proxy_url: String,
+    /// Relay server URL
+    #[arg(long, default_value = DEFAULT_RELAY_URL)]
+    pub relay_url: String,
 
     /// Domain to request credentials for
     #[arg(long, conflicts_with = "id")]
@@ -172,7 +172,7 @@ impl RunArgs {
         // Fetch the credential
         let credential_timeout = self.timeout.map(std::time::Duration::from_secs);
         let credential = match fetch_credential(
-            &self.proxy_url,
+            &self.relay_url,
             self.token.as_deref(),
             self.session.as_deref(),
             self.ephemeral_connection,

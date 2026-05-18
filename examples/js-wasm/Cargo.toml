@@ -14,8 +14,8 @@ path = "src/lib.rs"
 
 [dependencies]
 ap-client = { path = "../../crates/ap-client", default-features = false }
-ap-proxy-client = { path = "../../crates/ap-proxy-client", default-features = false }
-ap-proxy-protocol = { path = "../../crates/ap-proxy-protocol", default-features = false }
+ap-relay-client = { path = "../../crates/ap-relay-client", default-features = false }
+ap-relay-protocol = { path = "../../crates/ap-relay-protocol", default-features = false }
 ap-noise = { path = "../../crates/ap-noise" }
 
 async-trait = "0.1"

@@ -1,10 +1,10 @@
-use ap_proxy::server::ProxyServer;
-use ap_proxy_protocol::ProxyError;
+use ap_relay::server::RelayServer;
+use ap_relay_protocol::RelayError;
 use std::env;
 use tracing_subscriber::{EnvFilter, fmt};
 
 #[tokio::main]
-async fn main() -> Result<(), ProxyError> {
+async fn main() -> Result<(), RelayError> {
     fmt()
         .with_env_filter(EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into()))
         .init();
@@ -14,9 +14,9 @@ async fn main() -> Result<(), ProxyError> {
         .parse()
         .expect("Invalid BIND_ADDR");
 
-    tracing::info!("Starting proxy server on {}", bind_addr);
+    tracing::info!("Starting relay server on {}", bind_addr);
 
-    let server = ProxyServer::new(bind_addr);
+    let server = RelayServer::new(bind_addr);
 
     tokio::select! {
         result = server.run() => {

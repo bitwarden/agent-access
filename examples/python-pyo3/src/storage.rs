@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use ap_noise::{MultiDeviceTransport, PersistentTransportState};
-use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair};
+use ap_relay_protocol::{IdentityFingerprint, IdentityKeyPair};
 use ap_client::{IdentityProvider, ClientError, ConnectionInfo, ConnectionStore, ConnectionUpdate};
 use serde::{Deserialize, Serialize};
 

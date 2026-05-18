@@ -12,22 +12,22 @@
   <div class="max-w-xl mx-auto px-4 py-8" x-data="app()" x-init="init()">
     <h1 class="text-xl font-semibold mb-6">Bitwarden Agent Access <span class="text-gray-400 font-normal">WASM</span></h1>
 
-    <!-- Proxy URL -->
+    <!-- Relay URL -->
     <div class="flex items-center gap-2 mb-4">
-      <span class="text-xs font-medium text-gray-500 shrink-0">Proxy</span>
-      <template x-if="!editingProxy">
+      <span class="text-xs font-medium text-gray-500 shrink-0">Relay</span>
+      <template x-if="!editingRelay">
         <div class="flex items-center gap-2 min-w-0">
-          <span class="text-sm text-gray-700 font-mono truncate" x-text="proxyUrl"></span>
-          <button @click="editingProxy = true" class="text-xs text-blue-600 hover:text-blue-800 shrink-0">Edit</button>
+          <span class="text-sm text-gray-700 font-mono truncate" x-text="relayUrl"></span>
+          <button @click="editingRelay = true" class="text-xs text-blue-600 hover:text-blue-800 shrink-0">Edit</button>
         </div>
       </template>
-      <template x-if="editingProxy">
+      <template x-if="editingRelay">
         <div class="flex items-center gap-2 flex-1 min-w-0">
-          <input type="text" x-model="proxyUrl"
-            @keydown.enter="saveProxy()" @keydown.escape="saveProxy()"
+          <input type="text" x-model="relayUrl"
+            @keydown.enter="saveRelay()" @keydown.escape="saveRelay()"
             x-init="$nextTick(() => $el.focus())"
             class="flex-1 min-w-0 px-2 py-1 border border-gray-300 rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          <button @click="saveProxy()" class="text-xs text-blue-600 hover:text-blue-800 shrink-0">Save</button>
+          <button @click="saveRelay()" class="text-xs text-blue-600 hover:text-blue-800 shrink-0">Save</button>
         </div>
       </template>
     </div>

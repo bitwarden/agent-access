@@ -12,16 +12,16 @@ use types::{PyCredentialData, RemoteAccessError};
 /// Convenience one-shot helper that creates a client, connects, requests,
 /// and closes — all in one call.
 #[pyfunction]
-#[pyo3(signature = (domain, token=None, session=None, proxy_url="wss://ap.lesspassword.dev", identity_name="python-remote"))]
+#[pyo3(signature = (domain, token=None, session=None, relay_url="wss://ap.lesspassword.dev", identity_name="python-remote"))]
 fn connect_and_request(
     py: Python<'_>,
     domain: &str,
     token: Option<&str>,
     session: Option<&str>,
-    proxy_url: &str,
+    relay_url: &str,
     identity_name: &str,
 ) -> PyResult<PyCredentialData> {
-    let mut client = PyRemoteClient::new(proxy_url, identity_name)?;
+    let mut client = PyRemoteClient::new(relay_url, identity_name)?;
     client.connect(py, token, session)?;
     let cred = client.request_credential(py, domain)?;
     client.close(py)?;

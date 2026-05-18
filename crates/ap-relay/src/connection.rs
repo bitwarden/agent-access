@@ -1,16 +1,16 @@
 //! Internal connection state tracking.
 //!
-//! This module contains internal types used by the proxy server to track authenticated
+//! This module contains internal types used by the relay server to track authenticated
 //! client connections. These types are not part of the public API.
 
-use ap_proxy_protocol::{Identity, IdentityFingerprint};
+use ap_relay_protocol::{Identity, IdentityFingerprint};
 use std::time::SystemTime;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
 /// Internal state for an authenticated client connection.
 ///
-/// The proxy server maintains one of these for each authenticated client to:
+/// The relay server maintains one of these for each authenticated client to:
 /// - Track the client's identity and fingerprint
 /// - Send messages back to the client via the WebSocket channel
 /// - Record connection time for debugging and monitoring

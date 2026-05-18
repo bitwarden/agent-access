@@ -32,7 +32,7 @@ pub fn exit_code_for_error(err: &ClientError) -> i32 {
         ClientError::ConnectionFailed(_) | ClientError::WebSocket(_) => {
             exit_code::CONNECTION_FAILED
         }
-        ClientError::ProxyAuthFailed(_)
+        ClientError::RelayAuthFailed(_)
         | ClientError::HandshakeFailed(_)
         | ClientError::NoiseProtocol(_)
         | ClientError::Timeout(_)

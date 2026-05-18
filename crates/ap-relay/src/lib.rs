@@ -1,18 +1,18 @@
-//! WebSocket proxy server for secure peer-to-peer messaging.
+//! WebSocket relay server for secure peer-to-peer messaging.
 //!
-//! This crate provides the proxy server that accepts WebSocket connections,
+//! This crate provides the relay server that accepts WebSocket connections,
 //! authenticates clients, and routes messages between them. The server is
 //! zero-knowledge and cannot decrypt client payloads.
 //!
-//! For the client library, see the `ap-proxy-client` crate.
-//! For shared protocol types, see the `ap-proxy-protocol` crate.
+//! For the client library, see the `ap-relay-client` crate.
+//! For shared protocol types, see the `ap-relay-protocol` crate.
 //!
 //! # Architecture
 //!
-//! The proxy routes messages between authenticated clients:
+//! The relay routes messages between authenticated clients:
 //!
 //! ```text
-//! Client A                    Proxy Server                   Client B
+//! Client A                    Relay Server                   Client B
 //!    |                             |                             |
 //!    |---(1) WebSocket Connect---->|                             |
 //!    |<--(2) Auth Challenge--------|                             |
@@ -49,24 +49,24 @@
 //! ### Phase 3: Messaging
 //!
 //! Once authenticated, clients can send messages to other clients by their identity fingerprint.
-//! The proxy validates the source identity and routes messages to the destination. The proxy
+//! The relay validates the source identity and routes messages to the destination. The relay
 //! cannot decrypt message contents — clients should implement end-to-end encryption separately.
 //!
 //! # Running as a Binary
 //!
 //! ```bash
-//! cargo run --bin ap-proxy
+//! cargo run --bin ap-relay
 //! ```
 //!
 //! # Embedding in Your Application
 //!
 //! ```no_run
-//! use ap_proxy::server::ProxyServer;
+//! use ap_relay::server::RelayServer;
 //! use std::net::SocketAddr;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let addr: SocketAddr = "127.0.0.1:8080".parse()?;
-//! let server = ProxyServer::new(addr);
+//! let server = RelayServer::new(addr);
 //! server.run().await?;
 //! # Ok(())
 //! # }

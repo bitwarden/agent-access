@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 use tokio::sync::mpsc;
 
 use ap_client::{
-    DefaultProxyClient, IdentityFingerprint, PskToken, RemoteClient, RemoteClientNotification,
+    DefaultRelayClient, IdentityFingerprint, PskToken, RemoteClient, RemoteClientNotification,
     ConnectionStore,
 };
 
@@ -23,7 +23,7 @@ pub struct PyRemoteClient {
     runtime: tokio::runtime::Runtime,
     inner: Option<RemoteClient>,
     notification_rx: Option<mpsc::Receiver<RemoteClientNotification>>,
-    proxy_url: String,
+    relay_url: String,
     identity_name: String,
     ready: bool,
 }
@@ -33,11 +33,11 @@ impl PyRemoteClient {
     /// Create a new RemoteClient.
     ///
     /// Args:
-    ///     proxy_url: WebSocket URL of the proxy server.
+    ///     relay_url: WebSocket URL of the relay server.
     ///     identity_name: Name for the identity keypair file (~/.bw-remote/{name}.key).
     #[new]
-    #[pyo3(signature = (proxy_url="wss://ap.lesspassword.dev", identity_name="python-remote"))]
-    pub fn new(proxy_url: &str, identity_name: &str) -> PyResult<Self> {
+    #[pyo3(signature = (relay_url="wss://ap.lesspassword.dev", identity_name="python-remote"))]
+    pub fn new(relay_url: &str, identity_name: &str) -> PyResult<Self> {
         // Enable RUST_LOG for debugging
         let _ = tracing_subscriber::fmt()
             .with_env_filter(
@@ -54,7 +54,7 @@ impl PyRemoteClient {
             runtime,
             inner: None,
             notification_rx: None,
-            proxy_url: proxy_url.to_string(),
+            relay_url: relay_url.to_string(),
             identity_name: identity_name.to_string(),
             ready: false,
         })
@@ -82,13 +82,13 @@ impl PyRemoteClient {
         let connection_store = FileConnectionCache::load_or_create(&self.identity_name)
             .map_err(|e| RemoteAccessError::new_err(e.to_string()))?;
 
-        let proxy_client = Box::new(DefaultProxyClient::from_url(self.proxy_url.clone()));
+        let relay_client = Box::new(DefaultRelayClient::from_url(self.relay_url.clone()));
 
-        // Create the client (connects to proxy, spawns event loop)
+        // Create the client (connects to relay, spawns event loop)
         let handle = py
             .allow_threads(|| {
                 self.runtime.block_on(async {
-                    RemoteClient::connect(Box::new(identity), Box::new(connection_store), proxy_client)
+                    RemoteClient::connect(Box::new(identity), Box::new(connection_store), relay_client)
                         .await
                 })
             })

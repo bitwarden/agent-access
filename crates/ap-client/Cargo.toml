@@ -10,15 +10,15 @@ repository.workspace = true
 
 [features]
 default = ["native-websocket"]
-native-websocket = ["ap-proxy-client/native-websocket"]
+native-websocket = ["ap-relay-client/native-websocket"]
 
 [dependencies]
 async-trait = { workspace = true }
 base64 = { workspace = true }
 ap-error = { workspace = true }
 ap-noise = { workspace = true }
-ap-proxy-client = { workspace = true, default-features = false }
-ap-proxy-protocol = { workspace = true }
+ap-relay-client = { workspace = true, default-features = false }
+ap-relay-protocol = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
 rand = { workspace = true }
@@ -41,7 +41,7 @@ wasm-bindgen-futures = "0.4"
 web-time = "1"
 
 [dev-dependencies]
-ap-proxy = { workspace = true }
+ap-relay = { workspace = true }
 tokio = { workspace = true, features = [
     "rt-multi-thread",
     "macros",

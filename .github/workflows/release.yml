@@ -174,9 +174,9 @@ jobs:
           publish_crate ap-error-macro
           publish_crate ap-error
           publish_crate ap-noise
-          publish_crate ap-proxy-protocol
-          publish_crate ap-proxy-client
-          publish_crate ap-proxy
+          publish_crate ap-relay-protocol
+          publish_crate ap-relay-client
+          publish_crate ap-relay
           publish_crate ap-client
 
           # Last crate — no need to wait for indexing

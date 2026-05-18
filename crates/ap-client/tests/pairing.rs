@@ -1,19 +1,19 @@
 //! Integration tests for ap-client pairing flows
 //!
 //! These tests verify the PSK and fingerprint-based pairing modes
-//! using mock implementations of the identity provider, connection store, and proxy.
+//! using mock implementations of the identity provider, connection store, and relay.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use ap_client::{
     ClientError, CredentialRequestReply, FingerprintVerificationReply, IdentityProvider,
-    MemoryConnectionStore, MemoryIdentityProvider, ProxyClient, PskToken, RemoteClient,
+    MemoryConnectionStore, MemoryIdentityProvider, PskToken, RelayClient, RemoteClient,
     RemoteClientFingerprintReply, RemoteClientHandle, RemoteClientNotification,
     RemoteClientRequest, UserClient, UserClientHandle, UserClientNotification, UserClientRequest,
 };
-use ap_proxy_client::IncomingMessage;
-use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair, RendezvousCode};
+use ap_relay_client::IncomingMessage;
+use ap_relay_protocol::{IdentityFingerprint, IdentityKeyPair, RendezvousCode};
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
@@ -25,24 +25,24 @@ use zeroize::Zeroizing;
 
 // Uses MemoryIdentityProvider from the library instead of a local mock
 
-/// Mock proxy client that relays messages through channels
-struct MockProxyClient {
+/// Mock relay client that relays messages through channels
+struct MockRelayClient {
     /// Our identity fingerprint
     #[allow(dead_code)]
     own_fingerprint: IdentityFingerprint,
-    /// Sender for outgoing messages (to the paired proxy)
+    /// Sender for outgoing messages (to the paired relay)
     outgoing_tx: mpsc::UnboundedSender<(IdentityFingerprint, Vec<u8>)>,
-    /// Receiver for incoming messages (from the paired proxy)
+    /// Receiver for incoming messages (from the paired relay)
     incoming_rx: Option<mpsc::UnboundedReceiver<IncomingMessage>>,
     /// Sender to push incoming messages to ourselves
     incoming_tx: mpsc::UnboundedSender<IncomingMessage>,
-    /// The paired proxy's fingerprint (for routing)
+    /// The paired relay's fingerprint (for routing)
     peer_fingerprint: Option<IdentityFingerprint>,
     /// Rendezvous code (for user client)
     rendezvous_code: Option<RendezvousCode>,
 }
 
-impl MockProxyClient {
+impl MockRelayClient {
     fn new(
         own_fingerprint: IdentityFingerprint,
         outgoing_tx: mpsc::UnboundedSender<(IdentityFingerprint, Vec<u8>)>,
@@ -69,7 +69,7 @@ impl MockProxyClient {
 }
 
 #[async_trait]
-impl ProxyClient for MockProxyClient {
+impl RelayClient for MockRelayClient {
     async fn connect(
         &mut self,
         _identity: IdentityKeyPair,
@@ -123,10 +123,10 @@ impl ProxyClient for MockProxyClient {
 }
 
 /// Creates a pair of connected mock proxies that relay messages between each other
-fn create_mock_proxy_pair(
+fn create_mock_relay_pair(
     user_fingerprint: IdentityFingerprint,
     remote_fingerprint: IdentityFingerprint,
-) -> (MockProxyClient, MockProxyClient) {
+) -> (MockRelayClient, MockRelayClient) {
     // Channels for user -> remote communication
     let (user_to_remote_tx, mut user_to_remote_rx) =
         mpsc::unbounded_channel::<(IdentityFingerprint, Vec<u8>)>();
@@ -139,21 +139,21 @@ fn create_mock_proxy_pair(
     let (remote_incoming_tx, remote_incoming_rx) = mpsc::unbounded_channel::<IncomingMessage>();
 
     // Create mock proxies
-    let mut user_proxy = MockProxyClient::new(
+    let mut user_relay = MockRelayClient::new(
         user_fingerprint,
         user_to_remote_tx,
         user_incoming_rx,
         user_incoming_tx.clone(),
     );
-    user_proxy.set_peer_fingerprint(remote_fingerprint);
+    user_relay.set_peer_fingerprint(remote_fingerprint);
 
-    let mut remote_proxy = MockProxyClient::new(
+    let mut remote_relay = MockRelayClient::new(
         remote_fingerprint,
         remote_to_user_tx,
         remote_incoming_rx,
         remote_incoming_tx.clone(),
     );
-    remote_proxy.set_peer_fingerprint(user_fingerprint);
+    remote_relay.set_peer_fingerprint(user_fingerprint);
 
     // Spawn relay tasks
     // user -> remote relay
@@ -180,7 +180,7 @@ fn create_mock_proxy_pair(
         }
     });
 
-    (user_proxy, remote_proxy)
+    (user_relay, remote_relay)
 }
 
 // ============================================================================
@@ -196,8 +196,8 @@ async fn test_psk_pairing() {
     let user_fingerprint = user_identity.fingerprint().await;
     let remote_fingerprint = remote_identity.fingerprint().await;
 
-    // Create mock proxy pair
-    let (user_proxy, remote_proxy) = create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
+    // Create mock relay pair
+    let (user_relay, remote_relay) = create_mock_relay_pair(user_fingerprint, remote_fingerprint);
 
     // Create connection stores
     let user_connection_store = MemoryConnectionStore::new();
@@ -211,7 +211,7 @@ async fn test_psk_pairing() {
     } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_connection_store),
-        Box::new(user_proxy),
+        Box::new(user_relay),
         None,
         None,
     )
@@ -237,7 +237,7 @@ async fn test_psk_pairing() {
     } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_connection_store),
-        Box::new(remote_proxy),
+        Box::new(remote_relay),
     )
     .await
     .expect("RemoteClient should connect");
@@ -304,14 +304,14 @@ async fn test_fingerprint_pairing() {
     let user_fingerprint = user_identity.fingerprint().await;
     let remote_fingerprint = remote_identity.fingerprint().await;
 
-    // Create mock proxy pair
-    let (mut user_proxy, mut remote_proxy) =
-        create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
+    // Create mock relay pair
+    let (mut user_relay, mut remote_relay) =
+        create_mock_relay_pair(user_fingerprint, remote_fingerprint);
 
     // Set up rendezvous code
     let rendezvous_code = RendezvousCode::from_string("ABCDEF123".to_string());
-    user_proxy.set_rendezvous_code(rendezvous_code.clone());
-    remote_proxy.set_peer_fingerprint(user_fingerprint);
+    user_relay.set_rendezvous_code(rendezvous_code.clone());
+    remote_relay.set_peer_fingerprint(user_fingerprint);
 
     // Create connection stores
     let user_connection_store = MemoryConnectionStore::new();
@@ -325,7 +325,7 @@ async fn test_fingerprint_pairing() {
     } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_connection_store),
-        Box::new(user_proxy),
+        Box::new(user_relay),
         None,
         None,
     )
@@ -347,7 +347,7 @@ async fn test_fingerprint_pairing() {
     } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_connection_store),
-        Box::new(remote_proxy),
+        Box::new(remote_relay),
     )
     .await
     .expect("RemoteClient should connect");
@@ -423,26 +423,26 @@ async fn test_fingerprint_pairing() {
 }
 
 // ============================================================================
-// Reconnecting Mock Proxy Client
+// Reconnecting Mock Relay Client
 // ============================================================================
 
-/// A mock proxy client that simulates connection drops and reconnections.
+/// A mock relay client that simulates connection drops and reconnections.
 ///
 /// - First `connect()` succeeds normally.
 /// - The incoming channel is closed after a configurable delay to simulate a drop.
 /// - Subsequent `connect()` calls fail `fail_count` times, then succeed.
-struct ReconnectingMockProxyClient {
+struct ReconnectingMockRelayClient {
     /// How many reconnection attempts should fail before succeeding
     fail_count: u32,
     /// Tracks total connect() calls (including the initial one)
     connect_calls: Arc<AtomicU32>,
     /// Channel for pushing incoming messages after reconnection
     incoming_tx: Option<mpsc::UnboundedSender<IncomingMessage>>,
-    /// Delay before closing the first incoming channel (simulates proxy drop)
+    /// Delay before closing the first incoming channel (simulates relay drop)
     drop_delay: Duration,
 }
 
-impl ReconnectingMockProxyClient {
+impl ReconnectingMockRelayClient {
     fn new(fail_count: u32, drop_delay: Duration) -> Self {
         Self {
             fail_count,
@@ -454,7 +454,7 @@ impl ReconnectingMockProxyClient {
 }
 
 #[async_trait]
-impl ProxyClient for ReconnectingMockProxyClient {
+impl RelayClient for ReconnectingMockRelayClient {
     async fn connect(
         &mut self,
         _identity: IdentityKeyPair,
@@ -467,7 +467,7 @@ impl ProxyClient for ReconnectingMockProxyClient {
             let drop_delay = self.drop_delay;
             tokio::spawn(async move {
                 tokio::time::sleep(drop_delay).await;
-                drop(tx); // Closes the receiver, simulating proxy drop
+                drop(tx); // Closes the receiver, simulating relay drop
             });
             return Ok(rx);
         }
@@ -521,8 +521,8 @@ async fn run_reconnection_test(fail_count: u32) -> (Vec<UserClientNotification>,
     let identity = MemoryIdentityProvider::new();
     let connection_store = MemoryConnectionStore::new();
 
-    let proxy = ReconnectingMockProxyClient::new(fail_count, Duration::from_millis(10));
-    let connect_calls = Arc::clone(&proxy.connect_calls);
+    let relay = ReconnectingMockRelayClient::new(fail_count, Duration::from_millis(10));
+    let connect_calls = Arc::clone(&relay.connect_calls);
 
     let UserClientHandle {
         client,
@@ -531,7 +531,7 @@ async fn run_reconnection_test(fail_count: u32) -> (Vec<UserClientNotification>,
     } = UserClient::connect(
         Box::new(identity),
         Box::new(connection_store),
-        Box::new(proxy),
+        Box::new(relay),
         None,
         None,
     )
@@ -571,7 +571,7 @@ async fn run_reconnection_test(fail_count: u32) -> (Vec<UserClientNotification>,
     (events, calls)
 }
 
-/// Test that UserClient reconnects immediately when proxy drops and first retry succeeds.
+/// Test that UserClient reconnects immediately when relay drops and first retry succeeds.
 ///
 /// Verifies: ClientDisconnected → Reconnected (no Reconnecting events)
 #[tokio::test(flavor = "current_thread")]
@@ -644,14 +644,14 @@ async fn test_fingerprint_pairing_both_sides_verify() {
     let user_fingerprint = user_identity.fingerprint().await;
     let remote_fingerprint = remote_identity.fingerprint().await;
 
-    // Create mock proxy pair
-    let (mut user_proxy, mut remote_proxy) =
-        create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
+    // Create mock relay pair
+    let (mut user_relay, mut remote_relay) =
+        create_mock_relay_pair(user_fingerprint, remote_fingerprint);
 
     // Set up rendezvous code
     let rendezvous_code = RendezvousCode::from_string("XYZW56789".to_string());
-    user_proxy.set_rendezvous_code(rendezvous_code.clone());
-    remote_proxy.set_peer_fingerprint(user_fingerprint);
+    user_relay.set_rendezvous_code(rendezvous_code.clone());
+    remote_relay.set_peer_fingerprint(user_fingerprint);
 
     // Create connection stores
     let user_connection_store = MemoryConnectionStore::new();
@@ -665,7 +665,7 @@ async fn test_fingerprint_pairing_both_sides_verify() {
     } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_connection_store),
-        Box::new(user_proxy),
+        Box::new(user_relay),
         None,
         None,
     )
@@ -687,7 +687,7 @@ async fn test_fingerprint_pairing_both_sides_verify() {
     } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_connection_store),
-        Box::new(remote_proxy),
+        Box::new(remote_relay),
     )
     .await
     .expect("RemoteClient should connect");
@@ -789,11 +789,11 @@ async fn test_dual_mode_psk_pairing_with_both_modes_pending() {
     let user_fingerprint = user_identity.fingerprint().await;
     let remote_fingerprint = remote_identity.fingerprint().await;
 
-    // Create mock proxy pair
-    let (mut user_proxy, remote_proxy) =
-        create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
+    // Create mock relay pair
+    let (mut user_relay, remote_relay) =
+        create_mock_relay_pair(user_fingerprint, remote_fingerprint);
     // Set up rendezvous so get_rendezvous_token doesn't hang
-    user_proxy.set_rendezvous_code(RendezvousCode::from_string("DUAL12345".to_string()));
+    user_relay.set_rendezvous_code(RendezvousCode::from_string("DUAL12345".to_string()));
 
     let user_connection_store = MemoryConnectionStore::new();
     let remote_connection_store = MemoryConnectionStore::new();
@@ -806,7 +806,7 @@ async fn test_dual_mode_psk_pairing_with_both_modes_pending() {
     } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_connection_store),
-        Box::new(user_proxy),
+        Box::new(user_relay),
         None,
         None,
     )
@@ -837,7 +837,7 @@ async fn test_dual_mode_psk_pairing_with_both_modes_pending() {
     } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_connection_store),
-        Box::new(remote_proxy),
+        Box::new(remote_relay),
     )
     .await
     .expect("RemoteClient should connect");
@@ -897,7 +897,7 @@ async fn test_notification_channel_not_blocking_event_loop() {
     let user_fingerprint = user_identity.fingerprint().await;
     let remote_fingerprint = remote_identity.fingerprint().await;
 
-    let (user_proxy, remote_proxy) = create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
+    let (user_relay, remote_relay) = create_mock_relay_pair(user_fingerprint, remote_fingerprint);
 
     let user_connection_store = MemoryConnectionStore::new();
     let remote_connection_store = MemoryConnectionStore::new();
@@ -910,7 +910,7 @@ async fn test_notification_channel_not_blocking_event_loop() {
     } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_connection_store),
-        Box::new(user_proxy),
+        Box::new(user_relay),
         None,
         None,
     )
@@ -935,7 +935,7 @@ async fn test_notification_channel_not_blocking_event_loop() {
     } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_connection_store),
-        Box::new(remote_proxy),
+        Box::new(remote_relay),
     )
     .await
     .expect("RemoteClient should connect");
@@ -1010,7 +1010,7 @@ async fn test_request_channel_backpressure() {
     let user_fingerprint = user_identity.fingerprint().await;
     let remote_fingerprint = remote_identity.fingerprint().await;
 
-    let (user_proxy, remote_proxy) = create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
+    let (user_relay, remote_relay) = create_mock_relay_pair(user_fingerprint, remote_fingerprint);
 
     let user_connection_store = MemoryConnectionStore::new();
     let remote_connection_store = MemoryConnectionStore::new();
@@ -1023,7 +1023,7 @@ async fn test_request_channel_backpressure() {
     } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_connection_store),
-        Box::new(user_proxy),
+        Box::new(user_relay),
         None,
         None,
     )
@@ -1048,7 +1048,7 @@ async fn test_request_channel_backpressure() {
     } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_connection_store),
-        Box::new(remote_proxy),
+        Box::new(remote_relay),
     )
     .await
     .expect("RemoteClient should connect");
@@ -1106,14 +1106,14 @@ async fn test_credential_request_buffered_during_fingerprint_verification() {
     let user_fingerprint = user_identity.fingerprint().await;
     let remote_fingerprint = remote_identity.fingerprint().await;
 
-    // Create mock proxy pair
-    let (mut user_proxy, mut remote_proxy) =
-        create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
+    // Create mock relay pair
+    let (mut user_relay, mut remote_relay) =
+        create_mock_relay_pair(user_fingerprint, remote_fingerprint);
 
     // Set up rendezvous code
     let rendezvous_code = RendezvousCode::from_string("BUF123456".to_string());
-    user_proxy.set_rendezvous_code(rendezvous_code.clone());
-    remote_proxy.set_peer_fingerprint(user_fingerprint);
+    user_relay.set_rendezvous_code(rendezvous_code.clone());
+    remote_relay.set_peer_fingerprint(user_fingerprint);
 
     // Create connection stores
     let user_connection_store = MemoryConnectionStore::new();
@@ -1127,7 +1127,7 @@ async fn test_credential_request_buffered_during_fingerprint_verification() {
     } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_connection_store),
-        Box::new(user_proxy),
+        Box::new(user_relay),
         None,
         None,
     )
@@ -1149,7 +1149,7 @@ async fn test_credential_request_buffered_during_fingerprint_verification() {
     } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_connection_store),
-        Box::new(remote_proxy),
+        Box::new(remote_relay),
     )
     .await
     .expect("RemoteClient should connect");
@@ -1262,8 +1262,8 @@ async fn test_reusable_psk_pairing() {
     let remote_fingerprint2 = remote_identity2.fingerprint().await;
 
     // --- First connection: remote1 ---
-    let (user_proxy1, remote_proxy1) =
-        create_mock_proxy_pair(user_fingerprint, remote_fingerprint1);
+    let (user_relay1, remote_relay1) =
+        create_mock_relay_pair(user_fingerprint, remote_fingerprint1);
 
     let user_connection_store = MemoryConnectionStore::new();
     let remote_connection_store1 = MemoryConnectionStore::new();
@@ -1276,7 +1276,7 @@ async fn test_reusable_psk_pairing() {
     } = UserClient::connect(
         Box::new(user_identity.clone()),
         Box::new(user_connection_store),
-        Box::new(user_proxy1),
+        Box::new(user_relay1),
         None,
         Some(Box::new(psk_store)),
     )
@@ -1302,7 +1302,7 @@ async fn test_reusable_psk_pairing() {
     } = RemoteClient::connect(
         Box::new(remote_identity1),
         Box::new(remote_connection_store1),
-        Box::new(remote_proxy1),
+        Box::new(remote_relay1),
     )
     .await
     .expect("RemoteClient 1 should connect");
@@ -1338,9 +1338,9 @@ async fn test_reusable_psk_pairing() {
     drop(user_client);
     drop(notification_rx);
 
-    // Re-create user client with a fresh proxy pair for remote2
-    let (user_proxy2, remote_proxy2) =
-        create_mock_proxy_pair(user_fingerprint, remote_fingerprint2);
+    // Re-create user client with a fresh relay pair for remote2
+    let (user_relay2, remote_relay2) =
+        create_mock_relay_pair(user_fingerprint, remote_fingerprint2);
 
     let user_connection_store2 = MemoryConnectionStore::new();
     let remote_connection_store2 = MemoryConnectionStore::new();
@@ -1369,7 +1369,7 @@ async fn test_reusable_psk_pairing() {
     } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_connection_store2),
-        Box::new(user_proxy2),
+        Box::new(user_relay2),
         None,
         Some(Box::new(psk_store2)),
     )
@@ -1384,7 +1384,7 @@ async fn test_reusable_psk_pairing() {
     } = RemoteClient::connect(
         Box::new(remote_identity2),
         Box::new(remote_connection_store2),
-        Box::new(remote_proxy2),
+        Box::new(remote_relay2),
     )
     .await
     .expect("RemoteClient 2 should connect");
@@ -1447,7 +1447,7 @@ async fn test_reusable_psk_with_cached_connection() {
     let user_fingerprint = user_identity.fingerprint().await;
     let remote_fingerprint = remote_identity.fingerprint().await;
 
-    let (user_proxy, remote_proxy) = create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
+    let (user_relay, remote_relay) = create_mock_relay_pair(user_fingerprint, remote_fingerprint);
 
     // Pre-populate the connection store with the remote's fingerprint
     // (simulates a previous successful connection)
@@ -1474,7 +1474,7 @@ async fn test_reusable_psk_with_cached_connection() {
     } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_connection_store),
-        Box::new(user_proxy),
+        Box::new(user_relay),
         None,
         Some(Box::new(psk_store)),
     )
@@ -1499,7 +1499,7 @@ async fn test_reusable_psk_with_cached_connection() {
     } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(MemoryConnectionStore::new()),
-        Box::new(remote_proxy),
+        Box::new(remote_relay),
     )
     .await
     .expect("RemoteClient should connect");
@@ -1557,7 +1557,7 @@ async fn test_reusable_psk_no_store_error() {
     let user_fingerprint = user_identity.fingerprint().await;
     let remote_fingerprint = remote_identity.fingerprint().await;
 
-    let (user_proxy, _remote_proxy) = create_mock_proxy_pair(user_fingerprint, remote_fingerprint);
+    let (user_relay, _remote_relay) = create_mock_relay_pair(user_fingerprint, remote_fingerprint);
 
     let UserClientHandle {
         client: user_client,
@@ -1566,7 +1566,7 @@ async fn test_reusable_psk_no_store_error() {
     } = UserClient::connect(
         Box::new(user_identity),
         Box::new(MemoryConnectionStore::new()),
-        Box::new(user_proxy),
+        Box::new(user_relay),
         None,
         None, // No PskStore
     )

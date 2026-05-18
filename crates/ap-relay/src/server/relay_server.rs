@@ -1,4 +1,4 @@
-use ap_proxy_protocol::{IdentityFingerprint, ProxyError};
+use ap_relay_protocol::{IdentityFingerprint, RelayError};
 
 use crate::connection::AuthenticatedConnection;
 use crate::server::handler::ConnectionHandler;
@@ -37,7 +37,7 @@ impl ServerState {
     }
 }
 
-/// The proxy server that accepts client connections and relays messages.
+/// The relay server that accepts client connections and relays messages.
 ///
 /// This server handles:
 /// - Client authentication using MlDsa65 challenge-response
@@ -50,14 +50,14 @@ impl ServerState {
 /// Run a standalone server:
 ///
 /// ```no_run
-/// use ap_proxy::server::ProxyServer;
+/// use ap_relay::server::RelayServer;
 /// use std::net::SocketAddr;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let addr: SocketAddr = "127.0.0.1:8080".parse()?;
-/// let server = ProxyServer::new(addr);
+/// let server = RelayServer::new(addr);
 ///
-/// println!("Starting proxy server on {}", addr);
+/// println!("Starting relay server on {}", addr);
 /// server.run().await?;
 /// # Ok(())
 /// # }
@@ -66,13 +66,13 @@ impl ServerState {
 /// Embed in an application with cancellation:
 ///
 /// ```no_run
-/// use ap_proxy::server::ProxyServer;
+/// use ap_relay::server::RelayServer;
 /// use std::net::SocketAddr;
 /// use tokio::signal;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let addr: SocketAddr = "127.0.0.1:8080".parse()?;
-/// let server = ProxyServer::new(addr);
+/// let server = RelayServer::new(addr);
 ///
 /// tokio::select! {
 ///     result = server.run() => {
@@ -85,26 +85,26 @@ impl ServerState {
 /// # Ok(())
 /// # }
 /// ```
-pub struct ProxyServer {
+pub struct RelayServer {
     bind_addr: SocketAddr,
     state: Arc<ServerState>,
     conn_counter: AtomicU64,
 }
 
-impl ProxyServer {
-    /// Create a new proxy server that will listen on the given address.
+impl RelayServer {
+    /// Create a new relay server that will listen on the given address.
     ///
-    /// This does not start the server - call [`run()`](ProxyServer::run) to begin
+    /// This does not start the server - call [`run()`](RelayServer::run) to begin
     /// accepting connections.
     ///
     /// # Examples
     ///
     /// ```
-    /// use ap_proxy::server::ProxyServer;
+    /// use ap_relay::server::RelayServer;
     /// use std::net::SocketAddr;
     ///
     /// let addr: SocketAddr = "127.0.0.1:8080".parse().unwrap();
-    /// let server = ProxyServer::new(addr);
+    /// let server = RelayServer::new(addr);
     /// ```
     pub fn new(bind_addr: SocketAddr) -> Self {
         Self {
@@ -114,7 +114,7 @@ impl ProxyServer {
         }
     }
 
-    /// Run the proxy server, accepting and handling connections.
+    /// Run the relay server, accepting and handling connections.
     ///
     /// This method:
     /// 1. Binds to the configured address
@@ -128,13 +128,13 @@ impl ProxyServer {
     /// Use `tokio::select!` or similar to cancel the server:
     ///
     /// ```no_run
-    /// use ap_proxy::server::ProxyServer;
+    /// use ap_relay::server::RelayServer;
     /// use std::net::SocketAddr;
     /// use tokio::signal;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let addr: SocketAddr = "127.0.0.1:8080".parse()?;
-    /// let server = ProxyServer::new(addr);
+    /// let server = RelayServer::new(addr);
     ///
     /// tokio::select! {
     ///     result = server.run() => result?,
@@ -156,27 +156,27 @@ impl ProxyServer {
     /// # Examples
     ///
     /// ```no_run
-    /// use ap_proxy::server::ProxyServer;
+    /// use ap_relay::server::RelayServer;
     /// use std::net::SocketAddr;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let addr: SocketAddr = "127.0.0.1:8080".parse()?;
-    /// let server = ProxyServer::new(addr);
+    /// let server = RelayServer::new(addr);
     /// server.run().await?;
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn run(&self) -> Result<(), ProxyError> {
+    pub async fn run(&self) -> Result<(), RelayError> {
         let listener = TcpListener::bind(self.bind_addr).await?;
-        tracing::info!("Proxy server listening on {}", self.bind_addr);
+        tracing::info!("Relay server listening on {}", self.bind_addr);
         self.run_with_listener(listener).await
     }
 
-    /// Run the proxy server using an already-bound `TcpListener`.
+    /// Run the relay server using an already-bound `TcpListener`.
     ///
     /// This is useful in tests to avoid the race condition of binding a port,
     /// dropping the listener, and re-binding.
-    pub async fn run_with_listener(&self, listener: TcpListener) -> Result<(), ProxyError> {
+    pub async fn run_with_listener(&self, listener: TcpListener) -> Result<(), RelayError> {
         // Spawn background cleanup task for expired rendezvous codes
         let cleanup_state = Arc::clone(&self.state);
         tokio::spawn(async move {

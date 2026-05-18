@@ -16,8 +16,8 @@ path = "uniffi-bindgen.rs"
 
 [dependencies]
 ap-client = { path = "../ap-client", features = ["native-websocket"] }
-ap-proxy-client = { path = "../ap-proxy-client", default-features = false, features = ["native-websocket"] }
-ap-proxy-protocol = { path = "../ap-proxy-protocol" }
+ap-relay-client = { path = "../ap-relay-client", default-features = false, features = ["native-websocket"] }
+ap-relay-protocol = { path = "../ap-relay-protocol" }
 ap-noise = { path = "../ap-noise" }
 async-trait = "0.1"
 thiserror = "1.0"
@@ -28,7 +28,7 @@ uniffi = { version = "0.28", features = ["cli", "tokio"] }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 
 [dev-dependencies]
-ap-proxy = { path = "../ap-proxy" }
+ap-relay = { path = "../ap-relay" }
 tokio = { version = "1.36.0", features = ["rt-multi-thread", "sync", "macros", "time"] }
 zeroize = { version = "1.8", features = ["zeroize_derive"] }
 

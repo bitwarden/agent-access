@@ -7,8 +7,8 @@ let client = null;
 
 window.app = function () {
   return {
-    proxyUrl: "wss://ap.lesspassword.dev",
-    editingProxy: false,
+    relayUrl: "wss://ap.lesspassword.dev",
+    editingRelay: false,
     connections: [],
     loading: true,
     connected: false,
@@ -49,7 +49,7 @@ window.app = function () {
     async refreshConnections() {
       this.loading = true;
       try {
-        const tmp = await createClient(this.proxyUrl);
+        const tmp = await createClient(this.relayUrl);
         this.connections = await tmp.listConnections();
         this.addLog(
           this.connections.length
@@ -82,7 +82,7 @@ window.app = function () {
       this.pairing = true;
       this.addLog(`Pairing with ${this.token.substring(0, 11)}...`, "pending");
       try {
-        client = await createClient(this.proxyUrl);
+        client = await createClient(this.relayUrl);
         const fp = await client.pair(this.token.trim());
         this.addLog(fp ? `Paired. Fingerprint: ${fp.substring(0, 12)}...` : "Paired via PSK", "success");
         this.connected = true;
@@ -102,7 +102,7 @@ window.app = function () {
     async reconnect(fingerprint) {
       this.addLog(`Reconnecting to ${fingerprint.substring(0, 12)}...`, "pending");
       try {
-        client = await createClient(this.proxyUrl);
+        client = await createClient(this.relayUrl);
         await client.reconnect(fingerprint);
         this.addLog("Reconnected", "success");
         this.connected = true;
@@ -140,14 +140,14 @@ window.app = function () {
     },
 
     async clearConnections() {
-      const tmp = await createClient(this.proxyUrl);
+      const tmp = await createClient(this.relayUrl);
       tmp.clearConnections();
       this.addLog("Cleared all cached connections");
       await this.refreshConnections();
     },
 
-    saveProxy() {
-      this.editingProxy = false;
+    saveRelay() {
+      this.editingRelay = false;
     },
   };
 };

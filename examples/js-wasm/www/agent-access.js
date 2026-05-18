@@ -50,7 +50,7 @@ function looksLikePskToken(s) {
 function cleanError(e) {
   if (e instanceof Error) return e.message;
   const s = String(e);
-  // Strip "Failed to connect to proxy: Failed to create WebSocket: JsValue(...)" noise
+  // Strip "Failed to connect to relay: Failed to create WebSocket: JsValue(...)" noise
   const jsVal = s.match(/JsValue\((?:\w+:\s*)?(.+?)(?:\s+\S+@http).*/s);
   if (jsVal) return jsVal[1].trim();
   // Strip nested "Foo: Bar: Baz" to just the innermost message
@@ -61,25 +61,25 @@ function cleanError(e) {
 /**
  * Create an Agent Access Remote Client.
  *
- * @param {string} proxyUrl - WebSocket URL of the proxy server
+ * @param {string} relayUrl - WebSocket URL of the relay server
  * @param {string} [identityName="js-wasm-remote"] - Name for the localStorage identity
  * @returns {Promise<AgentAccessClient>}
  */
-export async function createClient(proxyUrl, identityName = "js-wasm-remote") {
+export async function createClient(relayUrl, identityName = "js-wasm-remote") {
   await ensureWasm();
-  return new AgentAccessClient(proxyUrl, identityName);
+  return new AgentAccessClient(relayUrl, identityName);
 }
 
 class AgentAccessClient {
   #inner = null;
-  #proxyUrl;
+  #relayUrl;
   #identityName;
 
-  constructor(proxyUrl, identityName) {
-    if (!proxyUrl || !/^wss?:\/\/.+/.test(proxyUrl)) {
-      throw new Error(`Invalid proxy URL: "${proxyUrl}" — expected ws:// or wss://`);
+  constructor(relayUrl, identityName) {
+    if (!relayUrl || !/^wss?:\/\/.+/.test(relayUrl)) {
+      throw new Error(`Invalid relay URL: "${relayUrl}" — expected ws:// or wss://`);
     }
-    this.#proxyUrl = proxyUrl;
+    this.#relayUrl = relayUrl;
     this.#identityName = identityName;
   }
 
@@ -108,7 +108,7 @@ class AgentAccessClient {
 
   async #withFreshConnection(action) {
     this.disconnect();
-    this.#inner = new WasmRemoteClient(this.#proxyUrl, this.#identityName);
+    this.#inner = new WasmRemoteClient(this.#relayUrl, this.#identityName);
     try {
       await this.#inner.connect();
       return await action(this.#inner);

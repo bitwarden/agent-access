@@ -21,7 +21,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Pair with a remote peer via Bitwarden Remote Access (Rust backend)"
     )
-    parser.add_argument("--proxy", default="wss://ap.lesspassword.dev", help="Proxy server URL")
+    parser.add_argument("--relay", default="wss://ap.lesspassword.dev", help="Relay server URL")
     parser.add_argument("--token", required=True, help="Rendezvous code or PSK token")
     parser.add_argument(
         "--identity", default="python-remote",
@@ -29,7 +29,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    client = RemoteClient(proxy_url=args.proxy, identity_name=args.identity)
+    client = RemoteClient(relay_url=args.relay, identity_name=args.identity)
 
     try:
         # Clear any existing session so we only keep one

@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use ap_client::{ClientError, IdentityProvider};
-use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair};
+use ap_relay_protocol::{IdentityFingerprint, IdentityKeyPair};
 use async_trait::async_trait;
 use tracing::debug;
 

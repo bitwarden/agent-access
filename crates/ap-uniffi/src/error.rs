@@ -24,7 +24,7 @@ impl From<ap_client::ClientError> for ClientError {
                 ClientError::ConnectionFailed { message }
             }
 
-            ap_client::ClientError::ProxyAuthFailed(_)
+            ap_client::ClientError::RelayAuthFailed(_)
             | ap_client::ClientError::HandshakeFailed(_)
             | ap_client::ClientError::NoiseProtocol(_)
             | ap_client::ClientError::FingerprintRejected => {
@@ -78,7 +78,7 @@ mod tests {
     #[test]
     fn handshake_errors_map_correctly() {
         let cases = vec![
-            ap_client::ClientError::ProxyAuthFailed("bad auth".to_string()),
+            ap_client::ClientError::RelayAuthFailed("bad auth".to_string()),
             ap_client::ClientError::HandshakeFailed("noise error".to_string()),
             ap_client::ClientError::NoiseProtocol("decrypt failed".to_string()),
             ap_client::ClientError::FingerprintRejected,

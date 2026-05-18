@@ -1,14 +1,14 @@
-//! Error types for proxy operations.
+//! Error types for relay operations.
 //!
-//! This module defines all error conditions that can occur during proxy client
+//! This module defines all error conditions that can occur during relay client
 //! and server operations.
 
 use crate::auth::IdentityFingerprint;
 use thiserror::Error;
 
-/// Errors that can occur during proxy client or server operations.
+/// Errors that can occur during relay client or server operations.
 #[derive(Debug, Error)]
-pub enum ProxyError {
+pub enum RelayError {
     /// WebSocket connection or communication error.
     ///
     /// Occurs when the underlying WebSocket connection fails, including network
@@ -38,7 +38,7 @@ pub enum ProxyError {
     /// Attempted to send a message to a client that is not connected.
     ///
     /// Occurs when sending a message to a fingerprint that:
-    /// - Never connected to the proxy
+    /// - Never connected to the relay
     /// - Has disconnected
     /// - Does not exist
     ///

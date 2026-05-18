@@ -1,6 +1,6 @@
-//! End-to-end integration tests for WebSocket proxy, pairing, and credential exchange
+//! End-to-end integration tests for WebSocket relay, pairing, and credential exchange
 //!
-//! These tests exercise the complete protocol stack using a real WebSocket proxy server,
+//! These tests exercise the complete protocol stack using a real WebSocket relay server,
 //! covering PSK and fingerprint-based pairing modes as well as credential exchange.
 
 use std::net::SocketAddr;
@@ -8,12 +8,12 @@ use std::sync::Arc;
 
 use ap_client::{
     ConnectionInfo, ConnectionStore, ConnectionUpdate, CredentialData, CredentialRequestReply,
-    DefaultProxyClient, FingerprintVerificationReply, MemoryConnectionStore,
+    DefaultRelayClient, FingerprintVerificationReply, MemoryConnectionStore,
     MemoryIdentityProvider, PskToken, RemoteClient, RemoteClientHandle, RemoteClientNotification,
     UserClient, UserClientHandle, UserClientNotification, UserClientRequest,
 };
-use ap_proxy::server::ProxyServer;
-use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair};
+use ap_relay::server::RelayServer;
+use ap_relay_protocol::{IdentityFingerprint, IdentityKeyPair};
 use tokio::time::{Duration, timeout};
 use zeroize::Zeroizing;
 
@@ -52,22 +52,22 @@ impl ConnectionStore for SharedConnectionStore {
 // Test Infrastructure - Helper Functions
 // ============================================================================
 
-/// Start a real proxy server for testing and return its address
+/// Start a real relay server for testing and return its address
 async fn start_test_server() -> SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("should bind to localhost");
     let addr = listener.local_addr().expect("should get local address");
 
-    let server = ProxyServer::new(addr);
+    let server = RelayServer::new(addr);
     tokio::spawn(async move { server.run_with_listener(listener).await.ok() });
 
     addr
 }
 
-/// Create a DefaultProxyClient connected to the given address
-fn create_proxy_client(addr: SocketAddr) -> DefaultProxyClient {
-    DefaultProxyClient::from_url(format!("ws://{addr}"))
+/// Create a DefaultRelayClient connected to the given address
+fn create_relay_client(addr: SocketAddr) -> DefaultRelayClient {
+    DefaultRelayClient::from_url(format!("ws://{addr}"))
 }
 
 /// Create a test credential for use in tests
@@ -89,15 +89,15 @@ fn test_credential() -> CredentialData {
 
 #[tokio::test]
 async fn test_e2e_psk_pairing_and_credential_request() {
-    // 1. Start real proxy server
+    // 1. Start real relay server
     let addr = start_test_server().await;
 
     // 2. Create identities
     let user_identity = MemoryIdentityProvider::new();
     let remote_identity = MemoryIdentityProvider::new();
 
-    // 3. Create UserClient with DefaultProxyClient
-    let user_proxy = create_proxy_client(addr);
+    // 3. Create UserClient with DefaultRelayClient
+    let user_relay = create_relay_client(addr);
     let user_connection_store = MemoryConnectionStore::new();
 
     let UserClientHandle {
@@ -107,7 +107,7 @@ async fn test_e2e_psk_pairing_and_credential_request() {
     } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_connection_store),
-        Box::new(user_proxy),
+        Box::new(user_relay),
         None,
         None,
     )
@@ -125,8 +125,8 @@ async fn test_e2e_psk_pairing_and_credential_request() {
         .expect("Should parse PSK token")
         .into_parts();
 
-    // 5. Create RemoteClient with DefaultProxyClient
-    let remote_proxy = create_proxy_client(addr);
+    // 5. Create RemoteClient with DefaultRelayClient
+    let remote_relay = create_relay_client(addr);
     let remote_connection_store = MemoryConnectionStore::new();
 
     let RemoteClientHandle {
@@ -136,7 +136,7 @@ async fn test_e2e_psk_pairing_and_credential_request() {
     } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_connection_store),
-        Box::new(remote_proxy),
+        Box::new(remote_relay),
     )
     .await
     .expect("RemoteClient should connect");
@@ -231,15 +231,15 @@ async fn test_e2e_psk_pairing_and_credential_request() {
 
 #[tokio::test]
 async fn test_e2e_fingerprint_pairing_and_credential_request() {
-    // 1. Start real proxy server
+    // 1. Start real relay server
     let addr = start_test_server().await;
 
     // 2. Create identities
     let user_identity = MemoryIdentityProvider::new();
     let remote_identity = MemoryIdentityProvider::new();
 
-    // 3. Create UserClient with DefaultProxyClient
-    let user_proxy = create_proxy_client(addr);
+    // 3. Create UserClient with DefaultRelayClient
+    let user_relay = create_relay_client(addr);
     let user_connection_store = MemoryConnectionStore::new();
 
     let UserClientHandle {
@@ -249,7 +249,7 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
     } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_connection_store),
-        Box::new(user_proxy),
+        Box::new(user_relay),
         None,
         None,
     )
@@ -263,8 +263,8 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
         .expect("Should get rendezvous token");
     let code = code.as_str().to_string();
 
-    // 5. Create RemoteClient with DefaultProxyClient
-    let remote_proxy = create_proxy_client(addr);
+    // 5. Create RemoteClient with DefaultRelayClient
+    let remote_relay = create_relay_client(addr);
     let remote_connection_store = MemoryConnectionStore::new();
 
     let RemoteClientHandle {
@@ -274,7 +274,7 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
     } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_connection_store),
-        Box::new(remote_proxy),
+        Box::new(remote_relay),
     )
     .await
     .expect("RemoteClient should connect");
@@ -380,15 +380,15 @@ async fn test_e2e_fingerprint_pairing_and_credential_request() {
 
 #[tokio::test]
 async fn test_e2e_credential_request_denied() {
-    // 1. Start real proxy server
+    // 1. Start real relay server
     let addr = start_test_server().await;
 
     // 2. Create identities
     let user_identity = MemoryIdentityProvider::new();
     let remote_identity = MemoryIdentityProvider::new();
 
-    // 3. Create UserClient with DefaultProxyClient
-    let user_proxy = create_proxy_client(addr);
+    // 3. Create UserClient with DefaultRelayClient
+    let user_relay = create_relay_client(addr);
     let user_connection_store = MemoryConnectionStore::new();
 
     let UserClientHandle {
@@ -398,7 +398,7 @@ async fn test_e2e_credential_request_denied() {
     } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_connection_store),
-        Box::new(user_proxy),
+        Box::new(user_relay),
         None,
         None,
     )
@@ -417,7 +417,7 @@ async fn test_e2e_credential_request_denied() {
         .into_parts();
 
     // 5. Create RemoteClient
-    let remote_proxy = create_proxy_client(addr);
+    let remote_relay = create_relay_client(addr);
     let remote_connection_store = MemoryConnectionStore::new();
 
     let RemoteClientHandle {
@@ -427,7 +427,7 @@ async fn test_e2e_credential_request_denied() {
     } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_connection_store),
-        Box::new(remote_proxy),
+        Box::new(remote_relay),
     )
     .await
     .expect("RemoteClient should connect");
@@ -488,15 +488,15 @@ async fn test_e2e_credential_request_denied() {
 
 #[tokio::test]
 async fn test_e2e_multiple_credential_requests() {
-    // 1. Start real proxy server
+    // 1. Start real relay server
     let addr = start_test_server().await;
 
     // 2. Create identities
     let user_identity = MemoryIdentityProvider::new();
     let remote_identity = MemoryIdentityProvider::new();
 
-    // 3. Create UserClient with DefaultProxyClient
-    let user_proxy = create_proxy_client(addr);
+    // 3. Create UserClient with DefaultRelayClient
+    let user_relay = create_relay_client(addr);
     let user_connection_store = MemoryConnectionStore::new();
 
     let UserClientHandle {
@@ -506,7 +506,7 @@ async fn test_e2e_multiple_credential_requests() {
     } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_connection_store),
-        Box::new(user_proxy),
+        Box::new(user_relay),
         None,
         None,
     )
@@ -525,7 +525,7 @@ async fn test_e2e_multiple_credential_requests() {
         .into_parts();
 
     // 5. Create RemoteClient
-    let remote_proxy = create_proxy_client(addr);
+    let remote_relay = create_relay_client(addr);
     let remote_connection_store = MemoryConnectionStore::new();
 
     let RemoteClientHandle {
@@ -535,7 +535,7 @@ async fn test_e2e_multiple_credential_requests() {
     } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(remote_connection_store),
-        Box::new(remote_proxy),
+        Box::new(remote_relay),
     )
     .await
     .expect("RemoteClient should connect");
@@ -623,15 +623,15 @@ async fn test_e2e_multiple_credential_requests() {
 
 #[tokio::test]
 async fn test_e2e_transport_state_persistence() {
-    // 1. Start real proxy server
+    // 1. Start real relay server
     let addr = start_test_server().await;
 
     // 2. Create identities
     let user_identity = MemoryIdentityProvider::new();
     let remote_identity = MemoryIdentityProvider::new();
 
-    // 3. Create UserClient with DefaultProxyClient
-    let user_proxy = create_proxy_client(addr);
+    // 3. Create UserClient with DefaultRelayClient
+    let user_relay = create_relay_client(addr);
     let user_connection_store = MemoryConnectionStore::new();
 
     let UserClientHandle {
@@ -641,7 +641,7 @@ async fn test_e2e_transport_state_persistence() {
     } = UserClient::connect(
         Box::new(user_identity),
         Box::new(user_connection_store),
-        Box::new(user_proxy),
+        Box::new(user_relay),
         None,
         None,
     )
@@ -660,7 +660,7 @@ async fn test_e2e_transport_state_persistence() {
         .into_parts();
 
     // 5. Create RemoteClient with shared connection store for later access
-    let remote_proxy = create_proxy_client(addr);
+    let remote_relay = create_relay_client(addr);
     let remote_connection_store = Arc::new(tokio::sync::Mutex::new(MemoryConnectionStore::new()));
     let connection_store_clone = Arc::clone(&remote_connection_store);
 
@@ -672,7 +672,7 @@ async fn test_e2e_transport_state_persistence() {
     } = RemoteClient::connect(
         Box::new(remote_identity),
         Box::new(SharedConnectionStore(remote_connection_store)),
-        Box::new(remote_proxy),
+        Box::new(remote_relay),
     )
     .await
     .expect("RemoteClient should connect");
@@ -754,15 +754,15 @@ async fn test_e2e_transport_state_persistence() {
 
 #[tokio::test]
 async fn test_e2e_multi_device_credential_response() {
-    // 1. Start real proxy server
+    // 1. Start real relay server
     let addr = start_test_server().await;
 
     // 2. Create identities - same user identity for both devices
     let user_keypair = IdentityKeyPair::generate();
     let user_keypair_device2 = user_keypair.clone();
 
-    // 3. Create UserClient Device 1 with DefaultProxyClient
-    let user_proxy1 = create_proxy_client(addr);
+    // 3. Create UserClient Device 1 with DefaultRelayClient
+    let user_relay1 = create_relay_client(addr);
 
     // Use Arc for shared access between multiple UserClient devices
     let user_connection_store1 = Arc::new(tokio::sync::Mutex::new(MemoryConnectionStore::new()));
@@ -775,7 +775,7 @@ async fn test_e2e_multi_device_credential_response() {
     } = UserClient::connect(
         Box::new(MemoryIdentityProvider::from_keypair(user_keypair)),
         Box::new(SharedConnectionStore(Arc::clone(&user_connection_store1))),
-        Box::new(user_proxy1),
+        Box::new(user_relay1),
         None,
         None,
     )
@@ -794,7 +794,7 @@ async fn test_e2e_multi_device_credential_response() {
         .into_parts();
 
     // 6. Create RemoteClient
-    let remote_proxy = create_proxy_client(addr);
+    let remote_relay = create_relay_client(addr);
     let RemoteClientHandle {
         client: remote_client,
         notifications: mut remote_notification_rx,
@@ -802,7 +802,7 @@ async fn test_e2e_multi_device_credential_response() {
     } = RemoteClient::connect(
         Box::new(MemoryIdentityProvider::new()),
         Box::new(MemoryConnectionStore::new()),
-        Box::new(remote_proxy),
+        Box::new(remote_relay),
     )
     .await
     .expect("RemoteClient should connect");
@@ -831,7 +831,7 @@ async fn test_e2e_multi_device_credential_response() {
     }
 
     // 9. Create UserClient Device 2 with SHARED connection store
-    let user_proxy2 = create_proxy_client(addr);
+    let user_relay2 = create_relay_client(addr);
     let UserClientHandle {
         client: user_client2,
         notifications: mut notification_rx2,
@@ -839,7 +839,7 @@ async fn test_e2e_multi_device_credential_response() {
     } = UserClient::connect(
         Box::new(MemoryIdentityProvider::from_keypair(user_keypair_device2)),
         Box::new(SharedConnectionStore(Arc::clone(&connection_store_clone))),
-        Box::new(user_proxy2),
+        Box::new(user_relay2),
         None,
         None,
     )
@@ -858,7 +858,7 @@ async fn test_e2e_multi_device_credential_response() {
     .expect("Device 2 should listen");
 
     // 10. Spawn response handlers for both devices.
-    // Both handlers always approve. Since the proxy broadcasts credential
+    // Both handlers always approve. Since the relay broadcasts credential
     // requests to all connections with the same identity, both devices
     // receive every request. Each device independently responds via its
     // own oneshot. The remote client uses the first response that arrives.

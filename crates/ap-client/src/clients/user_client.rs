@@ -9,14 +9,14 @@ use std::time::Instant;
 use web_time::Instant;
 
 use ap_noise::{Ciphersuite, MultiDeviceTransport, Psk, ResponderHandshake};
-use ap_proxy_client::IncomingMessage;
-use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair, RendezvousCode};
+use ap_relay_client::IncomingMessage;
+use ap_relay_protocol::{IdentityFingerprint, IdentityKeyPair, RendezvousCode};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
 use tokio::sync::oneshot;
 
-use crate::proxy::ProxyClient;
+use crate::relay::RelayClient;
 use crate::types::{CredentialData, PskId, PskToken};
 use tokio::sync::mpsc;
 use tracing::{debug, warn};
@@ -199,14 +199,14 @@ pub enum UserClientNotification {
         /// The remote device's identity fingerprint
         fingerprint: IdentityFingerprint,
     },
-    /// Client disconnected from proxy
+    /// Client disconnected from relay
     ClientDisconnected {},
-    /// Attempting to reconnect to proxy
+    /// Attempting to reconnect to relay
     Reconnecting {
         /// Current reconnection attempt number
         attempt: u32,
     },
-    /// Successfully reconnected to proxy
+    /// Successfully reconnected to relay
     Reconnected {},
     /// An error occurred
     Error {
@@ -295,7 +295,7 @@ enum UserClientCommand {
         reusable: bool,
         reply: oneshot::Sender<Result<String, ClientError>>,
     },
-    /// Request a rendezvous code from the proxy and register a pending pairing.
+    /// Request a rendezvous code from the relay and register a pending pairing.
     GetRendezvousToken {
         name: Option<String>,
         reply: oneshot::Sender<Result<RendezvousCode, ClientError>>,
@@ -304,7 +304,7 @@ enum UserClientCommand {
 
 /// A cloneable handle for controlling the user client.
 ///
-/// Obtained from [`UserClient::connect()`], which authenticates with the proxy,
+/// Obtained from [`UserClient::connect()`], which authenticates with the relay,
 /// spawns the event loop internally, and returns this handle. All methods
 /// communicate with the event loop through an internal command channel.
 ///
@@ -323,7 +323,7 @@ pub struct UserClient {
 }
 
 impl UserClient {
-    /// Connect to the proxy server, spawn the event loop, and return a handle.
+    /// Connect to the relay server, spawn the event loop, and return a handle.
     ///
     /// This is the single entry point. After `connect()` returns, the client is
     /// already listening for incoming connections. Use `get_psk_token()` or
@@ -336,16 +336,16 @@ impl UserClient {
     pub async fn connect(
         identity_provider: Box<dyn IdentityProvider>,
         connection_store: Box<dyn ConnectionStore>,
-        mut proxy_client: Box<dyn ProxyClient>,
+        mut relay_client: Box<dyn RelayClient>,
         audit_log: Option<Box<dyn AuditLog>>,
         psk_store: Option<Box<dyn PskStore>>,
     ) -> Result<UserClientHandle, ClientError> {
-        // Extract identity once — used for proxy auth, reconnection, and own fingerprint
+        // Extract identity once — used for relay auth, reconnection, and own fingerprint
         let identity_keypair = identity_provider.identity().await;
         let own_fingerprint = identity_keypair.identity().fingerprint();
 
-        // Authenticate with the proxy (the async part — before spawn)
-        let incoming_rx = proxy_client.connect(identity_keypair.clone()).await?;
+        // Authenticate with the relay (the async part — before spawn)
+        let incoming_rx = relay_client.connect(identity_keypair.clone()).await?;
 
         // Create channels
         let (notification_tx, notification_rx) = mpsc::channel(32);
@@ -375,7 +375,7 @@ impl UserClient {
 
         let inner = UserClientInner {
             connection_store,
-            proxy_client,
+            relay_client,
             identity_keypair,
             own_fingerprint,
             transports: HashMap::new(),
@@ -427,7 +427,7 @@ impl UserClient {
         rx.await.map_err(|_| ClientError::ChannelClosed)?
     }
 
-    /// Request a rendezvous code from the proxy for a new pairing.
+    /// Request a rendezvous code from the relay for a new pairing.
     ///
     /// Only one rendezvous pairing at a time — there's no way to distinguish
     /// incoming rendezvous handshakes.
@@ -451,7 +451,7 @@ impl UserClient {
 /// All mutable state for the user client, owned by the spawned event loop task.
 struct UserClientInner {
     connection_store: Box<dyn ConnectionStore>,
-    proxy_client: Box<dyn ProxyClient>,
+    relay_client: Box<dyn RelayClient>,
     /// Our identity keypair (needed for reconnection).
     identity_keypair: IdentityKeyPair,
     /// Our own identity fingerprint (cached at construction time).
@@ -498,7 +498,7 @@ impl UserClientInner {
                             }
                         }
                         None => {
-                            // Incoming channel closed — proxy connection lost
+                            // Incoming channel closed — relay connection lost
                             notify!(notification_tx, UserClientNotification::ClientDisconnected {});
                             match self.attempt_reconnection(&notification_tx).await {
                                 Ok(new_rx) => {
@@ -547,7 +547,7 @@ impl UserClientInner {
         }
     }
 
-    /// Attempt to reconnect to the proxy server with exponential backoff.
+    /// Attempt to reconnect to the relay server with exponential backoff.
     async fn attempt_reconnection(
         &mut self,
         notification_tx: &mpsc::Sender<UserClientNotification>,
@@ -561,15 +561,15 @@ impl UserClientInner {
             attempt = attempt.saturating_add(1);
 
             // Disconnect (ignore errors — connection may already be dead)
-            let _ = self.proxy_client.disconnect().await;
+            let _ = self.relay_client.disconnect().await;
 
             match self
-                .proxy_client
+                .relay_client
                 .connect(self.identity_keypair.clone())
                 .await
             {
                 Ok(new_rx) => {
-                    debug!("Reconnected to proxy on attempt {}", attempt);
+                    debug!("Reconnected to relay on attempt {}", attempt);
                     return Ok(new_rx);
                 }
                 Err(e) => {
@@ -597,7 +597,7 @@ impl UserClientInner {
         }
     }
 
-    /// Handle incoming messages from proxy.
+    /// Handle incoming messages from relay.
     async fn handle_incoming(
         &mut self,
         msg: IncomingMessage,
@@ -996,7 +996,7 @@ impl UserClientInner {
                 let _ = reply.send(result);
             }
             UserClientCommand::GetRendezvousToken { name, reply } => {
-                if let Err(e) = self.proxy_client.request_rendezvous().await {
+                if let Err(e) = self.relay_client.request_rendezvous().await {
                     let _ = reply.send(Err(e));
                     return;
                 }
@@ -1016,7 +1016,7 @@ impl UserClientInner {
                 notify!(
                     notification_tx,
                     UserClientNotification::HandshakeProgress {
-                        message: "Requesting rendezvous code from proxy...".to_string(),
+                        message: "Requesting rendezvous code from relay...".to_string(),
                     }
                 );
             }
@@ -1229,7 +1229,7 @@ impl UserClientInner {
 
         let msg_json = serde_json::to_string(&msg)?;
 
-        self.proxy_client
+        self.relay_client
             .send_to(source, msg_json.into_bytes())
             .await?;
 
@@ -1318,7 +1318,7 @@ impl UserClientInner {
 
         let msg_json = serde_json::to_string(&msg)?;
 
-        self.proxy_client
+        self.relay_client
             .send_to(remote_fingerprint, msg_json.into_bytes())
             .await?;
 
