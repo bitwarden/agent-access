@@ -22,7 +22,7 @@ impl JsCredentialData {
 
     #[wasm_bindgen(getter)]
     pub fn password(&self) -> Option<String> {
-        self.inner.password.clone()
+        self.inner.password.as_ref().map(|p| p.to_string())
     }
 
     #[wasm_bindgen(getter)]
@@ -54,7 +54,7 @@ impl JsCredentialData {
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> JsValue {
         let obj = js_sys::Object::new();
-        let set = |key: &str, val: &Option<String>| {
+        let set = |key: &str, val: Option<&str>| {
             let _ = js_sys::Reflect::set(
                 &obj,
                 &JsValue::from_str(key),
@@ -64,13 +64,13 @@ impl JsCredentialData {
                 },
             );
         };
-        set("username", &self.inner.username);
-        set("password", &self.inner.password);
-        set("totp", &self.inner.totp);
-        set("uri", &self.inner.uri);
-        set("notes", &self.inner.notes);
-        set("credential_id", &self.inner.credential_id);
-        set("domain", &self.inner.domain);
+        set("username", self.inner.username.as_deref());
+        set("password", self.inner.password.as_deref().map(|p| p.as_str()));
+        set("totp", self.inner.totp.as_deref());
+        set("uri", self.inner.uri.as_deref());
+        set("notes", self.inner.notes.as_deref());
+        set("credential_id", self.inner.credential_id.as_deref());
+        set("domain", self.inner.domain.as_deref());
         obj.into()
     }
 }
