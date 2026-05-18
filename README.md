@@ -71,7 +71,8 @@ curl -fsSL "https://raw.githubusercontent.com/bitwarden/agent-access/main/exampl
 
 Use Agent Access directly from your code by referencing the Rust SDK. See the full examples:
 
-* [Python (PyO3 bindings)](examples/python-pyo3/) — connect and request credentials from Python
+* [Python (UniFFI bindings)](examples/python-uniffi/) — connect and request credentials from Python
+* [JavaScript/WASM](examples/js-wasm/) — browser-based client using WebAssembly bindings
 * [Rust remote client](examples/rust-remote/) — minimal Rust example using `RemoteClient`
 
 Here's a quick Python example:

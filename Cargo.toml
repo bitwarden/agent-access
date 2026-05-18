@@ -12,7 +12,6 @@ members = [
     "crates/ap-uniffi",
 ]
 exclude = [
-    "examples/python-pyo3",
     "examples/rust-remote",
     "examples/rust-listener",
     "examples/js-wasm",

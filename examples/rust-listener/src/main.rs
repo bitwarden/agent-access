@@ -14,7 +14,7 @@
 
 use ap_client::{
     CredentialData, CredentialRequestReply, DefaultRelayClient, FingerprintVerificationReply,
-    MemoryIdentityProvider, MemorySessionStore, UserClient, UserClientRequest,
+    MemoryConnectionStore, MemoryIdentityProvider, UserClient, UserClientRequest,
 };
 
 const DEFAULT_RELAY_URL: &str = "ws://127.0.0.1:8080";
@@ -34,16 +34,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Ephemeral identity and session store (not persisted)
     let identity = Box::new(MemoryIdentityProvider::new());
-    let session_store = Box::new(MemorySessionStore::new());
+    let session_store = Box::new(MemoryConnectionStore::new());
     let relay_client = Box::new(DefaultRelayClient::from_url(relay_url));
 
     // Connect to the relay and start listening
-    let handle = UserClient::connect(identity, session_store, relay_client, None).await?;
+    let handle = UserClient::connect(identity, session_store, relay_client, None, None).await?;
     let client = handle.client;
     let mut requests = handle.requests;
 
     // Generate a PSK token for pairing
-    let token = client.get_psk_token(None).await?;
+    let token = client.get_psk_token(None, false).await?;
     eprintln!("Listening. Share this PSK token with the remote client:");
     println!("{token}");
 
@@ -65,7 +65,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     approved: true,
                     credential: Some(CredentialData {
                         username: Some("user@example.com".to_string()),
-                        password: Some("hunter2".to_string()),
+                        password: Some("hunter2".to_string().into()),
                         totp: None,
                         uri: Some(query.search_string().to_string()),
                         notes: None,
