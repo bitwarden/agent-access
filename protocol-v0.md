@@ -3,7 +3,7 @@
 The Agent Access Protocol is a protocol for presenting credentials whose design
 goals include user-mediation, fine-grained access, and end-to-end encryption.
 
-Covers the Noise, wire and proxy protocol. Does not include client or CLI architecture.
+Covers the Noise, wire and relay protocol. Does not include client or CLI architecture.
 We've intentionally included some implementation details for the sake of pragamatism.
 
 Status: draft.
@@ -15,6 +15,7 @@ Authors:
 
 Contributors:
 * Ludovic Widmer, Dashlane
+* Nick Steele, OpenAI
 
 ## Introduction
 
@@ -75,8 +76,8 @@ password manager and remote system that supports the protocol.
 The two peers establish an end-to-end **Noise NNpsk2** session directly
 between themselves; all credential traffic is encrypted and
 authenticated inside that session. Because the peers are usually on
-different networks, the session is tunneled over a public **proxy**
-that relays opaque payloads over WebSocket. The proxy authenticates
+different networks, the session is tunneled over a public **relay**
+that relays opaque payloads over WebSocket. The relay authenticates
 each connection by a long-lived signing identity so it can route by
 address, but it cannot decrypt, forge, or modify payloads.
 
@@ -91,7 +92,7 @@ address, but it cannot decrypt, forge, or modify payloads.
          │ Send(dst, payload)         Send(dst, payload)  │
          ▼                                                ▼
     ┌────────────────────────────────────────────────────────┐
-    │                         Proxy                          │
+    │                         Relay                          │
     │   Authenticates identities, routes by fingerprint,     │
     │   sees only opaque ciphertext.                         │
     └────────────────────────────────────────────────────────┘
@@ -101,12 +102,12 @@ address, but it cannot decrypt, forge, or modify payloads.
 ### Lifecycle
 
 1. **Connect & authenticate** (each side, independently). Client opens a
-   WebSocket to the proxy. The proxy issues a random challenge; the
+   WebSocket to the relay. The relay issues a random challenge; the
    client signs it with its identity key (Ed25519 or ML-DSA-65). The
-   proxy indexes the connection by `fingerprint = SHA256(pubkey)`.
+   relay indexes the connection by `fingerprint = SHA256(pubkey)`.
 2. **Pair** (first time only). The two peers need to learn each other's
    fingerprint. Either:
-   - **Rendezvous**: UserClient asks the proxy for a short human code
+   - **Rendezvous**: UserClient asks the relay for a short human code
      (`ABC-DEF-GHI`, 5 min TTL). RemoteClient exchanges the code for the
      UserClient's identity. No shared secret - peers will verify a
      6-hex handshake fingerprint out-of-band during pairing.
@@ -116,7 +117,7 @@ address, but it cannot decrypt, forge, or modify payloads.
      verification needed.
 3. **Handshake.** RemoteClient initiates a two-message Noise NNpsk2
    handshake (`HandshakeStart` → `HandshakeFinish`) carried inside
-   proxy `Send` frames. Both sides derive symmetric transport keys.
+   relay `Send` frames. Both sides derive symmetric transport keys.
 4. **Use.** Peers exchange arbitrary E2E-encrypted application messages.
    In v0 these are credential request / response pairs. Transport uses
    random 24-byte nonces with a timestamp-based replay window and
@@ -133,26 +134,26 @@ address, but it cannot decrypt, forge, or modify payloads.
 > 3. Responder → `HandshakeFinish` (with pubkey) → Initiator. The
 >    initiator verifies the enclosed key matches the commitment.
 >
-> A proxy cannot swap the responder's key mid-flight because it cannot
+> A relay cannot swap the responder's key mid-flight because it cannot
 > produce a matching commitment, closing the fingerprint-grinding gap.
 
-### Proxy model
+### Relay model
 
 > **Editor note.** This is not a proper threat model; we anticipate
-> iteration on the proxy. The lists below are a high-level view of the
+> iteration on the relay. The lists below are a high-level view of the
 > current design.
 
-*The proxy can:*
+*The relay can:*
 
 - Observe which fingerprints are connected, and who talks to whom.
 - Observe message sizes and timing. (**Editor note:** v0 has no payload
-  padding - add padding so the proxy can't infer credential sizes.)
+  padding - add padding so the relay can't infer credential sizes.)
 - Drop, delay, reorder, or re-send any message it relays. Re-sends are
-  rejected by the Noise transport replay buffer, but the proxy can
+  rejected by the Noise transport replay buffer, but the relay can
   still emit them.
 - Deny service at will.
 
-*The proxy cannot:*
+*The relay cannot:*
 
 - Read or modify E2E payloads (Noise AEAD over XChaCha20-Poly1305).
 - Produce ciphertext that decrypts under another peer's session keys.
@@ -163,12 +164,12 @@ address, but it cannot decrypt, forge, or modify payloads.
   DH/KEM material that is discarded after the handshake, and the rekey
   chain is one-way.
 
-*Caveat: rendezvous MITM.* In rendezvous (null-PSK) mode, the proxy
+*Caveat: rendezvous MITM.* In rendezvous (null-PSK) mode, the relay
 supplies the peer's `Identity` in response to `GetIdentity(code)`, and
-a malicious proxy can substitute its own identity to mount a MITM.
+a malicious relay can substitute its own identity to mount a MITM.
 This is detected only if both peers verify the 6-hex
 `HandshakeFingerprint` out-of-band (see §4.3). With 24 bits of entropy
-the fingerprint is brute-forceable by a determined proxy; PSK mode
+the fingerprint is brute-forceable by a determined relay; PSK mode
 closes this gap, and the commitment scheme above is a proposed fix for
 rendezvous mode.
 
@@ -176,10 +177,10 @@ rendezvous mode.
 
 1. **Overview**: peers, layers, where the trust boundary sits.
 2. **Identities**: `IdentityKeyPair`, `Identity`, `IdentityFingerprint`.
-3. **Proxy layer**: WebSocket transport, JSON framing, three phases.
+3. **Relay layer**: WebSocket transport, JSON framing, three phases.
    1. Authentication: challenge / COSE_Sign1 response.
    2. Pairing: rendezvous codes and PSK tokens.
-   3. Message routing: `Send` with proxy-asserted source.
+   3. Message routing: `Send` with relay-asserted source.
 4. **End-to-end layer (`ap-noise`)**: runs inside relayed payloads.
    1. Ciphersuites (classical / post-quantum).
    2. Handshake: NNpsk2 (null-PSK or real-PSK).
@@ -201,8 +202,8 @@ rendezvous mode.
 
 Two peers - a **UserClient** (holds credentials) and a **RemoteClient**
 (requests credentials, runs on a remote device) - exchange encrypted
-payloads through a WebSocket **proxy**. The proxy authenticates each
-connection by identity but never sees plaintext. The proxy is not trusted
+payloads through a WebSocket **relay**. The relay authenticates each
+connection by identity but never sees plaintext. The relay is not trusted
 for confidentiality or integrity of payloads; peers rely on Noise NNpsk2
 for E2E security.
 
@@ -214,7 +215,7 @@ Two independent cryptographic layers:
 
 | Layer | Purpose | Key material | Crate |
 |-------|---------|--------------|-------|
-| Proxy | Identify + route connections | `IdentityKeyPair` (Ed25519 or ML-DSA-65) | `ap-proxy-protocol` |
+| Relay | Identify + route connections | `IdentityKeyPair` (Ed25519 or ML-DSA-65) | `ap-relay-protocol` |
 | E2E (Noise) | Encrypt peer traffic | Ephemeral DH/KEM + optional PSK | `ap-noise` |
 
 ## 2. Identities
@@ -224,11 +225,11 @@ Two independent cryptographic layers:
   (RFC 9052). 32-byte seed; keys derived from seed.
 - `Identity`: COSE-encoded public key only. Freely shareable.
 - `IdentityFingerprint`: `SHA256(public_key_bytes)` → 32 bytes, hex-encoded
-  as 64 chars. Used as the proxy addressing key and for display.
+  as 64 chars. Used as the relay addressing key and for display.
 - No rotation protocol in v0; the key pair is the long-term identity of a
   client and survives reconnection and session resumption.
 
-## 3. Proxy Layer
+## 3. Relay Layer
 
 **Transport.** WebSocket (`ws://` or `wss://`). All protocol frames are WebSocket **text** frames
 containing a JSON-serialized `Messages` enum (tagged by variant name).
@@ -621,7 +622,7 @@ A non-exhaustive list of open items.
 - **Context metadata.** The responder may want the request to carry a
   purpose string ("agent X accessing site Y for user task Z") to
   display in the approval UI.
-- **Proxy Buffering.** The proxy requires clients to be online. We
+- **Relay Buffering.** The relay requires clients to be online. We
   could relax that
 - **Mandated re-handshakes**. We currently do not do automatic
   self-healing. We could consider a SHOULD based on time/count.
@@ -634,16 +635,16 @@ A non-exhaustive list of open items.
 
 | Name | Value | Layer |
 |------|-------|-------|
-| `CHALLENGE_SIZE` | 32 B | Proxy |
-| `AUTH_TIMEOUT` | 5 s | Proxy |
-| `CLIENT_INACTIVITY_TIMEOUT` | 120 s | Proxy |
-| Rendezvous code | `[A-Z0-9]{3}-…-…` (9 chars) | Proxy |
-| Rendezvous TTL | 300 s, single-use | Proxy |
-| Rendezvous sweep | every 60 s | Proxy |
+| `CHALLENGE_SIZE` | 32 B | Relay |
+| `AUTH_TIMEOUT` | 5 s | Relay |
+| `CLIENT_INACTIVITY_TIMEOUT` | 120 s | Relay |
+| Rendezvous code | `[A-Z0-9]{3}-…-…` (9 chars) | Relay |
+| Rendezvous TTL | 300 s, single-use | Relay |
+| Rendezvous sweep | every 60 s | Relay |
 | `PSK_LENGTH` | 32 B | Noise |
 | `PskId` | `hex(SHA256(psk)[0..8])` (16 chars) | Noise |
 | `HandshakeFingerprint` | 6 hex chars | Noise |
-| `IdentityFingerprint` | 32 B (64 hex) | Proxy/Noise |
+| `IdentityFingerprint` | 32 B (64 hex) | Relay/Noise |
 | `MAX_NOISE_MESSAGE_SIZE` | 65 535 B | Noise |
 | `MAX_MESSAGE_AGE` | 86 400 s (24 h) | Transport |
 | `CLOCK_SKEW_TOLERANCE` | 60 s | Transport |
@@ -653,7 +654,7 @@ A non-exhaustive list of open items.
 
 | Encoding | Where |
 |----------|-------|
-| JSON (WebSocket text) | Proxy `Messages`, `ProtocolMessage` |
+| JSON (WebSocket text) | Relay `Messages`, `ProtocolMessage` |
 | CBOR | COSE keys, `COSE_Sign1`, `HandshakePacket`, `TransportPacket`, `TransportPacketAad`, `PersistentTransportState` |
 | Base64 | `ProtocolMessage.data` and `.encrypted` fields |
 | Hex | Fingerprints, PSKs, PSK tokens, PSK IDs |

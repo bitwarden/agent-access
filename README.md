@@ -179,7 +179,7 @@ It contains:
 * An end-to-end encrypted tunnel, using Noise
 * A Rust SDK for establishing a tunnel, sending requests, and responding to them
 * A CLI tool for requesting / releasing credentials
-* A proxy server for demo/development purposes
+* A relay server for demo/development purposes
 
 <p align="center">
   <picture>

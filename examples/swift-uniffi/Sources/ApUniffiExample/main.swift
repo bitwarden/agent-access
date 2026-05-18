@@ -4,19 +4,19 @@ import Foundation
 struct Arguments {
     let token: String
     let domain: String
-    let proxyUrl: String
+    let relayUrl: String
 }
 
 func parseArguments() -> Arguments? {
     let args = CommandLine.arguments
     var token: String?
     var domain: String?
-    var proxyUrl = "wss://ap.lesspassword.dev"
+    var relayUrl = "wss://ap.lesspassword.dev"
 
     var i = 1
     while i < args.count {
         switch args[i] {
-        case "--token", "--domain", "--proxy":
+        case "--token", "--domain", "--relay":
             let flag = args[i]
             i += 1
             guard i < args.count else {
@@ -26,7 +26,7 @@ func parseArguments() -> Arguments? {
             switch flag {
             case "--token": token = args[i]
             case "--domain": domain = args[i]
-            case "--proxy": proxyUrl = args[i]
+            case "--relay": relayUrl = args[i]
             default: break
             }
         default:
@@ -37,11 +37,11 @@ func parseArguments() -> Arguments? {
     }
 
     guard let token = token, let domain = domain else {
-        fputs("Usage: ApUniffiExample --token <TOKEN> --domain <DOMAIN> [--proxy <URL>]\n", stderr)
+        fputs("Usage: ApUniffiExample --token <TOKEN> --domain <DOMAIN> [--relay <URL>]\n", stderr)
         return nil
     }
 
-    return Arguments(token: token, domain: domain, proxyUrl: proxyUrl)
+    return Arguments(token: token, domain: domain, relayUrl: relayUrl)
 }
 
 func main() async -> Int32 {
@@ -51,7 +51,7 @@ func main() async -> Int32 {
 
     do {
         let client = try RemoteClient(
-            proxyUrl: args.proxyUrl,
+            relayUrl: args.relayUrl,
             identityStorage: MemoryIdentityStorage(),
             connectionStorage: MemoryConnectionStorage(),
             eventHandler: nil,

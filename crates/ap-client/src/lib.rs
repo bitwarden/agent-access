@@ -1,7 +1,7 @@
 //! Noise Protocol Clients for access-protocol
 //!
 //! This crate provides both remote and user client implementations for
-//! connecting through a proxy using the Noise Protocol.
+//! connecting through a relay using the Noise Protocol.
 //!
 //! ## Features
 //!
@@ -13,14 +13,14 @@
 //! ## Remote Client Usage (untrusted device)
 //!
 //! ```ignore
-//! use ap_client::{RemoteClient, RemoteClientHandle, DefaultProxyClient, IdentityProvider, ConnectionStore};
+//! use ap_client::{RemoteClient, RemoteClientHandle, DefaultRelayClient, IdentityProvider, ConnectionStore};
 //!
-//! // Create proxy client — identity is wired internally by connect()
-//! let proxy_client = Box::new(DefaultProxyClient::from_url("ws://localhost:8080".to_string()));
+//! // Create relay client — identity is wired internally by connect()
+//! let relay_client = Box::new(DefaultRelayClient::from_url("ws://localhost:8080".to_string()));
 //!
 //! // Connect — spawns event loop internally, returns handle with channels
 //! let RemoteClientHandle { client, mut notifications, mut requests } =
-//!     RemoteClient::connect(identity_provider, connection_store, proxy_client).await?;
+//!     RemoteClient::connect(identity_provider, connection_store, relay_client).await?;
 //!
 //! // Pair with rendezvous code
 //! client.pair_with_handshake("ABCDEF123".to_string(), false).await?;
@@ -32,14 +32,14 @@
 //! ## User Client Usage (trusted device)
 //!
 //! ```ignore
-//! use ap_client::{DefaultProxyClient, IdentityProvider, UserClient, UserClientHandle};
+//! use ap_client::{DefaultRelayClient, IdentityProvider, UserClient, UserClientHandle};
 //!
-//! // Create proxy client — identity is wired internally by connect()
-//! let proxy_client = Box::new(DefaultProxyClient::from_url("ws://localhost:8080".to_string()));
+//! // Create relay client — identity is wired internally by connect()
+//! let relay_client = Box::new(DefaultRelayClient::from_url("ws://localhost:8080".to_string()));
 //!
 //! // Connect — spawns event loop internally, returns handle with channels
 //! let UserClientHandle { client, mut notifications, mut requests } =
-//!     UserClient::connect(identity_provider, connection_store, proxy_client, None, None).await?;
+//!     UserClient::connect(identity_provider, connection_store, relay_client, None, None).await?;
 //!
 //! // Already listening. Just use it.
 //! let token = client.get_psk_token(None, false).await?;
@@ -48,8 +48,8 @@
 
 /// Error types
 pub mod error;
-/// Proxy client trait and default implementation
-pub mod proxy;
+/// Relay client trait and default implementation
+pub mod relay;
 /// Traits for storage implementations
 pub mod traits;
 /// Protocol types and events
@@ -72,15 +72,15 @@ pub use error::ClientError;
 pub use memory_connection_store::MemoryConnectionStore;
 pub use memory_psk_store::MemoryPskStore;
 #[cfg(feature = "native-websocket")]
-pub use proxy::DefaultProxyClient;
-pub use proxy::ProxyClient;
+pub use relay::DefaultRelayClient;
+pub use relay::RelayClient;
 pub use traits::{
     AuditConnectionType, AuditEvent, AuditLog, ConnectionInfo, ConnectionStore, ConnectionUpdate,
     CredentialFieldSet, IdentityProvider, MemoryIdentityProvider, NoOpAuditLog, PskEntry, PskStore,
 };
 pub use types::{ConnectionMode, CredentialData, CredentialQuery, PskId, PskToken};
 
-// Re-export ap-proxy-protocol types
-pub use ap_proxy_protocol::{IdentityFingerprint, RendezvousCode};
+// Re-export ap-relay-protocol types
+pub use ap_relay_protocol::{IdentityFingerprint, RendezvousCode};
 // Re-export PSK type from noise protocol
 pub use ap_noise::{MultiDeviceTransport, Psk};

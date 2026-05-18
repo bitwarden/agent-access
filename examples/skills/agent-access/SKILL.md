@@ -76,7 +76,7 @@ Use the bare domain of the website you need credentials for:
 | `--domain <DOMAIN>` | Website domain to fetch credentials for (required for non-interactive use) |
 | `--token <TOKEN>` | Pairing token — rendezvous or PSK (conflicts with `--session`) |
 | `--session <HEX>` | Session fingerprint or unique prefix (conflicts with `--token`) |
-| `--proxy-url <URL>` | WebSocket proxy address (default: `wss://ap.lesspassword.dev`) |
+| `--relay-url <URL>` | WebSocket relay address (default: `wss://ap.lesspassword.dev`) |
 | `--output json\|text` | Output format (default: `text`; use `json` for programmatic access) |
 | `--no-cache` | Don't cache this session |
 | `--verify-fingerprint` | Require fingerprint verification |
@@ -102,7 +102,7 @@ Exit codes:
 |------|---------|------------|
 | 0 | Success | Parse credential from output |
 | 1 | General error | Check stderr for details |
-| 2 | Connection failed | Proxy may be down; retry or check `--proxy-url` |
+| 2 | Connection failed | Relay may be down; retry or check `--relay-url` |
 | 3 | Auth/handshake failed | Session may be stale; clear cache and re-pair |
 | 4 | Credential not found | No matching login for that domain in the vault |
 | 5 | Fingerprint mismatch | Security issue; do not proceed, alert the user |

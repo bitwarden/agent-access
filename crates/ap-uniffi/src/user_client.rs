@@ -11,7 +11,7 @@ use crate::callbacks::{
 use crate::error::ClientError;
 use crate::types::{FfiCredentialQuery, FfiEvent};
 use ap_client::{
-    CredentialData, CredentialRequestReply, DefaultProxyClient, FingerprintVerificationReply,
+    CredentialData, CredentialRequestReply, DefaultRelayClient, FingerprintVerificationReply,
     UserClientHandle, UserClientNotification, UserClientRequest,
 };
 use tokio::sync::{Mutex, mpsc};
@@ -31,14 +31,14 @@ pub struct UserClient {
     psk_storage: Option<Arc<dyn PskStorage>>,
     identity_storage: Arc<dyn IdentityStorage>,
     connection_storage: Arc<dyn ConnectionStorage>,
-    proxy_url: String,
+    relay_url: String,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
 impl UserClient {
     /// Create a new UserClient.
     ///
-    /// * `proxy_url` — WebSocket URL of the proxy server.
+    /// * `relay_url` — WebSocket URL of the relay server.
     /// * `identity_storage` — Callback for persistent identity keypair storage.
     /// * `connection_storage` — Callback for persistent connection cache storage.
     /// * `handler` — Callback for credential requests.
@@ -51,7 +51,7 @@ impl UserClient {
     #[uniffi::constructor]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        proxy_url: String,
+        relay_url: String,
         identity_storage: Box<dyn IdentityStorage>,
         connection_storage: Box<dyn ConnectionStorage>,
         handler: Box<dyn CredentialProvider>,
@@ -71,11 +71,11 @@ impl UserClient {
             psk_storage: psk_storage.map(Arc::from),
             identity_storage: Arc::from(identity_storage),
             connection_storage: Arc::from(connection_storage),
-            proxy_url,
+            relay_url,
         })
     }
 
-    /// Connect to the proxy server and start listening for incoming connections.
+    /// Connect to the relay server and start listening for incoming connections.
     ///
     /// Spawns a background event loop that dispatches credential requests and
     /// fingerprint verifications to the `CredentialProvider` callback.
@@ -87,7 +87,7 @@ impl UserClient {
 
         let session_store = CallbackConnectionStore::new(Arc::clone(&self.connection_storage));
 
-        let proxy_client = Box::new(DefaultProxyClient::from_url(self.proxy_url.clone()));
+        let relay_client = Box::new(DefaultRelayClient::from_url(self.relay_url.clone()));
 
         let audit_log: Option<Box<dyn ap_client::AuditLog>> =
             self.audit_logger.as_ref().map(|logger| {
@@ -106,7 +106,7 @@ impl UserClient {
         } = ap_client::UserClient::connect(
             Box::new(identity),
             Box::new(session_store),
-            proxy_client,
+            relay_client,
             audit_log,
             psk_store,
         )

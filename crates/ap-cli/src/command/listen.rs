@@ -7,11 +7,11 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use ap_client::{
-    ConnectionInfo, ConnectionStore, CredentialData, CredentialRequestReply, DefaultProxyClient,
+    ConnectionInfo, ConnectionStore, CredentialData, CredentialRequestReply, DefaultRelayClient,
     FingerprintVerificationReply, IdentityProvider, PskStore, UserClient, UserClientNotification,
     UserClientRequest,
 };
-use ap_proxy_protocol::IdentityFingerprint;
+use ap_relay_protocol::IdentityFingerprint;
 use clap::Args;
 use color_eyre::eyre::Result;
 use crossterm::event::{Event, EventStream, KeyEventKind};
@@ -28,7 +28,7 @@ use super::util::{format_listen_notification, format_relative_time, val_style};
 use crate::providers::{CredentialProvider, LookupResult, ProviderStatus};
 use crate::storage::{FileConnectionCache, FileIdentityStorage};
 
-use super::DEFAULT_PROXY_URL;
+use super::DEFAULT_RELAY_URL;
 
 /// Slash commands available in idle mode.
 const IDLE_COMMANDS: &[&str] = &["/pair [name]", "/unlock", "/exit"];
@@ -86,9 +86,9 @@ impl ApprovalCache {
 /// Arguments for the listen command
 #[derive(Args)]
 pub struct ListenArgs {
-    /// Proxy server URL
-    #[arg(long, default_value = DEFAULT_PROXY_URL)]
-    pub proxy_url: String,
+    /// Relay server URL
+    #[arg(long, default_value = DEFAULT_RELAY_URL)]
+    pub relay_url: String,
 
     /// Use PSK (Pre-Shared Key) mode instead of rendezvous code
     #[arg(long, conflicts_with = "reusable_psk")]
@@ -117,7 +117,7 @@ impl ListenArgs {
         } else {
             PairingMode::Rendezvous
         };
-        run_user_client_loop(self.proxy_url, pairing_mode, &mut *provider, log_rx).await
+        run_user_client_loop(self.relay_url, pairing_mode, &mut *provider, log_rx).await
     }
 }
 
@@ -138,7 +138,7 @@ enum Phase {
     CredentialApproval {
         query: ap_client::CredentialQuery,
         credential: CredentialData,
-        identity: ap_proxy_protocol::IdentityFingerprint,
+        identity: ap_relay_protocol::IdentityFingerprint,
         reply: oneshot::Sender<CredentialRequestReply>,
     },
     /// Waiting for the user to enter unlock input (password or session key).
@@ -669,7 +669,7 @@ async fn run_event_loop(
 
 /// Run the user client interactive session
 async fn run_user_client_loop(
-    proxy_url: String,
+    relay_url: String,
     pairing_mode: PairingMode,
     provider: &mut dyn CredentialProvider,
     mut log_rx: Option<super::tui_tracing::LogReceiver>,
@@ -717,7 +717,7 @@ async fn run_user_client_loop(
 
         let has_cached = !cached_connections.is_empty() && !force_new_connection;
 
-        let proxy_client = Box::new(DefaultProxyClient::from_url(proxy_url.clone()));
+        let relay_client = Box::new(DefaultRelayClient::from_url(relay_url.clone()));
 
         // Create PSK store when reusable PSK mode is enabled.
         // Check for existing stored PSKs before passing ownership to connect().
@@ -737,7 +737,7 @@ async fn run_user_client_loop(
         let handle = UserClient::connect(
             identity_provider as Box<dyn IdentityProvider>,
             connection_store as Box<dyn ConnectionStore>,
-            proxy_client,
+            relay_client,
             None,
             psk_store,
         )

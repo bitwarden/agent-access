@@ -7,7 +7,7 @@
 use ap_client::{IdentityFingerprint, PskToken, RemoteClient};
 use wasm_bindgen::prelude::*;
 
-use crate::proxy_client::WasmProxyClient;
+use crate::relay_client::WasmRelayClient;
 use crate::storage::{LocalStorageConnectionStore, LocalStorageIdentityProvider};
 use crate::types::{client_error_to_js, JsCredentialData};
 
@@ -25,7 +25,7 @@ use crate::types::{client_error_to_js, JsCredentialData};
 #[wasm_bindgen]
 pub struct WasmRemoteClient {
     inner: Option<RemoteClient>,
-    proxy_url: String,
+    relay_url: String,
     identity_name: String,
 }
 
@@ -33,18 +33,18 @@ pub struct WasmRemoteClient {
 impl WasmRemoteClient {
     /// Create a new client.
     ///
-    /// @param proxy_url - WebSocket URL of the proxy server
+    /// @param relay_url - WebSocket URL of the relay server
     /// @param identity_name - Name for the identity keypair stored in localStorage
     #[wasm_bindgen(constructor)]
-    pub fn new(proxy_url: &str, identity_name: &str) -> Self {
+    pub fn new(relay_url: &str, identity_name: &str) -> Self {
         Self {
             inner: None,
-            proxy_url: proxy_url.to_string(),
+            relay_url: relay_url.to_string(),
             identity_name: identity_name.to_string(),
         }
     }
 
-    /// Connect to the proxy server.
+    /// Connect to the relay server.
     ///
     /// Establishes the WebSocket connection and authenticates. After this,
     /// call one of the pairing methods to establish a secure channel.
@@ -55,12 +55,12 @@ impl WasmRemoteClient {
         let connection_store = LocalStorageConnectionStore::load_or_create(&self.identity_name)
             .map_err(client_error_to_js)?;
 
-        let proxy_client = Box::new(WasmProxyClient::new(self.proxy_url.clone()));
+        let relay_client = Box::new(WasmRelayClient::new(self.relay_url.clone()));
 
         let handle = RemoteClient::connect(
             Box::new(identity),
             Box::new(connection_store),
-            proxy_client,
+            relay_client,
         )
         .await
         .map_err(client_error_to_js)?;

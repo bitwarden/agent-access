@@ -15,8 +15,8 @@ path = "src/lib.rs"
 
 [dependencies]
 ap-client = { path = "../../crates/ap-client", features = ["native-websocket"] }
-ap-proxy-client = { path = "../../crates/ap-proxy-client", default-features = false, features = ["native-websocket"] }
-ap-proxy-protocol = { path = "../../crates/ap-proxy-protocol" }
+ap-relay-client = { path = "../../crates/ap-relay-client", default-features = false, features = ["native-websocket"] }
+ap-relay-protocol = { path = "../../crates/ap-relay-protocol" }
 ap-noise = { path = "../../crates/ap-noise" }
 async-trait = "0.1"
 dirs = "5.0"

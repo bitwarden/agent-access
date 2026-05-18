@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use ap_client::{
-    DefaultProxyClient, IdentityFingerprint, PskToken, RemoteClientFingerprintReply,
+    DefaultRelayClient, IdentityFingerprint, PskToken, RemoteClientFingerprintReply,
     RemoteClientHandle, RemoteClientNotification, RemoteClientRequest,
 };
 use tokio::sync::{Mutex, mpsc};
@@ -30,14 +30,14 @@ pub struct RemoteClient {
     fingerprint_verifier: Option<Arc<dyn FingerprintVerifier>>,
     identity_storage: Arc<dyn IdentityStorage>,
     connection_storage: Arc<dyn ConnectionStorage>,
-    proxy_url: String,
+    relay_url: String,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
 impl RemoteClient {
     /// Create a new RemoteClient.
     ///
-    /// * `proxy_url` — WebSocket URL of the proxy server (e.g. "ws://localhost:8080").
+    /// * `relay_url` — WebSocket URL of the relay server (e.g. "ws://localhost:8080").
     /// * `identity_storage` — Callback for persistent identity keypair storage.
     /// * `connection_storage` — Callback for persistent connection cache storage.
     /// * `event_handler` — Optional callback for receiving status notifications.
@@ -47,7 +47,7 @@ impl RemoteClient {
     ///   PSK connections and headless/agent scenarios skip verification.
     #[uniffi::constructor]
     pub fn new(
-        proxy_url: String,
+        relay_url: String,
         identity_storage: Box<dyn IdentityStorage>,
         connection_storage: Box<dyn ConnectionStorage>,
         event_handler: Option<Box<dyn EventHandler>>,
@@ -61,11 +61,11 @@ impl RemoteClient {
             fingerprint_verifier: fingerprint_verifier.map(Arc::from),
             identity_storage: Arc::from(identity_storage),
             connection_storage: Arc::from(connection_storage),
-            proxy_url,
+            relay_url,
         })
     }
 
-    /// Connect to the proxy server and authenticate.
+    /// Connect to the relay server and authenticate.
     ///
     /// After this, call one of the pairing methods to establish a secure channel:
     /// `pair_with_handshake()`, `pair_with_psk()`, or `load_existing_connection()`.
@@ -77,7 +77,7 @@ impl RemoteClient {
 
         let session_store = CallbackConnectionStore::new(Arc::clone(&self.connection_storage));
 
-        let proxy_client = Box::new(DefaultProxyClient::from_url(self.proxy_url.clone()));
+        let relay_client = Box::new(DefaultRelayClient::from_url(self.relay_url.clone()));
 
         let RemoteClientHandle {
             client,
@@ -86,7 +86,7 @@ impl RemoteClient {
         } = ap_client::RemoteClient::connect(
             Box::new(identity),
             Box::new(session_store),
-            proxy_client,
+            relay_client,
         )
         .await
         .map_err(ClientError::from)?;

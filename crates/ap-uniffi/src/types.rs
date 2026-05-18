@@ -102,9 +102,9 @@ impl From<FfiCredentialData> for CredentialData {
 /// FFI-friendly enum. All fingerprints are hex-encoded strings.
 #[derive(Clone, uniffi::Enum)]
 pub enum FfiEvent {
-    /// Connecting to the proxy server.
+    /// Connecting to the relay server.
     Connecting,
-    /// Successfully connected to the proxy.
+    /// Successfully connected to the relay.
     Connected { fingerprint: String },
     /// Started listening for incoming connections.
     Listening,
@@ -149,11 +149,11 @@ pub enum FfiEvent {
     RendezvousResolved { fingerprint: String },
     /// Using PSK mode for connection.
     PskMode { fingerprint: String },
-    /// Client disconnected from proxy.
+    /// Client disconnected from relay.
     Disconnected { reason: Option<String> },
-    /// Attempting to reconnect to proxy.
+    /// Attempting to reconnect to relay.
     Reconnecting { attempt: u32 },
-    /// Successfully reconnected to proxy.
+    /// Successfully reconnected to relay.
     Reconnected,
     /// An error occurred.
     Error {

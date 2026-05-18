@@ -1,5 +1,5 @@
 use ap_noise::{MultiDeviceTransport, Psk};
-use ap_proxy_protocol::{IdentityFingerprint, IdentityKeyPair};
+use ap_relay_protocol::{IdentityFingerprint, IdentityKeyPair};
 use async_trait::async_trait;
 
 use crate::error::ClientError;
@@ -71,7 +71,7 @@ pub trait IdentityProvider: Send + Sync {
 ///
 /// ```
 /// use ap_client::MemoryIdentityProvider;
-/// use ap_proxy_protocol::IdentityKeyPair;
+/// use ap_relay_protocol::IdentityKeyPair;
 ///
 /// let keypair = IdentityKeyPair::generate();
 /// let identity = MemoryIdentityProvider::from_keypair(keypair);

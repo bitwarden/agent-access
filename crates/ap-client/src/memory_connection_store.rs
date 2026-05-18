@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use ap_proxy_protocol::IdentityFingerprint;
+use ap_relay_protocol::IdentityFingerprint;
 use async_trait::async_trait;
 
 use crate::error::ClientError;

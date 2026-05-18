@@ -32,7 +32,7 @@ ln -sf ../../target/debug/libap_uniffi.so examples/python-uniffi/
 
 ## Usage
 
-Start a proxy and a listener first (see the main project README), then:
+Start a relay and a listener first (see the main project README), then:
 
 ```bash
 # Connect with a PSK token
@@ -41,15 +41,15 @@ python3 connect_request.py --token <PSK_TOKEN> --domain github.com
 # Connect with a rendezvous code
 python3 connect_request.py --token ABC-DEF-GHI --domain example.com
 
-# Custom proxy
-python3 connect_request.py --proxy wss://your-proxy.example.com --token <PSK_TOKEN> --domain example.com
+# Custom relay
+python3 connect_request.py --relay wss://your-relay.example.com --token <PSK_TOKEN> --domain example.com
 ```
 
 ### Token formats
 
 | Format | Example | Mode |
 |--------|---------|------|
-| Rendezvous code | `ABC-DEF-GHI` | Discovers peer via proxy |
+| Rendezvous code | `ABC-DEF-GHI` | Discovers peer via relay |
 | PSK token | `<64hex>_<64hex>` | Pre-shared key (no rendezvous) |
 
 ### Storage

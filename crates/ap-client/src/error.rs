@@ -7,17 +7,17 @@ use thiserror::Error;
 #[ap_error(flat)]
 #[derive(Debug, Error)]
 pub enum ClientError {
-    /// Failed to connect to the proxy server
-    #[error("Failed to connect to proxy: {0}")]
+    /// Failed to connect to the relay server
+    #[error("Failed to connect to relay: {0}")]
     ConnectionFailed(String),
 
     /// WebSocket error occurred
     #[error("WebSocket error: {0}")]
     WebSocket(String),
 
-    /// Authentication with proxy failed
-    #[error("Proxy authentication failed: {0}")]
-    ProxyAuthFailed(String),
+    /// Authentication with relay failed
+    #[error("Relay authentication failed: {0}")]
+    RelayAuthFailed(String),
 
     /// Invalid pairing code format
     #[error("Invalid pairing code: {0}")]
@@ -100,8 +100,8 @@ impl From<serde_json::Error> for ClientError {
     }
 }
 
-impl From<ap_proxy_protocol::ProxyError> for ClientError {
-    fn from(err: ap_proxy_protocol::ProxyError) -> Self {
+impl From<ap_relay_protocol::RelayError> for ClientError {
+    fn from(err: ap_relay_protocol::RelayError) -> Self {
         ClientError::ConnectionFailed(err.to_string())
     }
 }
