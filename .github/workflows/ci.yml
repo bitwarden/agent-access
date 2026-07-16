@@ -28,7 +28,7 @@ jobs:
       - name: Install rust
         uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # stable
         with:
-          toolchain: stable
+          toolchain: 1.97.1
           components: rustfmt
 
       - name: Cargo fmt
@@ -50,7 +50,7 @@ jobs:
       - name: Install rust
         uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # stable
         with:
-          toolchain: stable
+          toolchain: 1.97.1
           components: clippy
 
       - name: Cache cargo registry
@@ -75,7 +75,7 @@ jobs:
       - name: Install rust
         uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # stable
         with:
-          toolchain: stable
+          toolchain: 1.97.1
 
       - name: Cache cargo registry
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
@@ -99,7 +99,7 @@ jobs:
       - name: Install rust
         uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # stable
         with:
-          toolchain: stable
+          toolchain: 1.97.1
           targets: wasm32-unknown-unknown
 
       - name: Cache cargo registry
@@ -134,7 +134,7 @@ jobs:
       - name: Install rust
         uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # stable
         with:
-          toolchain: stable
+          toolchain: 1.97.1
 
       - name: Cache cargo registry
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
