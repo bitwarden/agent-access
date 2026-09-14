@@ -68,7 +68,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
 snow = { version = "0.9", features = ["xchachapoly"] }
-syn = "2.0"
+syn = "3.0"
 thiserror = "1.0"
 tokio = { version = "1.36.0", features = [
     "macros",
